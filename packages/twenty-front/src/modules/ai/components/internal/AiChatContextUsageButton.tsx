@@ -17,6 +17,7 @@ import { currentAiChatThreadState } from '@/ai/states/currentAiChatThreadState';
 import { billingState } from '@/client-config/states/billingState';
 import { SettingsBillingLabelValueItem } from '@/settings/billing/components/internal/SettingsBillingLabelValueItem';
 import { useUsageValueFormatter } from '@/settings/usage/hooks/useUsageValueFormatter';
+import { StyledInformationCard } from '@/ui/layout/information-card/components/StyledInformationCard';
 import { useAtomComponentFamilyStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentFamilyStateValue';
 import { useAtomComponentSelectorValue } from '@/ui/utilities/state/jotai/hooks/useAtomComponentSelectorValue';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
@@ -45,16 +46,10 @@ const StyledTrigger = styled.div<{ hasUsage: boolean }>`
   }
 `;
 
-const StyledHoverCard = styled.div`
-  background: ${themeCssVariables.background.primary};
-  border: 1px solid ${themeCssVariables.border.color.medium};
-  border-radius: ${themeCssVariables.border.radius.md};
+const StyledHoverCard = styled(StyledInformationCard)`
   bottom: calc(100% + 8px);
-  box-shadow: ${themeCssVariables.boxShadow.strong};
   left: 0;
-  min-width: 280px;
   position: absolute;
-  z-index: ${themeCssVariables.lastLayerZIndex};
 `;
 
 const StyledSection = styled.div`

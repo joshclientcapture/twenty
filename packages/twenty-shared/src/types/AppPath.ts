@@ -31,6 +31,7 @@ export enum AppPath {
 
   // Conversifi custom pages
   Snake = '/snake',
+  Sales = '/sales',
 
   Settings = `settings`,
   SettingsCatchAll = `/${Settings}/*`,

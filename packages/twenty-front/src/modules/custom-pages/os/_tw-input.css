@@ -1,0 +1,49 @@
+@import "tailwindcss/theme";
+@import "tailwindcss/utilities";
+@source "./data.ts";
+@source "./Chart.tsx";
+@source "../../../pages/sales/SalesPage.tsx";
+@theme inline {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-ring: var(--surface-ring);
+  --color-positive: var(--positive);
+  --color-caution: var(--caution);
+}
+:root, .os-scope {
+  --radius: 0.85rem;
+  --background: #f5f8fd; --foreground: #0f1629;
+  --surface: #ffffff; --surface-ring: rgba(27,68,152,0.09);
+  --card: #ffffff; --card-foreground: #0f1629;
+  --popover: #ffffff; --popover-foreground: #0f1629;
+  --primary: #1b4498; --primary-foreground: #ffffff;
+  --secondary: #eef2fb; --secondary-foreground: #1b4498;
+  --muted: #edf1f8; --muted-foreground: #5b6b86;
+  --accent: #e9f0fb; --accent-foreground: #1b4498;
+  --positive: #12a06a; --caution: #f59e0b;
+  --destructive: #ef4444; --destructive-foreground: #ffffff;
+  --border: #d6e0f1; --input: #d6e0f1; --ring: #1b4498;
+}

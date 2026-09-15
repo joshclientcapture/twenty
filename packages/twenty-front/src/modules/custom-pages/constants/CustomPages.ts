@@ -2,6 +2,7 @@ import { AppPath } from "twenty-shared/types";
 import { type IconComponent } from "twenty-ui/icon";
 
 import { IconSnake } from "@/custom-pages/components/IconSnake";
+import { IconSales } from "@/custom-pages/os/IconSales";
 
 export type CustomPage = {
   label: string;
@@ -15,5 +16,6 @@ export type CustomPage = {
  * then add one entry here.
  */
 export const CUSTOM_PAGES: CustomPage[] = [
+  { label: "Sales", path: AppPath.Sales, Icon: IconSales as IconComponent },
   { label: "Snake", path: AppPath.Snake, Icon: IconSnake as IconComponent },
 ];

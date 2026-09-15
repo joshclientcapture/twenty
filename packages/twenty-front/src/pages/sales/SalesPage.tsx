@@ -1,6 +1,6 @@
 import "@/custom-pages/os/os.css";
 import { useEffect, useState } from "react";
-import { fetchDashboardMetrics, fetchShowUp, fetchAttributionSplit, fetchConversion, fetchRangeMetrics, fetchGrowth, fetchMonthlyMetrics, fetchDisconnected, fetchLastSync, fetchCustomerCounts, refreshStepped, REFRESH_STEPS, type DashboardMetrics, type ShowUp, type AttributionSplit, type Conversion, type RangeMetrics, type Growth, type MonthlyRow, type DisconnectedAccount, type CustomerCounts } from "@/custom-pages/os/data";
+import { fetchDashboardMetrics, fetchShowUp, fetchAttributionSplit, fetchConversion, fetchRangeMetrics, fetchGrowth, fetchMonthlyMetrics, fetchLastSync, fetchCustomerCounts, refreshStepped, REFRESH_STEPS, type DashboardMetrics, type ShowUp, type AttributionSplit, type Conversion, type RangeMetrics, type Growth, type MonthlyRow, type CustomerCounts } from "@/custom-pages/os/data";
 import { Chart } from "@/custom-pages/os/Chart";
 
 // --- date helpers for the custom range picker ---
@@ -144,7 +144,6 @@ function OperatingSystem() {
   const [conv, setConv] = useState<Conversion | null>(null);
   const [growth, setGrowth] = useState<Growth | null>(null);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
-  const [disconnected, setDisconnected] = useState<DisconnectedAccount[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [period, setPeriod] = useState<string>(() => new Date().toISOString().slice(0, 7)); // default: current month
   const [range, setRange] = useState<{ from: string; to: string } | null>(null); // custom date range (overrides period)
@@ -162,7 +161,6 @@ function OperatingSystem() {
     try { setConv(await fetchConversion()); } catch { /* noop */ }
     try { setGrowth(await fetchGrowth()); } catch { /* noop */ }
     try { setMonthly(await fetchMonthlyMetrics()); } catch { /* noop */ }
-    try { setDisconnected(await fetchDisconnected()); } catch { /* noop */ }
     try { setLastSync(await fetchLastSync()); } catch { /* noop */ }
   };
   useEffect(() => { load(); }, []);
@@ -290,22 +288,6 @@ function OperatingSystem() {
 
   return (
     <div className="min-h-full os-scope bg-background p-4 text-foreground selection:bg-primary/10 sm:p-6 lg:p-10">
-      {/* Reconnect alert — pinned to the very top */}
-      {disconnected.length > 0 && (
-        <section className="mx-auto mb-3 flex max-w-7xl flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-[var(--color-caution)]/50 bg-[var(--color-caution)]/10 px-3 py-1.5">
-          <a href="/records?type=setters_disconnected" className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--color-caution)] hover:underline">
-            <span className="inline-block size-1.5 rounded-full bg-[var(--color-caution)]" />
-            {disconnected.length} disconnected — reconnect →
-          </a>
-          <div className="flex flex-wrap gap-1">
-            {disconnected.map((d) => (
-              <span key={d.name} className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-0.5 text-[10px] font-medium ring-1 ring-[var(--color-caution)]/50">
-                {d.name}{d.disconnected_at && <span className="font-mono text-[9px] text-muted-foreground">{fmtWhen(d.disconnected_at)}</span>}
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
 
       <header className="mx-auto mb-5 flex max-w-7xl flex-wrap items-center justify-between gap-y-2 border-b pb-3">
         <div className="flex items-center gap-3">

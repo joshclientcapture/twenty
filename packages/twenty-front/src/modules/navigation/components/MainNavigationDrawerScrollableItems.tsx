@@ -1,3 +1,4 @@
+import { CustomPagesSection } from '@/custom-pages/components/CustomPagesSection';
 import { NavigationDrawerOpenedSection } from '@/navigation-menu-item/display/sections/components/NavigationDrawerOpenedSection';
 import { NavigationDrawerWorkspaceSectionSkeletonLoader } from '@/object-metadata/components/NavigationDrawerWorkspaceSectionSkeletonLoader';
 
@@ -35,6 +36,7 @@ export const MainNavigationDrawerScrollableItems = () => {
       <Suspense fallback={<NavigationDrawerWorkspaceSectionSkeletonLoader />}>
         <FavoritesSectionDispatcher />
         <WorkspaceSectionDispatcher />
+        <CustomPagesSection />
       </Suspense>
     </StyledScrollableItemsContainer>
   );

@@ -47,6 +47,12 @@ const MobileHomePage = lazy(() =>
   })),
 );
 
+const SnakePage = lazy(() =>
+  import('~/pages/snake/SnakePage').then((module) => ({
+    default: module.SnakePage,
+  })),
+);
+
 const NotFound = lazy(() =>
   import('~/pages/not-found/NotFound').then((module) => ({
     default: module.NotFound,
@@ -126,6 +132,15 @@ export const createWorkspaceRouteObjects = ({
           <AiChatPage />
         </LazyRoute>
       ),
+    },
+    {
+      path: AppPath.Snake,
+      element: (
+        <LazyRoute>
+          <SnakePage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
     },
     {
       path: AppPath.Home,

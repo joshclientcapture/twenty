@@ -29,6 +29,9 @@ export enum AppPath {
   PageLayoutPage = '/page/:pageLayoutId',
   WorkflowCoreIndexPage = '/workflow-core',
 
+  // Conversifi custom pages
+  Snake = '/snake',
+
   Settings = `settings`,
   SettingsCatchAll = `/${Settings}/*`,
   Developers = `developers`,

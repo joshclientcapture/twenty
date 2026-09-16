@@ -1,5 +1,5 @@
 import { AppPath } from "twenty-shared/types";
-import { IconUser, IconUsers, type IconComponent } from "twenty-ui/icon";
+import { IconUsers, type IconComponent } from "twenty-ui/icon";
 
 import { IconSnake } from "@/custom-pages/components/IconSnake";
 import { IconSales } from "@/custom-pages/os/IconSales";
@@ -30,8 +30,8 @@ export const CUSTOM_PAGE_SECTIONS: CustomPageSection[] = [
     title: "Financials",
     pages: [
       { label: "Sales", path: AppPath.Sales, Icon: IconSales as IconComponent },
+      // Individual closers live inside Closers; /therapon stays as a URL alias only.
       { label: "Closers", path: AppPath.Closers, Icon: IconUsers as IconComponent },
-      { label: "Therapon", path: AppPath.Therapon, Icon: IconUser as IconComponent },
     ],
   },
   {

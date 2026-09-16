@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { OsSyncCommand } from 'src/conversifi-os/commands/os-sync.command';
 import { OsController } from 'src/conversifi-os/controllers/os.controller';
 import { OsSyncCronCommand } from 'src/conversifi-os/crons/commands/os-sync.cron.command';
 import { OsSyncCronJob } from 'src/conversifi-os/crons/jobs/os-sync.cron.job';
@@ -15,7 +16,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule],
   controllers: [OsController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsSyncCronJob, OsSyncCronCommand],
-  exports: [OsSyncCronCommand],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand],
+  exports: [OsSyncCronCommand, OsSyncCommand],
 })
 export class ConversifiOsModule {}

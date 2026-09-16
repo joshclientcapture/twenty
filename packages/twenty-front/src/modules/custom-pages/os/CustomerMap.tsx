@@ -1,10 +1,10 @@
 import { styled } from '@linaria/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { geoContains, geoNaturalEarth1, geoPath } from 'd3-geo';
 import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import landTopo from 'world-atlas/land-110m.json';
-import { IconRefresh, IconX } from 'twenty-ui/icon';
+import { IconFocusCentered, IconMinus, IconPlus, IconRefresh, IconX } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
@@ -64,6 +64,10 @@ const coordFor = (p: CustomerPoint): [number, number] | null => {
 const W = 1000;
 const H = 500;
 const GRID_STEP = 1.7; // degrees between land dots; smaller = denser, slower to compute once
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 8;
+type Transform = { k: number; x: number; y: number };
+const IDENTITY: Transform = { k: 1, x: 0, y: 0 };
 
 const StyledFrame = styled.div`
   background: ${t.background.secondary};
@@ -88,9 +92,13 @@ const StyledToolbar = styled.div`
 `;
 
 const StyledMap = styled.svg`
+  cursor: grab;
   display: block;
   height: auto;
+  touch-action: none;
+  user-select: none;
   width: 100%;
+  &[data-dragging] { cursor: grabbing; }
   circle[data-land] { fill: ${t.font.color.light}; opacity: 0.55; }
   circle[data-halo] { fill: ${t.color.blue}; opacity: 0.14; }
   circle[data-dot] {
@@ -147,6 +155,16 @@ const StyledDetail = styled.div`
   div[data-foot] { margin-top: ${t.spacing[2]}; }
 `;
 
+const StyledZoom = styled.div`
+  bottom: ${t.spacing[3]};
+  display: flex;
+  flex-direction: column;
+  gap: ${t.spacing[1]};
+  position: absolute;
+  right: ${t.spacing[3]};
+  z-index: 2;
+`;
+
 const StyledLegend = styled.div`
   align-items: center;
   border-top: 1px solid ${t.border.color.light};
@@ -176,6 +194,44 @@ export const CustomerMap = () => {
   const [pinned, setPinned] = useState<Dot | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [transform, setTransform] = useState<Transform>(IDENTITY);
+  const [dragging, setDragging] = useState(false);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const dragRef = useRef<{ startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
+
+  // Mouse position in map units (the 1000x500 viewBox), independent of rendered size.
+  const toMapUnits = (clientX: number, clientY: number) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return { mx: 0, my: 0 };
+    return { mx: ((clientX - rect.left) / rect.width) * W, my: ((clientY - rect.top) / rect.height) * H };
+  };
+  // Translation is limited so the map always covers the frame with no empty edges.
+  const clampTransform = (next: Transform): Transform => {
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next.k));
+    const x = Math.min(0, Math.max(W - W * k, next.x));
+    const y = Math.min(0, Math.max(H - H * k, next.y));
+    return { k, x, y };
+  };
+  const zoomAt = (mx: number, my: number, factor: number) => setTransform((cur) => {
+    const k = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cur.k * factor));
+    const scale = k / cur.k;
+    return clampTransform({ k, x: mx - (mx - cur.x) * scale, y: my - (my - cur.y) * scale });
+  });
+  const zoomCentre = (factor: number) => zoomAt(W / 2, H / 2, factor);
+
+  // Wheel must be non-passive to stop the page scrolling while zooming the map.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { mx, my } = toMapUnits(e.clientX, e.clientY);
+      zoomAt(mx, my, Math.exp(-e.deltaY * 0.0015));
+    };
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', onWheel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { fetchCustomerPoints().then(setPoints).catch(() => setPoints([])); }, []);
 
@@ -235,6 +291,33 @@ export const CustomerMap = () => {
 
   const isOn = (d: Dot) => pinned?.p.customer_id === d.p.customer_id;
   const tip = hover && !isOn(hover) ? hover : null;
+  const { k, x: tx, y: ty } = transform;
+  const screenX = (d: Dot) => ((tx + d.x * k) / W) * 100;
+  const screenY = (d: Dot) => ((ty + d.y * k) / H) * 100;
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, x: transform.x, y: transform.y, moved: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const dx = ((e.clientX - drag.startX) / rect.width) * W;
+    const dy = ((e.clientY - drag.startY) / rect.height) * H;
+    if (!drag.moved && Math.hypot(dx, dy) < 3) return;
+    drag.moved = true;
+    setDragging(true);
+    setTransform((cur) => clampTransform({ k: cur.k, x: drag.x + dx, y: drag.y + dy }));
+  };
+  const onPointerUp = () => {
+    const moved = dragRef.current?.moved;
+    dragRef.current = null;
+    setDragging(false);
+    if (!moved) setPinned(null);
+  };
 
   return (
     <StyledFrame>
@@ -251,34 +334,44 @@ export const CustomerMap = () => {
         </div>
       </StyledToolbar>
 
-      <StyledMap viewBox={`0 0 ${W} ${H}`} onClick={() => setPinned(null)} role="img" aria-label="Customer locations">
-        {landDots.map(([x, y], i) => <circle key={i} data-land cx={x} cy={y} r={1.25} />)}
+      <StyledMap ref={svgRef} viewBox={`0 0 ${W} ${H}`} data-dragging={dragging ? '' : undefined} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} role="img" aria-label="Customer locations">
+        <g transform={`translate(${tx} ${ty}) scale(${k})`}>
+        {landDots.map(([x, y], i) => <circle key={i} data-land cx={x} cy={y} r={1.25 / Math.sqrt(k)} />)}
         <g data-inactive={onlyActive ? undefined : ''}>
           {dots.map((d) => (
             <g key={d.p.customer_id} data-inactive={d.p.active ? undefined : ''}>
-              <circle data-halo cx={d.x} cy={d.y} r={isOn(d) ? 14 : 9} />
+              <circle data-halo cx={d.x} cy={d.y} r={(isOn(d) ? 14 : 9) / k} />
               <circle
                 data-dot
                 data-on={isOn(d) ? '' : undefined}
                 cx={d.x}
                 cy={d.y}
-                r={isOn(d) || hover?.p.customer_id === d.p.customer_id ? 5.5 : 3.75}
+                r={(isOn(d) || hover?.p.customer_id === d.p.customer_id ? 5.5 : 3.75) / k}
+                style={{ strokeWidth: 1.5 / k }}
                 tabIndex={0}
                 aria-label={d.p.name}
                 onMouseEnter={() => setHover(d)}
                 onMouseLeave={() => setHover(null)}
                 onFocus={() => setHover(d)}
                 onBlur={() => setHover(null)}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); setPinned((cur) => (cur?.p.customer_id === d.p.customer_id ? null : d)); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPinned((cur) => (cur?.p.customer_id === d.p.customer_id ? null : d)); } }}
               />
             </g>
           ))}
         </g>
+        </g>
       </StyledMap>
 
+      <StyledZoom>
+        <Button size="small" variant="secondary" Icon={IconPlus} title="" ariaLabel="Zoom in" onClick={() => zoomCentre(1.5)} />
+        <Button size="small" variant="secondary" Icon={IconMinus} title="" ariaLabel="Zoom out" onClick={() => zoomCentre(1 / 1.5)} />
+        <Button size="small" variant="secondary" Icon={IconFocusCentered} title="" ariaLabel="Reset view" disabled={k === 1} onClick={() => setTransform(IDENTITY)} />
+      </StyledZoom>
+
       {tip && (
-        <StyledTooltip style={{ left: `${(tip.x / W) * 100}%`, top: `${(tip.y / H) * 100}%` }}>
+        <StyledTooltip style={{ left: `${screenX(tip)}%`, top: `${screenY(tip)}%` }}>
           <div data-name>{tip.p.name}</div>
           <div data-sub>{flag(tip.p.country)} {tip.p.city ? `${tip.p.city}, ` : ''}{countryName(tip.p.country)} · {fmtUsd(tip.p.total_paid)}</div>
         </StyledTooltip>
@@ -305,7 +398,7 @@ export const CustomerMap = () => {
       )}
 
       <StyledLegend>
-        <span data-count>{points === null ? 'Loading…' : `${dots.length} customers on the map · click a dot for details`}</span>
+        <span data-count>{points === null ? 'Loading…' : `${dots.length} customers on the map · scroll to zoom, drag to move, click a dot for details`}</span>
         {countries.map(([cc, n]) => <span key={cc} data-chip>{flag(cc)} {countryName(cc)} <b>{n}</b></span>)}
       </StyledLegend>
     </StyledFrame>

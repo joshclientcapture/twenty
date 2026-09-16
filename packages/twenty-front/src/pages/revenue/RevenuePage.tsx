@@ -104,11 +104,6 @@ const StyledTakeaway = styled.p`
   span[data-note] { color: ${t.font.color.tertiary}; display: block; font-size: ${t.font.size.sm}; margin-top: ${t.spacing[1]}; }
 `;
 
-const StyledCompact = styled.div`
-  max-width: 560px;
-  table { width: 100%; }
-`;
-
 const StyledScroll = styled.div`
   max-height: 420px;
   overflow: auto;
@@ -153,7 +148,6 @@ export const RevenuePage = () => {
 
   const [rateWindow, setRateWindow] = useState(4);
   const [horizon, setHorizon] = useState<'goal' | 12 | 36>('goal');
-  const [detail, setDetail] = useState<'none' | 'actuals' | 'projection'>('none');
   const [drill, setDrill] = useState<Drill | null>(null);
   const [drillRows, setDrillRows] = useState<ChurnListRow[] | null>(null);
   const [showExclusions, setShowExclusions] = useState(false);
@@ -338,35 +332,6 @@ export const RevenuePage = () => {
                     {horizon !== 'goal' && projection.horizonEnd && <> and reaches <b>{fmtShort(projection.horizonEnd.arr)}</b> by {mkLong(projection.horizonEnd.month)}</>}.
                     <span data-note>Projection, not a forecast: it assumes the last {projection.w} months' pace holds. Growth was {projection.latestMom == null ? '—' : pct(projection.latestMom)} last month against a peak of {pct(projection.peakMom)}.</span>
                   </StyledTakeaway>
-                  <StyledRow style={{ marginTop: 12 }}>
-                    <StyledLabel>Detail</StyledLabel>
-                    <PillButton title="Monthly actuals" active={detail === 'actuals'} onClick={() => setDetail(detail === 'actuals' ? 'none' : 'actuals')} />
-                    <PillButton title="Projected months" active={detail === 'projection'} onClick={() => setDetail(detail === 'projection' ? 'none' : 'projection')} />
-                  </StyledRow>
-                  {detail === 'actuals' && (
-                    <StyledReveal><StyledCompact style={{ marginTop: 12 }}>
-                      <StyledTable>
-                        <thead><tr><th>Month</th><th>ARR</th><th>Subscribers</th><th>Month on month</th></tr></thead>
-                        <tbody>
-                          {[...projection.series].reverse().map((p) => { const i = projection.series.indexOf(p); return (
-                            <tr key={p.month}><td>{mkLabel(p.month)}</td><td>{fmtUsd(p.arr)}</td><td>{p.subscribers ?? '—'}</td><td style={{ color: projection.mom[i] == null ? undefined : (projection.mom[i] as number) >= 0 ? POSITIVE : CAUTION }}>{projection.mom[i] == null ? '—' : pct(projection.mom[i] as number)}</td></tr>
-                          ); })}
-                        </tbody>
-                      </StyledTable>
-                    </StyledCompact></StyledReveal>
-                  )}
-                  {detail === 'projection' && (
-                    <StyledReveal><StyledCompact style={{ marginTop: 12 }}>
-                      <StyledTable>
-                        <thead><tr><th>Month</th><th>Projected ARR</th></tr></thead>
-                        <tbody>
-                          {projection.projected.filter((p, i, arr) => horizon === 'goal' || (i + 1) % 6 === 0 || p.month === projection.milestone?.month || i === arr.length - 1).map((p) => (
-                            <tr key={p.month}><td>{mkLabel(p.month)} {p.month === projection.milestone?.month && <StyledChip data-tone="positive">$1M goal</StyledChip>}</td><td>{fmtUsd(p.arr)}</td></tr>
-                          ))}
-                        </tbody>
-                      </StyledTable>
-                    </StyledCompact></StyledReveal>
-                  )}
                 </>
               ) : <Skeleton height={200} />}
             </StyledCard>

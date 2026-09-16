@@ -473,19 +473,22 @@ export const TheraponPage = () => {
 
             {/* Daily call log */}
             <StyledCard>
+              {/* Title row and control row are always separate, so a longer date label
+                  never pushes the controls onto a new line when a preset is clicked. */}
               <StyledCardHead>
                 <StyledRow>
                   <StyledCardTitle>Call log</StyledCardTitle>
                   <StyledMuted>
                     {dayRange.from === dayRange.to ? fmtDayLong(dayRange.from) : `${fmtDayLong(dayRange.from)} → ${fmtDayLong(dayRange.to)}`}
                   </StyledMuted>
-                  {!fathomBusy && fathomStatus && (
-                    <span title={fathomStatus.msg}>
-                      <Tag color={fathomStatus.ok ? 'green' : 'orange'} text={fathomStatus.ok ? `Fathom updated ${fathomStatus.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : 'Fathom refresh failed'} />
-                    </span>
-                  )}
                 </StyledRow>
-                <StyledRow>
+                {!fathomBusy && fathomStatus && (
+                  <span title={fathomStatus.msg}>
+                    <Tag color={fathomStatus.ok ? 'green' : 'orange'} text={fathomStatus.ok ? `Fathom updated ${fathomStatus.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : 'Fathom refresh failed'} />
+                  </span>
+                )}
+              </StyledCardHead>
+              <StyledRow style={{ marginBottom: 12 }}>
                   {[['today', 'Today'], ['yesterday', 'Yesterday'], ['last7', 'Last 7 days'], ['month', 'This month']].map(([k, l]) => {
                     const pr = dayPreset(k);
                     const active = dayRange.from === pr.from && dayRange.to === pr.to;
@@ -501,8 +504,7 @@ export const TheraponPage = () => {
                   </StyledField>
                   <StyledDivider />
                   <Button size="small" variant="secondary" Icon={IconRefresh} title={fathomBusy ? 'Syncing…' : 'Refresh Fathom'} disabled={fathomBusy} onClick={refreshFathomNow} />
-                </StyledRow>
-              </StyledCardHead>
+              </StyledRow>
 
               <StyledStatStrip>
                 <div data-stat><div data-k>Booked</div><div data-v>{ds ? ds.booked : <Skeleton width={30} />}</div></div>

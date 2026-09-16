@@ -1,8 +1,8 @@
 import { styled } from '@linaria/react';
 import { Fragment, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
-import { IconRefresh, IconUser } from 'twenty-ui/icon';
+import { IconArrowLeft, IconRefresh, IconUser } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
@@ -278,6 +278,7 @@ type CloserPageProps = { closerId?: string };
 
 export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
   const params = useParams<{ closerId: string }>();
+  const navigate = useNavigate();
   const closerId = closerIdProp ?? params.closerId ?? '';
   const isAdmin = useHasPermissionFlag(PermissionFlagType.WORKSPACE);
   const currentUser = useAtomStateValue(currentUserState);
@@ -418,16 +419,17 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
   const name = closer?.name ?? '';
   const repQ = `arg=${encodeURIComponent(name)}&name=${encodeURIComponent(name)}`;
   const customersQ = `arg=${encodeURIComponent(closerId)}&name=${encodeURIComponent(name)}`;
+  const recordsBase = `/records?back=${encodeURIComponent(`/closers/${closerId}`)}&type=`;
   const loaded = !!su && !!conv;
   const commissionPct = comm ? Math.round(comm.commission_rate * 100) : Math.round((closer?.commissionRate ?? 0.1) * 100);
 
   const kpis: Kpi[] = [
     { label: 'Appointments held', value: (suD?.held ?? 0).toLocaleString(), delta: `${(suD?.upcoming ?? 0).toLocaleString()} upcoming`, to: '/showup' },
-    { label: 'Appointments sat', value: (suD?.recorded ?? 0).toLocaleString(), delta: 'Fathom-confirmed', to: `/records?type=calls${qp}` },
+    { label: 'Appointments sat', value: (suD?.recorded ?? 0).toLocaleString(), delta: 'Fathom-confirmed', to: `${recordsBase}calls${qp}` },
     { label: 'Show-up rate', value: suD?.rate != null ? `${suD.rate}%` : '—', delta: `${suD?.recorded ?? 0} of ${suD?.held ?? 0} held`, valueTone: (suD?.rate ?? 0) >= 55 ? 'positive' : 'caution', to: '/showup' },
-    { label: 'Cancellations', value: suD?.cancel_rate != null ? `${suD.cancel_rate}%` : '—', delta: `${suD?.canceled ?? 0} genuine`, to: `/records?type=cancellations${qp}` },
-    { label: 'Trials started', value: (cvD?.sat_trials ?? 0).toLocaleString(), delta: `of ${cvD?.trials_total ?? 0} company-wide`, to: `/records?type=trials${qp}` },
-    { label: 'Trial conversion', value: cvD?.rate != null ? `${cvD.rate}%` : '—', delta: `${cvD?.sat_trials ?? 0} of ${cvD?.sat ?? 0} sat`, valueTone: (cvD?.rate ?? 0) >= 30 ? 'positive' : 'caution', to: `/records?type=trials${qp}` },
+    { label: 'Cancellations', value: suD?.cancel_rate != null ? `${suD.cancel_rate}%` : '—', delta: `${suD?.canceled ?? 0} genuine`, to: `${recordsBase}cancellations${qp}` },
+    { label: 'Trials started', value: (cvD?.sat_trials ?? 0).toLocaleString(), delta: `of ${cvD?.trials_total ?? 0} company-wide`, to: `${recordsBase}trials${qp}` },
+    { label: 'Trial conversion', value: cvD?.rate != null ? `${cvD.rate}%` : '—', delta: `${cvD?.sat_trials ?? 0} of ${cvD?.sat ?? 0} sat`, valueTone: (cvD?.rate ?? 0) >= 30 ? 'positive' : 'caution', to: `${recordsBase}trials${qp}` },
   ];
 
   const sat = suD?.recorded ?? 0;
@@ -449,7 +451,7 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
       <PageHeader title={closer?.name ?? 'Closer'} Icon={IconUser}>
         <StyledHeaderActions>
           <StyledMuted>Sales closer</StyledMuted>
-          {isAdmin && <StyledTextLink to="/closers">All closers →</StyledTextLink>}
+          {isAdmin && <Button size="small" variant="secondary" Icon={IconArrowLeft} title="Back" onClick={() => navigate('/closers')} />}
         </StyledHeaderActions>
       </PageHeader>
       <StyledBody>
@@ -471,7 +473,7 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                       {cash && <StyledSub>{fmtUsd(cash.total)} lifetime</StyledSub>}
                     </StyledBigValue>
                   </div>
-                  <StyledTextLink to={`/records?type=sales&${repQ}${qp}`}>Payments →</StyledTextLink>
+                  <StyledTextLink to={`${recordsBase}sales&${repQ}${qp}`}>Payments →</StyledTextLink>
                 </StyledCardHead>
                 <Chart data={cashSeries} format={(n) => fmtUsd(n)} color={POSITIVE} height={84} mini zoom />
               </StyledCard>
@@ -485,7 +487,7 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                       {sales && <StyledSub>{salesActive} still active · {fmtUsd(salesMrr)}/mo</StyledSub>}
                     </StyledBigValue>
                   </div>
-                  <StyledTextLink to={`/records?type=closer_customers&${customersQ}${qp}`}>Customers →</StyledTextLink>
+                  <StyledTextLink to={`${recordsBase}closer_customers&${customersQ}${qp}`}>Customers →</StyledTextLink>
                 </StyledCardHead>
                 <Chart data={salesSeries} format={(n) => Math.round(n).toLocaleString()} height={84} mini zoom />
               </StyledCard>
@@ -662,10 +664,10 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                     {isAdmin && <Button size="small" variant="primary" accent="blue" title="Mark all paid" disabled={busy || comm.outstanding <= 0} onClick={() => markAllPaid(comm)} />}
                   </StyledCommRow>
                   <StyledGrid4>
-                    <KpiTile kpi={{ label: 'Earned', value: fmtUsd2(comm.earned), to: `/records?type=sales&${repQ}` }} />
-                    <KpiTile kpi={{ label: 'Paid to date', value: fmtUsd2(comm.paid), delta: `${comm.payments_paid} payments`, to: `/records?type=sales_comm_paid&${repQ}` }} />
-                    <KpiTile kpi={{ label: 'Outstanding', value: fmtUsd2(comm.outstanding), delta: `${comm.payments_due} payments`, valueTone: comm.outstanding > 0 ? 'caution' : 'positive', to: `/records?type=sales_comm_due&${repQ}` }} />
-                    <KpiTile kpi={{ label: 'Payments', value: `${comm.payments_paid} / ${comm.payments}`, delta: 'paid / total', to: `/records?type=sales&${repQ}` }} />
+                    <KpiTile kpi={{ label: 'Earned', value: fmtUsd2(comm.earned), to: `${recordsBase}sales&${repQ}` }} />
+                    <KpiTile kpi={{ label: 'Paid to date', value: fmtUsd2(comm.paid), delta: `${comm.payments_paid} payments`, to: `${recordsBase}sales_comm_paid&${repQ}` }} />
+                    <KpiTile kpi={{ label: 'Outstanding', value: fmtUsd2(comm.outstanding), delta: `${comm.payments_due} payments`, valueTone: comm.outstanding > 0 ? 'caution' : 'positive', to: `${recordsBase}sales_comm_due&${repQ}` }} />
+                    <KpiTile kpi={{ label: 'Payments', value: `${comm.payments_paid} / ${comm.payments}`, delta: 'paid / total', to: `${recordsBase}sales&${repQ}` }} />
                   </StyledGrid4>
                 </>
               ) : (

@@ -2,7 +2,7 @@ import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
-import { IconPlus, IconUsers } from 'twenty-ui/icon';
+import { IconPencil, IconPlus, IconTrash, IconUsers } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
@@ -20,16 +20,11 @@ import {
   PRESS_SCALE,
   StyledBody,
   StyledCard,
-  StyledCardHead,
-  StyledCardHint,
-  StyledCardTitle,
   StyledChip,
   StyledContent,
   StyledError,
-  StyledField,
   StyledGrid3,
   StyledHeaderActions,
-  StyledLabel,
   StyledMuted,
   StyledNotice,
   StyledPage,
@@ -61,9 +56,11 @@ const StyledCloserCard = styled.div`
   flex-direction: column;
   gap: ${t.spacing[3]};
   padding: ${t.spacing[4]};
+  position: relative;
   transition: border-color 120ms ${EASE_OUT}, transform 120ms ${EASE_OUT}, background 120ms ${EASE_OUT};
   @media (hover: hover) {
     &:hover { border-color: ${t.border.color.strong}; background: ${t.background.tertiary}; }
+    &:hover div[data-actions] { opacity: 1; }
   }
   &:active { transform: scale(${PRESS_SCALE}); }
   &:focus-visible { outline: 2px solid ${t.color.blue}; outline-offset: 2px; }
@@ -72,6 +69,13 @@ const StyledCloserCard = styled.div`
     font-size: ${t.font.size.md};
     font-weight: ${t.font.weight.semiBold};
     margin: 0;
+  }
+  div[data-actions] {
+    display: flex;
+    gap: ${t.spacing[1]};
+    opacity: 0;
+    transition: opacity 120ms ${EASE_OUT};
+    @media (hover: none) { opacity: 1; }
   }
   div[data-stats] {
     display: grid;
@@ -90,21 +94,111 @@ const StyledCloserCard = styled.div`
   div[data-v='caution'] { color: ${CAUTION}; }
 `;
 
-const StyledForm = styled.form`
-  display: grid;
-  gap: ${t.spacing[3]};
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  @media (max-width: 640px) { grid-template-columns: 1fr; }
-  label[data-check] {
-    align-items: center;
-    display: flex;
-    font-size: ${t.font.size.sm};
-    gap: ${t.spacing[2]};
+/* Closer editor: one narrow column, labels above inputs, actions pinned at the bottom. */
+const StyledEditorCard = styled.form`
+  background: ${t.background.secondary};
+  border: 1px solid ${t.border.color.light};
+  border-radius: ${t.border.radius.md};
+  display: flex;
+  flex-direction: column;
+  gap: ${t.spacing[4]};
+  max-width: 480px;
+  padding: ${t.spacing[4]};
+  h3 {
+    color: ${t.font.color.primary};
+    font-size: ${t.font.size.md};
+    font-weight: ${t.font.weight.semiBold};
+    margin: 0;
   }
-  div[data-span] { grid-column: 1 / -1; }
+  p {
+    color: ${t.font.color.tertiary};
+    font-size: ${t.font.size.sm};
+    line-height: 1.5;
+    margin: ${t.spacing[1]} 0 0;
+  }
 `;
 
-const EMPTY_FORM = { name: '', id: '', email: '', fathomEmail: '', calendlyHostEmail: '', commissionRate: '10', commissioned: true };
+const StyledFields = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: ${t.spacing[3]};
+`;
+
+const StyledFormField = styled.label`
+  display: flex;
+  flex-direction: column;
+  gap: ${t.spacing[1]};
+  span[data-label] {
+    color: ${t.font.color.secondary};
+    font-size: ${t.font.size.sm};
+    font-weight: ${t.font.weight.medium};
+  }
+  span[data-hint] {
+    color: ${t.font.color.tertiary};
+    font-size: ${t.font.size.xs};
+  }
+  input {
+    background: ${t.background.primary};
+    border: 1px solid ${t.border.color.medium};
+    border-radius: ${t.border.radius.sm};
+    box-sizing: border-box;
+    color: ${t.font.color.primary};
+    font-family: inherit;
+    font-size: ${t.font.size.md};
+    height: 32px;
+    outline: none;
+    padding: 0 ${t.spacing[2]};
+    transition: border-color 120ms ${EASE_OUT};
+    width: 100%;
+  }
+  input:focus { border-color: ${t.border.color.blue}; }
+  input[type='number'] { width: 120px; }
+`;
+
+const StyledToggle = styled.label`
+  align-items: center;
+  color: ${t.font.color.primary};
+  cursor: pointer;
+  display: flex;
+  font-size: ${t.font.size.sm};
+  gap: ${t.spacing[2]};
+  input { accent-color: ${t.color.blue}; height: 14px; margin: 0; width: 14px; }
+  span[data-hint] { color: ${t.font.color.tertiary}; }
+`;
+
+const StyledActions = styled.div`
+  align-items: center;
+  border-top: 1px solid ${t.border.color.light};
+  display: flex;
+  gap: ${t.spacing[2]};
+  padding-top: ${t.spacing[3]};
+`;
+
+type CloserForm = { name: string; email: string; loginEmail: string; differentLogin: boolean; commissionRate: string; commissioned: boolean };
+
+const EMPTY_FORM: CloserForm = { name: '', email: '', loginEmail: '', differentLogin: false, commissionRate: '10', commissioned: true };
+
+const formFromCloser = (closer: Closer): CloserForm => {
+  const workEmail = closer.fathomEmail ?? closer.calendlyHostEmail ?? closer.email ?? '';
+  const differentLogin = !!closer.email && closer.email.toLowerCase() !== workEmail.toLowerCase();
+  return {
+    name: closer.name,
+    email: workEmail,
+    loginEmail: differentLogin ? closer.email ?? '' : '',
+    differentLogin,
+    commissionRate: String(Math.round(closer.commissionRate * 1000) / 10),
+    commissioned: closer.commissioned,
+  };
+};
+
+// The work email is the Fathom recorder, the Calendly host and (normally) the CRM login all at once.
+const uniqueCloserId = (name: string, taken: Closer[]) => {
+  const base = slugifyCloserId(name) || 'closer';
+  let candidate = base;
+  let suffix = 2;
+  while (taken.some((closer) => closer.id === candidate)) candidate = `${base}${suffix++}`;
+  return candidate;
+};
 
 export const ClosersPage = () => {
   const navigate = useNavigate();
@@ -112,8 +206,8 @@ export const ClosersPage = () => {
   const currentUser = useAtomStateValue(currentUserState);
   const [closers, setClosers] = useState<Closer[] | null>(null);
   const [stats, setStats] = useState<Record<string, CloserStats>>({});
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [editor, setEditor] = useState<{ closer: Closer | null } | null>(null);
+  const [form, setForm] = useState<CloserForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -134,23 +228,28 @@ export const ClosersPage = () => {
   const ownCloser = closers ? findOwnCloser(closers, currentUser?.email) : null;
   if (closers && !isAdmin && ownCloser) return <Navigate to={`/closers/${ownCloser.id}`} replace />;
 
+  const openNew = () => { setForm(EMPTY_FORM); setEditor({ closer: null }); };
+  const openEdit = (closer: Closer) => { setForm(formFromCloser(closer)); setEditor({ closer }); };
+  const closeEditor = () => { setEditor(null); setForm(EMPTY_FORM); };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setErr(null);
     try {
       const rate = Number(form.commissionRate);
+      const workEmail = form.email.trim() || null;
       await upsertCloser({
-        id: form.id || slugifyCloserId(form.name),
-        name: form.name,
-        email: form.email || null,
-        fathomEmail: form.fathomEmail || null,
-        calendlyHostEmail: form.calendlyHostEmail || null,
+        id: editor?.closer?.id ?? uniqueCloserId(form.name, closers ?? []),
+        name: form.name.trim(),
+        email: (form.differentLogin ? form.loginEmail.trim() : workEmail) || null,
+        fathomEmail: workEmail,
+        calendlyHostEmail: workEmail,
         commissionRate: Number.isFinite(rate) ? rate / 100 : null,
         commissioned: form.commissioned,
+        active: true,
       });
-      setForm(EMPTY_FORM);
-      setAdding(false);
+      closeEditor();
       await load();
     } catch (e) {
       setErr('Failed to save closer: ' + (e as Error).message);
@@ -159,14 +258,28 @@ export const ClosersPage = () => {
     }
   };
 
+  // Removing deactivates rather than deletes, so past sales and commission stay attributed.
+  const remove = async (closer: Closer) => {
+    if (!window.confirm(`Remove ${closer.name} from Closers? Their history is kept; they just stop appearing here.`)) return;
+    setErr(null);
+    try {
+      await upsertCloser({ id: closer.id, name: closer.name, active: false });
+      if (editor?.closer?.id === closer.id) closeEditor();
+      await load();
+    } catch (e) {
+      setErr('Failed to remove closer: ' + (e as Error).message);
+    }
+  };
+
   const active = (closers ?? []).filter((c) => c.active);
+  const editing = editor?.closer ?? null;
 
   return (
     <StyledPage>
       <PageHeader title="Closers" Icon={IconUsers}>
         <StyledHeaderActions>
           <StyledMuted>{closers ? `${active.length} active` : ''}</StyledMuted>
-          {isAdmin && <Button size="small" variant="secondary" Icon={IconPlus} title="Add closer" onClick={() => setAdding((v) => !v)} />}
+          {isAdmin && <Button size="small" variant="secondary" Icon={IconPlus} title="Add closer" onClick={() => (editor && !editing ? closeEditor() : openNew())} />}
         </StyledHeaderActions>
       </PageHeader>
       <StyledBody>
@@ -174,51 +287,51 @@ export const ClosersPage = () => {
           <StyledContent>
             {err && <StyledError>{err}</StyledError>}
 
-            {adding && (
+            {editor && (
               <StyledReveal>
-                <StyledCard>
-                  <StyledCardHead>
-                    <StyledCardTitle>New closer</StyledCardTitle>
-                    <StyledCardHint>Fathom email must match what their recordings are recorded by. Calendly host email links their bookings.</StyledCardHint>
-                  </StyledCardHead>
-                  <StyledForm onSubmit={submit}>
-                    <StyledField>
-                      <StyledLabel>Full name</StyledLabel>
-                      <input required value={form.name} placeholder="e.g. Sam Carter" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value, id: f.id || slugifyCloserId(e.target.value) }))} />
-                    </StyledField>
-                    <StyledField>
-                      <StyledLabel>Id (slug)</StyledLabel>
-                      <input required pattern="[a-z0-9_-]+" value={form.id} placeholder="sam" onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))} />
-                    </StyledField>
-                    <StyledField>
-                      <StyledLabel>CRM login email</StyledLabel>
-                      <input type="email" value={form.email} placeholder="they only see their own page" onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-                    </StyledField>
-                    <StyledField>
-                      <StyledLabel>Fathom recorder email</StyledLabel>
-                      <input type="email" value={form.fathomEmail} placeholder="as shown on their recordings" onChange={(e) => setForm((f) => ({ ...f, fathomEmail: e.target.value }))} />
-                    </StyledField>
-                    <StyledField>
-                      <StyledLabel>Calendly host email</StyledLabel>
-                      <input type="email" value={form.calendlyHostEmail} placeholder="the Calendly user their bookings land on" onChange={(e) => setForm((f) => ({ ...f, calendlyHostEmail: e.target.value }))} />
-                    </StyledField>
-                    <StyledField>
-                      <StyledLabel>Commission %</StyledLabel>
-                      <input type="number" min={0} max={100} step={0.5} value={form.commissionRate} onChange={(e) => setForm((f) => ({ ...f, commissionRate: e.target.value }))} />
-                    </StyledField>
-                    <label data-check>
+                <StyledEditorCard onSubmit={submit}>
+                  <div>
+                    <h3>{editing ? `Edit ${editing.name}` : 'New closer'}</h3>
+                    <p>Their work email is what Fathom records under and what Calendly books on, so it links their calls, bookings and sales automatically.</p>
+                  </div>
+                  <StyledFields>
+                    <StyledFormField>
+                      <span data-label>Full name</span>
+                      <input required autoFocus value={form.name} placeholder="Sam Carter" onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                    </StyledFormField>
+                    <StyledFormField>
+                      <span data-label>Work email</span>
+                      <input required type="email" value={form.email} placeholder="sam@conversifi.io" onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+                    </StyledFormField>
+                    <StyledToggle>
+                      <input type="checkbox" checked={form.differentLogin} onChange={(e) => setForm((f) => ({ ...f, differentLogin: e.target.checked }))} />
+                      <span>Logs into the CRM with a different email</span>
+                    </StyledToggle>
+                    {form.differentLogin && (
+                      <StyledFormField>
+                        <span data-label>CRM login email</span>
+                        <input type="email" value={form.loginEmail} placeholder="sam@clientcapture.io" onChange={(e) => setForm((f) => ({ ...f, loginEmail: e.target.value }))} />
+                        <span data-hint>With a login linked they only see their own page.</span>
+                      </StyledFormField>
+                    )}
+                    <StyledToggle>
                       <input type="checkbox" checked={form.commissioned} onChange={(e) => setForm((f) => ({ ...f, commissioned: e.target.checked }))} />
                       <span>On commission</span>
-                    </label>
-                    <div data-span>
-                      <StyledRow>
-                        <Button type="submit" size="small" variant="primary" accent="blue" title={saving ? 'Saving…' : 'Add closer'} disabled={saving || !form.name.trim()} />
-                        <Button size="small" variant="tertiary" title="Cancel" onClick={() => { setAdding(false); setForm(EMPTY_FORM); }} />
-                        <StyledMuted>Calendly bookings for a new host start syncing once their host is added to the server's Calendly list.</StyledMuted>
-                      </StyledRow>
-                    </div>
-                  </StyledForm>
-                </StyledCard>
+                    </StyledToggle>
+                    {form.commissioned && (
+                      <StyledFormField>
+                        <span data-label>Commission %</span>
+                        <input type="number" min={0} max={100} step={0.5} value={form.commissionRate} onChange={(e) => setForm((f) => ({ ...f, commissionRate: e.target.value }))} />
+                        <span data-hint>Of every payment attributed to them.</span>
+                      </StyledFormField>
+                    )}
+                  </StyledFields>
+                  <StyledActions>
+                    <Button type="submit" size="small" variant="primary" accent="blue" title={saving ? 'Saving…' : editing ? 'Save changes' : 'Add closer'} disabled={saving || !form.name.trim() || !form.email.trim()} />
+                    <Button size="small" variant="tertiary" title="Cancel" onClick={closeEditor} />
+                    {editing && <div style={{ marginLeft: 'auto' }}><Button size="small" variant="tertiary" accent="danger" Icon={IconTrash} title="Remove" onClick={() => remove(editing)} /></div>}
+                  </StyledActions>
+                </StyledEditorCard>
               </StyledReveal>
             )}
 
@@ -243,7 +356,13 @@ export const ClosersPage = () => {
                       <h3>{closer.name}</h3>
                       <StyledRow>
                         <StyledChip data-tone={closer.commissioned ? 'accent' : undefined}>{closer.commissioned ? `${Math.round(closer.commissionRate * 100)}% commission` : 'No commission'}</StyledChip>
-                        {!closer.calendlyHostEmail && <StyledChip data-tone="caution" title="No Calendly host linked, appointments stay at zero">No calendar</StyledChip>}
+                        {!closer.calendlyHostEmail && <StyledChip data-tone="caution" title="No work email linked, so appointments stay at zero">No calendar</StyledChip>}
+                        {isAdmin && (
+                          <div data-actions onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                            <Button size="small" variant="tertiary" Icon={IconPencil} title="Edit" onClick={() => openEdit(closer)} />
+                            <Button size="small" variant="tertiary" Icon={IconTrash} title="Remove" onClick={() => remove(closer)} />
+                          </div>
+                        )}
                       </StyledRow>
                     </StyledRow>
                     <div data-stats>
@@ -255,7 +374,7 @@ export const ClosersPage = () => {
                         <div><div data-k>Commission outstanding</div><div data-v={s?.commission && s.commission.outstanding > 0 ? 'caution' : 'positive'}>{s?.commission ? fmtUsd2(s.commission.outstanding) : <Skeleton width={60} />}</div></div>
                       )}
                     </div>
-                    <StyledMuted>{closer.email ?? 'No CRM login linked'}</StyledMuted>
+                    <StyledMuted>{closer.fathomEmail ?? closer.email ?? 'No work email linked'}</StyledMuted>
                   </StyledCloserCard>
                 );
               })}

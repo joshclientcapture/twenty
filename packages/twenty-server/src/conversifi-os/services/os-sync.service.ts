@@ -349,31 +349,63 @@ export class OsSyncService {
     return { upserted: total, pages, done: cursor == null, rate_limited: rateLimited };
   }
 
-  // One Calendly host per closer. OS_CALENDLY_HOST_URIS is comma separated; Therapon's is the default.
-  private calendlyHosts(): string[] {
-    const configured = env('OS_CALENDLY_HOST_URIS');
-    const hosts = (configured ?? THERAPON_CALENDLY_HOST).split(',').map((host) => host.trim()).filter(Boolean);
-    return hosts.length ? hosts : [THERAPON_CALENDLY_HOST];
+  // One Calendly host per active closer, found by their work email in the organisation's
+  // membership list. The resolved user URI is cached on the closer row. OS_CALENDLY_HOST_URIS
+  // (comma separated) adds hosts that are not closers; Therapon's URI is the fallback.
+  private async calendlyHosts(token: string, organization: string): Promise<string[]> {
+    const CAL = 'https://api.calendly.com';
+    const headers = { Authorization: `Bearer ${token}` };
+    const closers: { id: string; calendly_host_email: string; calendly_user_uri: string | null }[] = await this.dataSource.query(
+      `select id, lower(calendly_host_email) as calendly_host_email, calendly_user_uri
+       from os.closers where active and coalesce(calendly_host_email, '') <> ''`,
+    );
+    const hosts = new Set<string>();
+    const unresolved = closers.filter((closer) => !closer.calendly_user_uri);
+    if (unresolved.length) {
+      const byEmail = new Map<string, string>();
+      let url: string | null = `${CAL}/organization_memberships?organization=${encodeURIComponent(organization)}&count=100`;
+      while (url) {
+        const response: Response = await fetch(url, { headers });
+        if (!response.ok) break;
+        const data: any = await response.json();
+        for (const membership of data.collection ?? []) {
+          if (membership.user?.email && membership.user?.uri) byEmail.set(String(membership.user.email).toLowerCase(), membership.user.uri);
+        }
+        url = data.pagination?.next_page ?? null;
+      }
+      for (const closer of unresolved) {
+        const uri = byEmail.get(closer.calendly_host_email);
+        if (!uri) {
+          this.logger.warn(`calendly: no organisation member matches closer ${closer.id} (${closer.calendly_host_email})`);
+          continue;
+        }
+        closer.calendly_user_uri = uri;
+        await this.dataSource.query(`update os.closers set calendly_user_uri = $1, updated_at = now() where id = $2`, [uri, closer.id]);
+      }
+    }
+    for (const closer of closers) if (closer.calendly_user_uri) hosts.add(closer.calendly_user_uri);
+    for (const host of (env('OS_CALENDLY_HOST_URIS') ?? '').split(',')) if (host.trim()) hosts.add(host.trim());
+    if (hosts.size === 0) hosts.add(THERAPON_CALENDLY_HOST);
+    return [...hosts];
   }
 
   private async calendly(windowDays: number) {
     const token = env('OS_CALENDLY_TOKEN');
     if (!token) return { skipped: 'no calendly token' };
+    const meResponse = await fetch('https://api.calendly.com/users/me', { headers: { Authorization: `Bearer ${token}` } });
+    if (!meResponse.ok) throw new Error(`calendly users/me ${meResponse.status}: ${await meResponse.text()}`);
+    const organization: string = (await meResponse.json()).resource.current_organization;
     const results = [];
-    for (const host of this.calendlyHosts()) {
-      results.push(await this.calendlyHost(token, host, windowDays));
+    for (const host of await this.calendlyHosts(token, organization)) {
+      results.push(await this.calendlyHost(token, organization, host, windowDays));
     }
     return results;
   }
 
-  private async calendlyHost(token: string, hostUserUri: string, windowDays: number) {
+  private async calendlyHost(token: string, organization: string, hostUserUri: string, windowDays: number) {
     const CAL = 'https://api.calendly.com';
     const headers = { Authorization: `Bearer ${token}` };
     const minStart = new Date(Date.now() - windowDays * 86400000).toISOString();
-
-    const meResponse = await fetch(`${CAL}/users/me`, { headers });
-    if (!meResponse.ok) throw new Error(`calendly users/me ${meResponse.status}: ${await meResponse.text()}`);
-    const organization: string = (await meResponse.json()).resource.current_organization;
 
     try {
       const hostResponse = await fetch(hostUserUri, { headers });

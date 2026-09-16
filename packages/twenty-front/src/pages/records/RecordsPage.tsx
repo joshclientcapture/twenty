@@ -67,7 +67,7 @@ const commCols: Col[] = [
 
 const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: string }> = {
   calls: {
-    title: 'Appointments sat', sub: 'New appointments attended (Fathom recording matched a held booking) — excludes Next Steps follow-ups & internal meetings', back: '/therapon',
+    title: 'Appointments sat', sub: 'New appointments attended (Fathom recording matched a held booking) — excludes Next Steps follow-ups & internal meetings', back: '/closers',
     cols: [
       { key: 'name', header: 'Prospect', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },
@@ -76,7 +76,7 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
     ],
   },
   bookings: {
-    title: 'Appointments booked', sub: 'Calendly bookings', back: '/therapon',
+    title: 'Appointments booked', sub: 'Calendly bookings', back: '/closers',
     cols: [
       { key: 'name', header: 'Prospect', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },
@@ -86,7 +86,7 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
     ],
   },
   cancellations: {
-    title: 'Cancellations', sub: 'Genuine cancellations only — reschedules are excluded (they land on the new date)', back: '/therapon',
+    title: 'Cancellations', sub: 'Genuine cancellations only — reschedules are excluded (they land on the new date)', back: '/closers',
     cols: [
       { key: 'name', header: 'Prospect', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },
@@ -95,7 +95,7 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
     ],
   },
   noshows: {
-    title: 'No-shows', sub: 'Held appointments (not cancelled, not rescheduled) with no Fathom recording', back: '/therapon',
+    title: 'No-shows', sub: 'Held appointments (not cancelled, not rescheduled) with no Fathom recording', back: '/closers',
     cols: [
       { key: 'name', header: 'Prospect', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },
@@ -115,7 +115,7 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
     ],
   },
   therapon_customers: {
-    title: 'Therapon — customers', sub: "Every customer he closed · filter by status or plan to see who's still active", back: '/therapon',
+    title: 'Therapon — customers', sub: "Every customer he closed · filter by status or plan to see who's still active", back: '/closers',
     cols: [
       { key: 'name', header: 'Customer', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },
@@ -154,10 +154,10 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
       { key: 'recording', header: 'First call', kind: 'recording' },
     ],
   },
-  sales_comm_due: { title: 'Commission — outstanding', sub: "Payments whose 10% commission hasn't been paid yet · mark each once settled", cols: commCols, back: '/therapon' },
-  sales_comm_paid: { title: 'Commission — paid', sub: 'Payments whose 10% commission has been paid out', cols: commCols, back: '/therapon' },
+  sales_comm_due: { title: 'Commission — outstanding', sub: "Payments whose 10% commission hasn't been paid yet · mark each once settled", cols: commCols, back: '/closers' },
+  sales_comm_paid: { title: 'Commission — paid', sub: 'Payments whose 10% commission has been paid out', cols: commCols, back: '/closers' },
   customer_payments: {
-    title: 'Customer payments', sub: 'Every payment from this customer', back: '/therapon',
+    title: 'Customer payments', sub: 'Every payment from this customer', back: '/closers',
     cols: [
       { key: 'date', header: 'Date', kind: 'datetime' },
       { key: 'payment_no', header: 'Payment #', kind: 'payment' },
@@ -260,6 +260,9 @@ export const RecordsPage = () => {
   const to = params.get('to');
   const nameParam = params.get('name');
   const cfg = CONFIG[type] ?? CONFIG.calls;
+  // Pages that link here pass `back` so the button returns to the exact closer/page they left.
+  const backParam = params.get('back');
+  const backTo = backParam && backParam.startsWith('/') ? backParam : cfg.back;
   const isSetter = type.startsWith('setters');
   const isComm = type === 'sales' || type === 'sales_comm_due' || type === 'sales_comm_paid';
 
@@ -342,7 +345,7 @@ export const RecordsPage = () => {
     <StyledPage>
       <PageHeader title={pageTitle} Icon={IconList}>
         <StyledHeaderActions>
-          <Button size="small" variant="secondary" Icon={IconArrowLeft} title="Back" onClick={() => navigate(cfg.back)} />
+          <Button size="small" variant="secondary" Icon={IconArrowLeft} title="Back" onClick={() => navigate(backTo)} />
         </StyledHeaderActions>
       </PageHeader>
       <StyledBody>

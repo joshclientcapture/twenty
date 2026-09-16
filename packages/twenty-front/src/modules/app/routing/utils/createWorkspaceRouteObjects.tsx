@@ -77,6 +77,12 @@ const WebinarPage = lazy(() =>
   })),
 );
 
+const CustomersPage = lazy(() =>
+  import('~/pages/customers/CustomersPage').then((module) => ({
+    default: module.CustomersPage,
+  })),
+);
+
 const SalesPage = lazy(() =>
   import('~/pages/sales/SalesPage').then((module) => ({
     default: module.SalesPage,
@@ -219,6 +225,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <WebinarPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Customers,
+      element: (
+        <LazyRoute>
+          <CustomersPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

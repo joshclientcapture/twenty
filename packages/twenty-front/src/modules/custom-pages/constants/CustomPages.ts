@@ -1,5 +1,5 @@
 import { AppPath } from "twenty-shared/types";
-import { IconPresentation, IconTrendingUp, IconUsers, type IconComponent } from "twenty-ui/icon";
+import { IconBuildingSkyscraper, IconPresentation, IconTrendingUp, IconUsers, type IconComponent } from "twenty-ui/icon";
 
 import { IconSnake } from "@/custom-pages/components/IconSnake";
 import { IconSales } from "@/custom-pages/os/IconSales";
@@ -33,6 +33,7 @@ export const CUSTOM_PAGE_SECTIONS: CustomPageSection[] = [
       // Individual closers live inside Closers; /therapon stays as a URL alias only.
       { label: "Closers", path: AppPath.Closers, Icon: IconUsers as IconComponent },
       { label: "Revenue", path: AppPath.Revenue, Icon: IconTrendingUp as IconComponent },
+      { label: "Customers", path: AppPath.Customers, Icon: IconBuildingSkyscraper as IconComponent },
       { label: "Webinar", path: AppPath.Webinar, Icon: IconPresentation as IconComponent },
     ],
   },

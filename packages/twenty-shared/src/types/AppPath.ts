@@ -38,6 +38,7 @@ export enum AppPath {
   Closer = '/closers/:closerId',
   Revenue = '/revenue',
   Webinar = '/webinar',
+  Customers = '/customers',
 
   Settings = `settings`,
   SettingsCatchAll = `/${Settings}/*`,

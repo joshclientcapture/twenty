@@ -4,9 +4,8 @@ import {
   CUSTOM_PAGE_SECTIONS,
   type CustomPageSectionKey,
 } from "@/custom-pages/constants/CustomPages";
+import { CollapsibleNavigationDrawerSection } from "@/ui/navigation/navigation-drawer/components/CollapsibleNavigationDrawerSection";
 import { NavigationDrawerItem } from "@/ui/navigation/navigation-drawer/components/NavigationDrawerItem";
-import { NavigationDrawerSection } from "@/ui/navigation/navigation-drawer/components/NavigationDrawerSection";
-import { NavigationDrawerSectionTitle } from "@/ui/navigation/navigation-drawer/components/NavigationDrawerSectionTitle";
 
 export const CustomPagesSection = ({ section }: { section: CustomPageSectionKey }) => {
   const { pathname } = useLocation();
@@ -15,8 +14,7 @@ export const CustomPagesSection = ({ section }: { section: CustomPageSectionKey 
   if (!def || def.pages.length === 0) return null;
 
   return (
-    <NavigationDrawerSection>
-      <NavigationDrawerSectionTitle label={def.title} />
+    <CollapsibleNavigationDrawerSection sectionId={`custom-pages/${def.key}`} label={def.title}>
       {def.pages.map(({ label, path, Icon }) => (
         <NavigationDrawerItem
           key={path}
@@ -26,6 +24,6 @@ export const CustomPagesSection = ({ section }: { section: CustomPageSectionKey 
           active={pathname === path}
         />
       ))}
-    </NavigationDrawerSection>
+    </CollapsibleNavigationDrawerSection>
   );
 };

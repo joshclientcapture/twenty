@@ -65,6 +65,18 @@ const ClosersPage = lazy(() =>
   })),
 );
 
+const RevenuePage = lazy(() =>
+  import('~/pages/revenue/RevenuePage').then((module) => ({
+    default: module.RevenuePage,
+  })),
+);
+
+const WebinarPage = lazy(() =>
+  import('~/pages/webinar/WebinarPage').then((module) => ({
+    default: module.WebinarPage,
+  })),
+);
+
 const SalesPage = lazy(() =>
   import('~/pages/sales/SalesPage').then((module) => ({
     default: module.SalesPage,
@@ -189,6 +201,24 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <CloserPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Revenue,
+      element: (
+        <LazyRoute>
+          <RevenuePage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Webinar,
+      element: (
+        <LazyRoute>
+          <WebinarPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

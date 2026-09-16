@@ -126,6 +126,7 @@ export class OsSyncService {
         refunded: charge.refunded,
         invoice: typeof charge.invoice === 'string' ? charge.invoice : charge.invoice?.id ?? null,
         email: charge.billing_details?.email ?? charge.receipt_email ?? null,
+        payer_name: charge.billing_details?.name ?? null,
         description: charge.description,
         synced_at: nowIso(),
       }));

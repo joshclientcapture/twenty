@@ -8,7 +8,7 @@ import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { PageHeader } from '@/ui/layout/page/components/PageHeader';
-import { CustomerGlobe } from '@/custom-pages/os/CustomerGlobe';
+import { CustomerMap } from '@/custom-pages/os/CustomerMap';
 import {
   CAUTION,
   fmtDate,
@@ -59,12 +59,19 @@ import { type Closer, fetchClosers } from '@/custom-pages/os/closers';
 const SHOW_ATTRIBUTION = false;
 
 type View = 'customers' | 'agencies' | 'map';
-type SourceFilter = 'all' | 'linkedin_outreach' | 'email_marketing' | 'organic' | 'paid_ads' | 'unattributed';
 type LedgerSortKey = 'name' | 'total_paid' | 'payments' | 'first_paid' | 'last_paid' | 'status';
 
 const srcLabel = (s: string | null) => SOURCES.find((x) => x.key === s)?.label ?? '—';
-const bucketOf = (r: SalesLedgerRow): SourceFilter => (r.source as SourceFilter) ?? 'unattributed';
 const firstName = (name: string | null) => (name ? name.split(' ')[0] : '—');
+
+const SORT_OPTIONS: { key: LedgerSortKey; label: string }[] = [
+  { key: 'total_paid', label: 'Total paid' },
+  { key: 'name', label: 'Name' },
+  { key: 'payments', label: 'Payments' },
+  { key: 'first_paid', label: 'First paid' },
+  { key: 'last_paid', label: 'Last paid' },
+  { key: 'status', label: 'Status' },
+];
 
 const LEDGER_SORT: Record<LedgerSortKey, { numeric: boolean; get: (r: SalesLedgerRow) => number | string }> = {
   name: { numeric: false, get: (r) => (r.name ?? '').toLowerCase() },
@@ -277,10 +284,6 @@ export const CustomersPage = () => {
   /* ---- customers (sales ledger) ---- */
   const [rows, setRows] = useState<SalesLedgerRow[] | null>(null);
   const [closers, setClosers] = useState<Closer[]>([]);
-  const [filter, setFilter] = useState<SourceFilter>(() => {
-    const b = params.get('b');
-    return b === 'unattributed' ? 'unattributed' : b === 'attributed' ? 'linkedin_outreach' : 'all';
-  });
   const [q, setQ] = useState('');
   const [sortKey, setSortKey] = useState<LedgerSortKey>('total_paid');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -300,14 +303,8 @@ export const CustomersPage = () => {
   const closerNames = closers.filter((c) => c.active).map((c) => c.name);
   const defaultCloser = closerNames[0] ?? 'Therapon Savvas';
 
-  const counts = useMemo(() => {
-    const all = rows ?? [];
-    const s = (f: SourceFilter) => (f === 'all' ? all : all.filter((x) => bucketOf(x) === f)).length;
-    return { all: s('all'), linkedin_outreach: s('linkedin_outreach'), email_marketing: s('email_marketing'), organic: s('organic'), paid_ads: s('paid_ads'), unattributed: s('unattributed') };
-  }, [rows]);
-
   const visible = useMemo(() => {
-    let r = (rows ?? []).filter((x) => filter === 'all' || bucketOf(x) === filter);
+    let r = rows ?? [];
     const s = q.trim().toLowerCase();
     if (s) r = r.filter((x) => (x.name ?? '').toLowerCase().includes(s) || (x.email ?? '').toLowerCase().includes(s));
     const col = LEDGER_SORT[sortKey];
@@ -316,7 +313,7 @@ export const CustomersPage = () => {
       const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [rows, filter, q, sortKey, sortDir]);
+  }, [rows, q, sortKey, sortDir]);
   const visibleTotal = visible.reduce((a, r) => a + (r.total_paid || 0), 0);
 
   const onLedgerSort = (key: string) => {
@@ -324,15 +321,6 @@ export const CustomersPage = () => {
     if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(k); setSortDir(LEDGER_SORT[k].numeric ? 'desc' : 'asc'); }
   };
-
-  const sourceTabs: { key: SourceFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'linkedin_outreach', label: 'LinkedIn outreach' },
-    { key: 'email_marketing', label: 'Email marketing' },
-    { key: 'organic', label: 'Organic' },
-    { key: 'paid_ads', label: 'Paid ads' },
-    { key: 'unattributed', label: 'Unattributed' },
-  ];
 
   /* ---- agencies ---- */
   const [agencies, setAgencies] = useState<AgencyPartners | null>(null);
@@ -410,10 +398,14 @@ export const CustomersPage = () => {
             {view === 'customers' && (
               <StyledCard>
                 <StyledRow style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+                  <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" style={{ width: 260 }} /></StyledField>
                   <StyledRow>
-                    {sourceTabs.map((tab) => <PillButton key={tab.key} title={`${tab.label} · ${counts[tab.key]}`} active={filter === tab.key} onClick={() => setFilter(tab.key)} />)}
+                    <StyledMuted>Sort by</StyledMuted>
+                    <StyledSelect value={sortKey} onChange={(e) => { const k = e.target.value as LedgerSortKey; setSortKey(k); setSortDir(LEDGER_SORT[k].numeric ? 'desc' : 'asc'); }}>
+                      {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </StyledSelect>
+                    <Button size="small" variant="secondary" title={sortDir === 'asc' ? (LEDGER_SORT[sortKey].numeric ? 'Low to high' : 'A to Z') : (LEDGER_SORT[sortKey].numeric ? 'High to low' : 'Z to A')} onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))} />
                   </StyledRow>
-                  <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" style={{ width: 220 }} /></StyledField>
                 </StyledRow>
                 <StyledScroll>
                   <StyledTable>
@@ -477,11 +469,11 @@ export const CustomersPage = () => {
                     </tbody>
                   </StyledTable>
                 </StyledScroll>
-                <StyledFootnote>{visible.length} of {counts.all} paying customers · {fmtUsd(visibleTotal)} paid in this view · click a column to sort</StyledFootnote>
+                <StyledFootnote>{visible.length} of {rows?.length ?? 0} paying customers · {fmtUsd(visibleTotal)} paid in this view · column headers also sort</StyledFootnote>
               </StyledCard>
             )}
 
-            {view === 'map' && <CustomerGlobe />}
+            {view === 'map' && <CustomerMap />}
 
             {view === 'agencies' && (
               <>

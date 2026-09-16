@@ -1,6 +1,9 @@
 import { styled } from '@linaria/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import createGlobe from 'cobe';
+import { useEffect, useMemo, useState } from 'react';
+import { geoNaturalEarth1, geoPath } from 'd3-geo';
+import { feature } from 'topojson-client';
+import type { Topology, GeometryCollection } from 'topojson-specification';
+import countriesTopo from 'world-atlas/countries-110m.json';
 import { IconRefresh } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { Tag } from 'twenty-ui/data-display';
@@ -58,64 +61,32 @@ const coordFor = (p: CustomerPoint): [number, number] | null => {
   return [c.lat + j[0], c.lng + j[1]];
 };
 
-const MAX_MARKERS = 128; // cobe's marker cap
-const THETA = 0.25;
-const DEG = Math.PI / 180;
-const RF = 0.4;
-type PlacedPoint = CustomerPoint & { _lat: number; _lng: number };
-
-// Screen position of a lat/lng on cobe's globe, mirroring cobe 0.6.3's own rotation maths,
-// so HTML markers can sit exactly on the rendered sphere.
-const project = (lat: number, lng: number, phi: number) => {
-  const o = lng * DEG - Math.PI;
-  const cl = Math.cos(lat * DEG);
-  const sl = Math.sin(lat * DEG);
-  const px = -cl * Math.cos(o);
-  const py = sl;
-  const pz = cl * Math.sin(o);
-  const cph = Math.cos(phi);
-  const sph = Math.sin(phi);
-  const cth = Math.cos(THETA);
-  const sth = Math.sin(THETA);
-  const vx = cph * px + sph * sth * py - sph * cth * pz;
-  const vy = cth * py + sth * pz;
-  const vz = sph * px - cph * sth * py + cph * cth * pz;
-  return { x: 0.5 + RF * vx, y: 0.5 - RF * vy, visible: vz > 0 };
-};
+const W = 1000;
+const H = 520;
 
 const StyledLayout = styled.div`
   display: grid;
   gap: ${t.spacing[4]};
-  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-  @media (max-width: 900px) { grid-template-columns: 1fr; }
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  @media (max-width: 960px) { grid-template-columns: 1fr; }
 `;
 
-const StyledGlobeWrap = styled.div`
-  aspect-ratio: 1;
-  cursor: grab;
-  max-width: 560px;
-  margin: 0 auto;
+const StyledMapWrap = styled.div`
   position: relative;
-  width: 100%;
-  &:active { cursor: grabbing; }
-  canvas { height: 100%; width: 100%; }
-  button[data-marker] {
-    background: ${t.color.blue};
-    border: 2px solid ${t.background.primary};
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px color-mix(in srgb, ${t.color.blue} 35%, transparent);
+  svg { display: block; height: auto; width: 100%; }
+  path[data-land] { fill: ${t.background.tertiary}; stroke: ${t.border.color.medium}; stroke-width: 0.5; }
+  circle[data-dot] {
     cursor: pointer;
-    height: 10px;
-    margin: -5px 0 0 -5px;
-    padding: 0;
-    position: absolute;
-    transition-property: opacity, transform;
+    fill: ${t.color.blue};
+    fill-opacity: 0.75;
+    stroke: ${t.background.primary};
+    stroke-width: 1;
+    transition-property: r, fill-opacity;
     transition-duration: 120ms;
     transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-    width: 10px;
   }
-  button[data-marker][data-on] { background: ${t.tag.text.green}; transform: scale(1.6); z-index: 1; }
-  button[data-marker]:focus-visible { outline: 2px solid ${t.color.blue}; outline-offset: 2px; }
+  circle[data-dot][data-on] { fill: ${t.tag.text.green}; fill-opacity: 1; }
+  circle[data-dot]:hover { fill-opacity: 1; }
 `;
 
 const StyledTooltip = styled.div`
@@ -155,109 +126,26 @@ const StyledCountries = styled.div`
   span b { color: ${t.font.color.primary}; font-weight: ${t.font.weight.medium}; }
 `;
 
-const Globe = ({ points, onSelect, onHover, focus }: { points: PlacedPoint[]; onSelect: (p: PlacedPoint) => void; onHover: (p: PlacedPoint | null, e?: React.MouseEvent) => void; focus: PlacedPoint | null }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const markerEls = useRef(new Map<string, HTMLButtonElement>());
-  const pointerInteracting = useRef<number | null>(null);
-  const rotationRef = useRef(0);
-  const pointsRef = useRef(points);
-  const focusRef = useRef<PlacedPoint | null>(null);
-  pointsRef.current = points;
-  focusRef.current = focus;
+type Dot = { p: CustomerPoint; x: number; y: number };
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    let phi = 0;
-    let width = canvas.offsetWidth;
-    const onResize = () => { width = canvas.offsetWidth; };
-    window.addEventListener('resize', onResize);
-    const dark = document.documentElement.getAttribute('data-theme') === 'dark' || window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const globe = createGlobe(canvas, {
-      devicePixelRatio: 2,
-      width: width * 2,
-      height: width * 2,
-      phi: 0,
-      theta: THETA,
-      dark: dark ? 1 : 0,
-      diffuse: 1.1,
-      mapSamples: 16000,
-      mapBrightness: dark ? 6 : 8,
-      baseColor: dark ? [0.22, 0.24, 0.3] : [0.85, 0.87, 0.92],
-      markerColor: [0.106, 0.267, 0.596],
-      glowColor: dark ? [0.1, 0.1, 0.14] : [0.98, 0.99, 1],
-      markers: pointsRef.current.slice(0, MAX_MARKERS).map((p) => ({ location: [p._lat, p._lng] as [number, number], size: 0.03 })),
-      onRender: (state) => {
-        const target = focusRef.current;
-        if (target) {
-          // Rotate so the selected customer sits front and centre, easing in.
-          const wanted = -(target._lng * DEG - Math.PI) - Math.PI / 2;
-          const current = phi + rotationRef.current;
-          let delta = wanted - current;
-          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-          phi += delta * 0.08;
-        } else if (pointerInteracting.current === null) {
-          phi += 0.003;
-        }
-        const angle = phi + rotationRef.current;
-        state.phi = angle;
-        state.width = width * 2;
-        state.height = width * 2;
-        for (const p of pointsRef.current) {
-          const el = markerEls.current.get(p.customer_id);
-          if (!el) continue;
-          const pos = project(p._lat, p._lng, angle);
-          if (pos.visible) {
-            el.style.opacity = '1';
-            el.style.pointerEvents = 'auto';
-            el.style.left = `${pos.x * width}px`;
-            el.style.top = `${pos.y * width}px`;
-          } else {
-            el.style.opacity = '0';
-            el.style.pointerEvents = 'none';
-          }
-        }
-      },
-    });
-    return () => { globe.destroy(); window.removeEventListener('resize', onResize); };
-    // Markers are re-created with the globe when the point set changes.
-  }, [points]);
-
-  return (
-    <StyledGlobeWrap
-      onPointerDown={(e) => { pointerInteracting.current = e.clientX - rotationRef.current * 200; }}
-      onPointerUp={() => { pointerInteracting.current = null; }}
-      onPointerOut={() => { pointerInteracting.current = null; }}
-      onPointerMove={(e) => { if (pointerInteracting.current !== null) rotationRef.current = (e.clientX - pointerInteracting.current) / 200; }}
-    >
-      <canvas ref={canvasRef} />
-      {points.map((p) => (
-        <button
-          key={p.customer_id}
-          data-marker
-          data-on={focus?.customer_id === p.customer_id ? '' : undefined}
-          aria-label={p.name}
-          ref={(el) => { if (el) markerEls.current.set(p.customer_id, el); else markerEls.current.delete(p.customer_id); }}
-          onMouseEnter={(e) => onHover(p, e)}
-          onMouseLeave={() => onHover(null)}
-          onClick={(e) => { e.stopPropagation(); onSelect(p); }}
-          style={{ opacity: 0 }}
-        />
-      ))}
-    </StyledGlobeWrap>
-  );
-};
-
-export const CustomerGlobe = () => {
+export const CustomerMap = () => {
   const [points, setPoints] = useState<CustomerPoint[] | null>(null);
   const [onlyActive, setOnlyActive] = useState(true);
   const [q, setQ] = useState('');
-  const [hover, setHover] = useState<{ p: PlacedPoint; x: number; y: number } | null>(null);
-  const [pinned, setPinned] = useState<PlacedPoint | null>(null);
+  const [hover, setHover] = useState<Dot | null>(null);
+  const [pinned, setPinned] = useState<CustomerPoint | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => { fetchCustomerPoints().then(setPoints).catch(() => setPoints([])); }, []);
+
+  const { landPaths, projection } = useMemo(() => {
+    const topo = countriesTopo as unknown as Topology<{ countries: GeometryCollection }>;
+    const collection = feature(topo, topo.objects.countries);
+    const proj = geoNaturalEarth1().fitSize([W, H], collection);
+    const path = geoPath(proj);
+    return { landPaths: collection.features.map((f) => path(f)).filter((d): d is string => !!d), projection: proj };
+  }, []);
 
   const filtered = useMemo(() => {
     let r = points ?? [];
@@ -266,7 +154,14 @@ export const CustomerGlobe = () => {
     if (s) r = r.filter((p) => [p.name, p.email, p.city, countryName(p.country)].some((v) => (v ?? '').toLowerCase().includes(s)));
     return r;
   }, [points, onlyActive, q]);
-  const placed = useMemo<PlacedPoint[]>(() => filtered.map((p) => { const c = coordFor(p); return c ? { ...p, _lat: c[0], _lng: c[1] } : null; }).filter((p): p is PlacedPoint => p !== null), [filtered]);
+
+  const dots = useMemo<Dot[]>(() => filtered.map((p) => {
+    const c = coordFor(p);
+    if (!c) return null;
+    const xy = projection([c[1], c[0]]);
+    return xy ? { p, x: xy[0], y: xy[1] } : null;
+  }).filter((d): d is Dot => d !== null), [filtered, projection]);
+
   const countries = useMemo(() => {
     const m = new Map<string, number>();
     for (const p of filtered) m.set(p.country, (m.get(p.country) ?? 0) + 1);
@@ -288,6 +183,9 @@ export const CustomerGlobe = () => {
     }
   };
 
+  const toggle = (p: CustomerPoint) => setPinned((cur) => (cur?.customer_id === p.customer_id ? null : p));
+  const isOn = (p: CustomerPoint) => pinned?.customer_id === p.customer_id || hover?.p.customer_id === p.customer_id;
+
   return (
     <StyledLayout>
       <StyledCard>
@@ -302,22 +200,40 @@ export const CustomerGlobe = () => {
             <Button size="small" variant="secondary" Icon={IconRefresh} title="Refresh locations" disabled={!!syncing} onClick={resync} />
           </StyledRow>
         </StyledRow>
-        <div style={{ position: 'relative' }}>
-          <Globe points={placed} focus={pinned} onSelect={(p) => setPinned((cur) => (cur?.customer_id === p.customer_id ? null : p))} onHover={(p, e) => setHover(p && e ? { p, x: e.clientX, y: e.clientY } : null)} />
-          {hover && (
-            <StyledTooltip style={{ left: 12, bottom: 12 }}>
-              <div data-name>{hover.p.name}</div>
-              <div data-sub>{flag(hover.p.country)} {hover.p.city ? `${hover.p.city}, ` : ''}{countryName(hover.p.country)} · {hover.p.payments} payment{hover.p.payments === 1 ? '' : 's'} · {fmtUsd(hover.p.total_paid)}</div>
-            </StyledTooltip>
-          )}
-        </div>
-        <StyledMuted>{placed.length} customers on the globe · drag to spin · click a dot or a row to focus</StyledMuted>
+        <StyledMapWrap>
+          <svg viewBox={`0 0 ${W} ${H}`} onClick={() => setPinned(null)}>
+            {landPaths.map((d, i) => <path key={i} data-land d={d} />)}
+            {dots.map(({ p, x, y }) => (
+              <circle
+                key={p.customer_id}
+                data-dot
+                data-on={isOn(p) ? '' : undefined}
+                cx={x}
+                cy={y}
+                r={isOn(p) ? 7 : 4}
+                onMouseEnter={() => setHover({ p, x, y })}
+                onMouseLeave={() => setHover(null)}
+                onClick={(e) => { e.stopPropagation(); toggle(p); }}
+              />
+            ))}
+          </svg>
+          {(hover ?? (pinned && dots.find((d) => d.p.customer_id === pinned.customer_id))) && (() => {
+            const d = hover ?? dots.find((x) => x.p.customer_id === pinned!.customer_id)!;
+            return (
+              <StyledTooltip style={{ left: `${(d.x / W) * 100}%`, top: `${(d.y / H) * 100}%`, transform: 'translate(12px, 12px)' }}>
+                <div data-name>{d.p.name}</div>
+                <div data-sub>{flag(d.p.country)} {d.p.city ? `${d.p.city}, ` : ''}{countryName(d.p.country)} · {d.p.payments} payment{d.p.payments === 1 ? '' : 's'} · {fmtUsd(d.p.total_paid)}</div>
+              </StyledTooltip>
+            );
+          })()}
+        </StyledMapWrap>
+        <StyledMuted>{dots.length} customers on the map · hover a dot or click to pin</StyledMuted>
       </StyledCard>
 
       <StyledCard>
         <StyledRow style={{ justifyContent: 'space-between', marginBottom: 8 }}>
           <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, city or country" style={{ width: 220 }} /></StyledField>
-          {pinned && <Button size="small" variant="tertiary" title="Clear focus" onClick={() => setPinned(null)} />}
+          {pinned && <Button size="small" variant="tertiary" title="Clear" onClick={() => setPinned(null)} />}
         </StyledRow>
         <StyledCountries>
           {countries.map(([cc, n]) => <span key={cc}>{flag(cc)} {countryName(cc)} <b>{n}</b></span>)}
@@ -328,8 +244,8 @@ export const CustomerGlobe = () => {
             <tbody>
               {points === null && <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>Loading…</StyledMuted></td></tr>}
               {points !== null && filtered.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>No matches.</StyledMuted></td></tr>}
-              {placed.map((p) => (
-                <tr key={p.customer_id} data-on={pinned?.customer_id === p.customer_id ? '' : undefined} onClick={() => setPinned((cur) => (cur?.customer_id === p.customer_id ? null : p))}>
+              {filtered.map((p) => (
+                <tr key={p.customer_id} data-on={pinned?.customer_id === p.customer_id ? '' : undefined} onClick={() => toggle(p)}>
                   <td>
                     <StyledTextLink to={`/records?type=customer_payments&arg=${encodeURIComponent(p.customer_id)}&name=${encodeURIComponent(p.name)}&back=/customers?view=map`} onClick={(e) => e.stopPropagation()}>{p.name}</StyledTextLink>
                     {!p.active && <StyledMuted style={{ marginLeft: 6 }}>inactive</StyledMuted>}

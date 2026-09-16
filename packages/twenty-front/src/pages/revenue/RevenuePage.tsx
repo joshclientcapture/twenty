@@ -383,7 +383,9 @@ export const RevenuePage = () => {
                 <StyledCardTitle>Subscriber churn</StyledCardTitle>
                 <StyledCardHint>Monthly churn rate = cancelled ÷ subscribers at start of month</StyledCardHint>
               </StyledCardHead>
-              {churn ? <Chart data={churnSeries} format={(n) => `${n}%`} color={CAUTION} height={180} /> : <Skeleton height={180} />}
+              {churn ? (
+                <MultiChart labels={churnSeries.map((c) => c.label)} sublabels={churnSeries.map((c) => c.sublabel)} series={[{ key: 'rate', label: 'Churn rate', color: CAUTION, kind: 'bar', values: churnSeries.map((c) => c.value) }]} format={(n) => `${Math.round(n * 10) / 10}%`} height={200} />
+              ) : <Skeleton height={200} />}
               <StyledRow style={{ margin: '12px 0' }}>
                 <StyledLabel>Breakdown</StyledLabel>
                 <StyledMuted>click a number to see who</StyledMuted>

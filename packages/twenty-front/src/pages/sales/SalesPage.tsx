@@ -1,7 +1,7 @@
 import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
-import { IconArrowUpRight, IconRefresh, IconX } from 'twenty-ui/icon';
+import { IconRefresh, IconX } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
@@ -9,6 +9,43 @@ import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 import { PageHeader } from '@/ui/layout/page/components/PageHeader';
 import { IconSales } from '@/custom-pages/os/IconSales';
 import { Chart } from '@/custom-pages/os/Chart';
+import {
+  ACCENT,
+  addDays,
+  fmtUsd,
+  fmtWhen,
+  isoDate,
+  type Kpi,
+  KpiTile,
+  PillButton,
+  POSITIVE,
+  StyledBars,
+  StyledBigValue,
+  StyledBody,
+  StyledCard,
+  StyledCardHead,
+  StyledCardHint,
+  StyledCardTitle,
+  StyledContent,
+  StyledDivider,
+  StyledError,
+  StyledField,
+  StyledFooter,
+  StyledFootnote,
+  StyledGrid2,
+  StyledGrid3,
+  StyledGrid6,
+  StyledHeaderActions,
+  StyledHeaderMeta,
+  StyledLabel,
+  StyledPage,
+  StyledProgress,
+  StyledRow,
+  StyledStack,
+  StyledSub,
+  StyledTable,
+  StyledTile,
+} from '@/custom-pages/os/ui';
 import {
   fetchAttributionSplit,
   fetchConversion,
@@ -31,25 +68,6 @@ import {
   type ShowUp,
 } from '@/custom-pages/os/data';
 
-// Drill-down pages (records, customers, setters, churn) still live in the OS app.
-// When VITE_OS_URL is set, tiles link out to them; otherwise they are plain tiles.
-const OS_BASE_URL: string = (import.meta.env.VITE_OS_URL ?? '').replace(/\/$/, '');
-const osHref = (path?: string) => (OS_BASE_URL && path ? `${OS_BASE_URL}${path}` : undefined);
-
-const ACCENT = 'var(--t-color-blue, #1b4498)';
-const POSITIVE = t.tag.text.green;
-const CAUTION = t.tag.text.orange;
-
-/* ---------------------------------------------------------------- */
-/*  date helpers for the custom range picker                         */
-/* ---------------------------------------------------------------- */
-const isoDate = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-};
 const rangePreset = (kind: string): { from: string; to: string } => {
   const today = new Date();
   const dow = (today.getDay() + 6) % 7; // 0 = Monday
@@ -58,154 +76,8 @@ const rangePreset = (kind: string): { from: string; to: string } => {
   if (kind === 'last-30') return { from: isoDate(addDays(today, -29)), to: isoDate(today) };
   return { from: isoDate(addDays(today, -6)), to: isoDate(today) };
 };
-const fmtUsd = (n: number) => '$' + Math.round(n).toLocaleString();
-const fmtWhen = (s: string | null) =>
-  s ? new Date(s).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 
-/* ---------------------------------------------------------------- */
-/*  styled (Twenty tokens only)                                      */
-/* ---------------------------------------------------------------- */
-const StyledPage = styled.div`
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  background: ${t.background.noisy};
-  color: ${t.font.color.primary};
-  font-family: ${t.font.family};
-  font-size: ${t.font.size.md};
-`;
-
-const StyledBody = styled.div`
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: ${t.spacing[4]};
-`;
-
-const StyledContent = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${t.spacing[4]};
-  margin: 0 auto;
-  max-width: 1240px;
-  width: 100%;
-`;
-
-const StyledHeaderActions = styled.div`
-  align-items: center;
-  display: flex;
-  gap: ${t.spacing[3]};
-`;
-
-const StyledHeaderMeta = styled.div`
-  color: ${t.font.color.tertiary};
-  font-size: ${t.font.size.xs};
-  white-space: nowrap;
-  span {
-    color: ${t.font.color.secondary};
-    font-variant-numeric: tabular-nums;
-  }
-`;
-
-const StyledProgress = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${t.spacing[1]};
-  width: 200px;
-  div[data-track] {
-    background: ${t.background.tertiary};
-    border-radius: ${t.border.radius.pill};
-    height: 3px;
-    overflow: hidden;
-    width: 100%;
-  }
-  div[data-fill] {
-    background: ${ACCENT};
-    height: 100%;
-    transition: width 0.3s ease-out;
-  }
-`;
-
-const StyledCard = styled.div`
-  background: ${t.background.primary};
-  border: 1px solid ${t.border.color.medium};
-  border-radius: ${t.border.radius.md};
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  padding: ${t.spacing[4]};
-  min-width: 0;
-`;
-
-const StyledCardHead = styled.div`
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: ${t.spacing[3]};
-  gap: ${t.spacing[2]};
-`;
-
-const StyledCardTitle = styled.div`
-  color: ${t.font.color.primary};
-  font-size: ${t.font.size.md};
-  font-weight: ${t.font.weight.medium};
-`;
-
-const StyledCardHint = styled.div`
-  color: ${t.font.color.tertiary};
-  font-size: ${t.font.size.xs};
-  text-align: right;
-`;
-
-const StyledLabel = styled.div`
-  color: ${t.font.color.tertiary};
-  font-size: ${t.font.size.xs};
-  font-weight: ${t.font.weight.medium};
-`;
-
-const StyledBigValue = styled.div`
-  color: ${t.font.color.primary};
-  font-size: ${t.font.size.xl};
-  font-weight: ${t.font.weight.semiBold};
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-`;
-
-const StyledSub = styled.span`
-  color: ${t.font.color.tertiary};
-  font-size: ${t.font.size.xs};
-  margin-left: ${t.spacing[2]};
-`;
-
-const StyledGrid2 = styled.div`
-  display: grid;
-  gap: ${t.spacing[4]};
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-`;
-
-const StyledGrid6 = styled.div`
-  display: grid;
-  gap: ${t.spacing[3]};
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  @media (max-width: 640px) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-`;
-
-const StyledGrid3 = styled.div`
-  display: grid;
-  gap: ${t.spacing[4]};
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-`;
-
-const StyledRow = styled.div`
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: ${t.spacing[2]};
-`;
-
+/* page-specific styled bits */
 const StyledGoal = styled.div`
   align-items: flex-end;
   display: flex;
@@ -228,61 +100,6 @@ const StyledGoal = styled.div`
   }
 `;
 
-const StyledTile = styled.a`
-  background: ${t.background.primary};
-  border: 1px solid ${t.border.color.medium};
-  border-radius: ${t.border.radius.md};
-  box-sizing: border-box;
-  color: inherit;
-  display: flex;
-  flex-direction: column;
-  gap: ${t.spacing[2]};
-  min-height: 92px;
-  min-width: 0;
-  padding: ${t.spacing[3]};
-  text-decoration: none;
-  transition: ${t.clickableElementBackgroundTransition};
-  &[href] {
-    cursor: pointer;
-  }
-  &[href]:hover {
-    background: ${t.background.transparent.light};
-    border-color: ${t.border.color.strong};
-  }
-  div[data-label] {
-    align-items: center;
-    color: ${t.font.color.tertiary};
-    display: flex;
-    font-size: ${t.font.size.xs};
-    font-weight: ${t.font.weight.medium};
-    gap: ${t.spacing[1]};
-    justify-content: space-between;
-    min-width: 0;
-    span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-  div[data-value] {
-    color: ${t.font.color.primary};
-    font-size: clamp(15px, 1.6vw, 20px);
-    font-weight: ${t.font.weight.semiBold};
-    font-variant-numeric: tabular-nums;
-    line-height: 1.2;
-    margin-top: auto;
-  }
-  div[data-delta] {
-    font-size: ${t.font.size.xs};
-  }
-  div[data-delta='positive'] {
-    color: ${POSITIVE};
-  }
-  div[data-delta='caution'] {
-    color: ${CAUTION};
-  }
-`;
-
 const StyledRangeBox = styled.div`
   align-items: center;
   background: ${t.background.primary};
@@ -294,144 +111,6 @@ const StyledRangeBox = styled.div`
   padding: ${t.spacing[2]} ${t.spacing[3]};
   &[data-active] {
     border-color: ${t.border.color.blue};
-    background: ${t.background.transparent.blue};
-  }
-`;
-
-const StyledDivider = styled.span`
-  background: ${t.border.color.medium};
-  height: 16px;
-  margin: 0 ${t.spacing[1]};
-  width: 1px;
-`;
-
-const StyledDateLabel = styled.label`
-  align-items: center;
-  color: ${t.font.color.tertiary};
-  display: flex;
-  font-size: ${t.font.size.sm};
-  gap: ${t.spacing[1]};
-  input {
-    background: ${t.background.primary};
-    border: 1px solid ${t.border.color.medium};
-    border-radius: ${t.border.radius.sm};
-    box-sizing: border-box;
-    color: ${t.font.color.primary};
-    font-family: inherit;
-    font-size: ${t.font.size.sm};
-    height: 24px;
-    outline: none;
-    padding: 0 ${t.spacing[2]};
-  }
-  input:focus {
-    border-color: ${t.border.color.blue};
-  }
-`;
-
-const StyledBars = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${t.spacing[3]};
-  div[data-row] {
-    align-items: center;
-    display: grid;
-    gap: ${t.spacing[3]};
-    grid-template-columns: minmax(150px, 210px) 1fr 56px 40px;
-  }
-  div[data-stage] {
-    color: ${t.font.color.secondary};
-    font-size: ${t.font.size.sm};
-    em {
-      color: ${POSITIVE};
-      font-size: ${t.font.size.xs};
-      font-style: normal;
-      margin-left: ${t.spacing[1]};
-    }
-  }
-  div[data-track] {
-    background: ${t.background.tertiary};
-    border-radius: ${t.border.radius.pill};
-    height: 8px;
-    overflow: hidden;
-  }
-  div[data-fill] {
-    background: ${ACCENT};
-    border-radius: ${t.border.radius.pill};
-    height: 100%;
-  }
-  div[data-fill='muted'] {
-    background: ${t.font.color.extraLight};
-  }
-  div[data-fill='positive'] {
-    background: ${POSITIVE};
-  }
-  div[data-fill='caution'] {
-    background: ${CAUTION};
-  }
-  div[data-num] {
-    color: ${t.font.color.primary};
-    font-size: ${t.font.size.sm};
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-  div[data-pct] {
-    color: ${t.font.color.tertiary};
-    font-size: ${t.font.size.xs};
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-  }
-`;
-
-const StyledFootnote = styled.p`
-  color: ${t.font.color.tertiary};
-  font-size: ${t.font.size.xs};
-  margin: ${t.spacing[4]} 0 0;
-`;
-
-const StyledTable = styled.table`
-  border-collapse: collapse;
-  font-size: ${t.font.size.sm};
-  width: 100%;
-  th {
-    border-bottom: 1px solid ${t.border.color.light};
-    color: ${t.font.color.tertiary};
-    font-size: ${t.font.size.xs};
-    font-weight: ${t.font.weight.medium};
-    padding: 0 ${t.spacing[2]} ${t.spacing[2]};
-    text-align: right;
-  }
-  th:first-child,
-  td:first-child {
-    text-align: left;
-    padding-left: ${t.spacing[2]};
-  }
-  td {
-    border-bottom: 1px solid ${t.border.color.light};
-    color: ${t.font.color.primary};
-    font-variant-numeric: tabular-nums;
-    padding: ${t.spacing[2]};
-    text-align: right;
-  }
-  tr:last-child td {
-    border-bottom: 0;
-  }
-  td[data-muted] {
-    color: ${t.font.color.secondary};
-  }
-  td[data-positive] {
-    color: ${POSITIVE};
-  }
-  td[data-accent] {
-    color: ${ACCENT};
-  }
-  tbody tr[data-clickable] {
-    cursor: pointer;
-    transition: ${t.clickableElementBackgroundTransition};
-  }
-  tbody tr[data-clickable]:hover {
-    background: ${t.background.transparent.light};
-  }
-  tbody tr[data-selected] {
     background: ${t.background.transparent.blue};
   }
 `;
@@ -459,32 +138,6 @@ const StyledStat3 = styled.div`
   }
 `;
 
-const StyledError = styled.div`
-  background: ${t.background.transparent.danger};
-  border: 1px solid ${t.border.color.danger};
-  border-radius: ${t.border.radius.md};
-  color: ${t.font.color.danger};
-  font-size: ${t.font.size.sm};
-  padding: ${t.spacing[3]};
-`;
-
-const StyledFooter = styled.div`
-  border-top: 1px solid ${t.border.color.light};
-  color: ${t.font.color.tertiary};
-  display: flex;
-  font-size: ${t.font.size.xs};
-  justify-content: space-between;
-  margin-top: ${t.spacing[4]};
-  padding-top: ${t.spacing[3]};
-  b {
-    color: ${POSITIVE};
-    font-weight: ${t.font.weight.medium};
-  }
-`;
-
-/* ---------------------------------------------------------------- */
-/*  small pieces                                                     */
-/* ---------------------------------------------------------------- */
 const LinkedInTrend = ({ data }: { data: DashboardMetrics['linkedin_monthly'] }) => {
   const W = 360;
   const H = 90;
@@ -512,35 +165,6 @@ const LinkedInTrend = ({ data }: { data: DashboardMetrics['linkedin_monthly'] })
   );
 };
 
-type Kpi = { label: string; value: string; delta: string; tone: 'positive' | 'caution'; to?: string };
-
-const KpiTile = ({ kpi }: { kpi: Kpi }) => {
-  const href = osHref(kpi.to);
-  return (
-    <StyledTile href={href} target={href ? '_blank' : undefined} rel={href ? 'noreferrer' : undefined}>
-      <div data-label>
-        <span>{kpi.label}</span>
-        {href && <IconArrowUpRight size={12} />}
-      </div>
-      <div data-value>{kpi.value}</div>
-      <div data-delta={kpi.tone}>{kpi.delta}</div>
-    </StyledTile>
-  );
-};
-
-const PillButton = ({ active, onClick, title }: { active: boolean; onClick: () => void; title: string }) => (
-  <Button
-    size="small"
-    variant={active ? 'primary' : 'secondary'}
-    accent={active ? 'blue' : 'default'}
-    title={title}
-    onClick={onClick}
-  />
-);
-
-/* ---------------------------------------------------------------- */
-/*  page                                                             */
-/* ---------------------------------------------------------------- */
 const OperatingSystem = () => {
   const [m, setM] = useState<DashboardMetrics | null>(null);
   const [showUp, setShowUp] = useState<ShowUp | null>(null);
@@ -581,13 +205,11 @@ const OperatingSystem = () => {
     }
   }, [monthly, period]);
 
-  // Load range metrics whenever a custom range is set (and on refresh).
   useEffect(() => {
     if (range?.from && range?.to) fetchRangeMetrics(range.from, range.to).then(setRangeM).catch(() => setRangeM(null));
     else setRangeM(null);
   }, [range]);
 
-  // New/churned customer counts for whichever period is active (range > month > all-time).
   useEffect(() => {
     const mth = range ? null : period !== 'all' ? period : null;
     fetchCustomerCounts(mth, range?.from ?? null, range?.to ?? null).then(setCounts).catch(() => setCounts(null));
@@ -603,7 +225,6 @@ const OperatingSystem = () => {
     } catch (e) {
       syncErr = (e as Error).message;
     }
-    // Always re-query so the page reflects whatever did sync, then confirm the outcome.
     try {
       await load();
       if (range?.from && range?.to) setRangeM(await fetchRangeMetrics(range.from, range.to).catch(() => null));
@@ -615,7 +236,6 @@ const OperatingSystem = () => {
 
   const mo = !range && period !== 'all' ? monthly.find((r) => r.month_key === period) : null;
   const cancelRate = m ? ((m.kpis.appts_canceled / Math.max(m.kpis.appts_booked, 1)) * 100).toFixed(1) : '—';
-  const heldRate = m ? Math.round((m.kpis.appts_held / Math.max(m.kpis.appts_booked, 1)) * 100) : 0;
   const rq = range ? `&from=${range.from}&to=${range.to}` : '';
   const liTile: Kpi = {
     label: 'Active LinkedIn accounts',
@@ -688,7 +308,6 @@ const OperatingSystem = () => {
     : [];
 
   const arrPct = growth ? Math.round((growth.current_arr / growth.arr_goal) * 100) : 0;
-  const churnHref = osHref('/churn');
   const monthPills = [{ key: 'all', label: 'All time' }, ...monthly.map((r) => ({ key: r.month_key, label: r.month.replace(' 2026', " '26") }))];
   const presets = [
     { k: 'this-week', label: 'This week' },
@@ -734,7 +353,6 @@ const OperatingSystem = () => {
           <StyledContent>
             {err && <StyledError>Could not load metrics: {err}</StyledError>}
 
-            {/* Business health — ARR + paid subscribers */}
             <StyledGrid2>
               <StyledCard>
                 <StyledCardHead>
@@ -774,11 +392,6 @@ const OperatingSystem = () => {
                       {growth && <StyledSub>active paid</StyledSub>}
                     </StyledBigValue>
                   </div>
-                  {churnHref && (
-                    <a href={churnHref} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
-                      <Button size="small" variant="tertiary" Icon={IconArrowUpRight} title="Churn" />
-                    </a>
-                  )}
                 </StyledCardHead>
                 <Chart
                   data={(growth?.series ?? []).map((s) => ({ label: s.month.slice(2).replace('-', '/'), value: s.subscribers, sublabel: s.month }))}
@@ -791,7 +404,6 @@ const OperatingSystem = () => {
               </StyledCard>
             </StyledGrid2>
 
-            {/* Period pills */}
             <StyledRow>
               <StyledLabel>Period</StyledLabel>
               {monthPills.map((p) => (
@@ -799,7 +411,6 @@ const OperatingSystem = () => {
               ))}
             </StyledRow>
 
-            {/* Custom date range picker */}
             <StyledRangeBox data-active={range ? '' : undefined}>
               <StyledLabel>Custom range</StyledLabel>
               {presets.map((p) => {
@@ -808,7 +419,7 @@ const OperatingSystem = () => {
                 return <PillButton key={p.k} title={p.label} active={active} onClick={() => setRange(pr)} />;
               })}
               <StyledDivider />
-              <StyledDateLabel>
+              <StyledField>
                 From
                 <input
                   type="date"
@@ -816,8 +427,8 @@ const OperatingSystem = () => {
                   max={range?.to || undefined}
                   onChange={(e) => { const v = e.target.value; if (v) setRange((r) => ({ from: v, to: r?.to && r.to >= v ? r.to : v })); }}
                 />
-              </StyledDateLabel>
-              <StyledDateLabel>
+              </StyledField>
+              <StyledField>
                 To
                 <input
                   type="date"
@@ -825,7 +436,7 @@ const OperatingSystem = () => {
                   min={range?.from || undefined}
                   onChange={(e) => { const v = e.target.value; if (v) setRange((r) => ({ from: r?.from && r.from <= v ? r.from : v, to: v })); }}
                 />
-              </StyledDateLabel>
+              </StyledField>
               {range && (
                 <>
                   <Button size="small" variant="tertiary" Icon={IconX} title="Clear" onClick={() => setRange(null)} />
@@ -834,7 +445,6 @@ const OperatingSystem = () => {
               )}
             </StyledRangeBox>
 
-            {/* North star KPIs */}
             <StyledGrid6>
               {m
                 ? kpis.map((k) => <KpiTile key={k.label} kpi={k} />)
@@ -847,9 +457,8 @@ const OperatingSystem = () => {
                   ))}
             </StyledGrid6>
 
-            {/* Funnels + month table */}
             <StyledGrid2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--t-spacing-4)' }}>
+              <StyledStack>
                 <StyledCard>
                   <StyledCardHead>
                     <StyledCardTitle>Appointment → sale funnel</StyledCardTitle>
@@ -896,7 +505,7 @@ const OperatingSystem = () => {
                     Signed up with no booked call · {orgRate}% trial→sale vs {fTrials ? Math.round((fSales / fTrials) * 100) : 0}% on the appointment path
                   </StyledFootnote>
                 </StyledCard>
-              </div>
+              </StyledStack>
 
               <StyledCard>
                 <StyledCardHead>
@@ -915,7 +524,7 @@ const OperatingSystem = () => {
                           ['New', 'New paying customers — first-ever payment this month'],
                           ['Cash', 'Cash collected this month'],
                         ] as [string, string][]).map(([h, tip]) => (
-                          <th key={h} title={tip}>{h}</th>
+                          <th key={h} title={tip} data-right>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -928,11 +537,11 @@ const OperatingSystem = () => {
                           onClick={() => { setRange(null); setPeriod(period === row.month_key ? 'all' : row.month_key); }}
                         >
                           <td data-muted>{row.month.replace(' 2026', '')}</td>
-                          <td>{row.booked}</td>
-                          <td data-positive>{row.sat}</td>
-                          <td>{row.transactions}</td>
-                          <td data-accent>{row.new_customers}</td>
-                          <td>{fmtUsd(row.cash_collected)}</td>
+                          <td data-right>{row.booked}</td>
+                          <td data-right data-positive>{row.sat}</td>
+                          <td data-right>{row.transactions}</td>
+                          <td data-right data-accent>{row.new_customers}</td>
+                          <td data-right>{fmtUsd(row.cash_collected)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -941,7 +550,6 @@ const OperatingSystem = () => {
               </StyledCard>
             </StyledGrid2>
 
-            {/* Bottom row */}
             <StyledGrid3>
               <StyledCard>
                 <StyledCardHead>
@@ -959,7 +567,7 @@ const OperatingSystem = () => {
                       ] as [string, string | number][]).map(([k, v]) => (
                         <tr key={k}>
                           <td data-muted>{k}</td>
-                          <td>{v}</td>
+                          <td data-right>{v}</td>
                         </tr>
                       ))}
                   </tbody>

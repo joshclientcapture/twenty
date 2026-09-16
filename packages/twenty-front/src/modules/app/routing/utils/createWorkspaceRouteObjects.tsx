@@ -47,6 +47,18 @@ const MobileHomePage = lazy(() =>
   })),
 );
 
+const RecordsPage = lazy(() =>
+  import('~/pages/records/RecordsPage').then((module) => ({
+    default: module.RecordsPage,
+  })),
+);
+
+const TheraponPage = lazy(() =>
+  import('~/pages/therapon/TheraponPage').then((module) => ({
+    default: module.TheraponPage,
+  })),
+);
+
 const SalesPage = lazy(() =>
   import('~/pages/sales/SalesPage').then((module) => ({
     default: module.SalesPage,
@@ -138,6 +150,24 @@ export const createWorkspaceRouteObjects = ({
           <AiChatPage />
         </LazyRoute>
       ),
+    },
+    {
+      path: AppPath.Records,
+      element: (
+        <LazyRoute>
+          <RecordsPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Therapon,
+      element: (
+        <LazyRoute>
+          <TheraponPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
     },
     {
       path: AppPath.Sales,

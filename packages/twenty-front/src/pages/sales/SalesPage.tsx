@@ -195,7 +195,10 @@ const StyledGrid2 = styled.div`
 const StyledGrid6 = styled.div`
   display: grid;
   gap: ${t.spacing[3]};
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 `;
 
 const StyledGrid3 = styled.div`
@@ -243,7 +246,8 @@ const StyledTile = styled.a`
   flex-direction: column;
   gap: ${t.spacing[2]};
   min-height: 92px;
-  padding: ${t.spacing[3]} ${t.spacing[4]};
+  min-width: 0;
+  padding: ${t.spacing[3]};
   text-decoration: none;
   transition: ${t.clickableElementBackgroundTransition};
   &[href] {
@@ -261,10 +265,16 @@ const StyledTile = styled.a`
     font-weight: ${t.font.weight.medium};
     gap: ${t.spacing[1]};
     justify-content: space-between;
+    min-width: 0;
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
   div[data-value] {
     color: ${t.font.color.primary};
-    font-size: ${t.font.size.xl};
+    font-size: clamp(15px, 1.6vw, 20px);
     font-weight: ${t.font.weight.semiBold};
     font-variant-numeric: tabular-nums;
     line-height: 1.2;

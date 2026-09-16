@@ -1,16 +1,16 @@
 import { styled } from '@linaria/react';
 import { useEffect, useMemo, useState } from 'react';
-import { geoNaturalEarth1, geoPath } from 'd3-geo';
+import { geoContains, geoNaturalEarth1, geoPath } from 'd3-geo';
 import { feature } from 'topojson-client';
-import type { Topology, GeometryCollection } from 'topojson-specification';
-import countriesTopo from 'world-atlas/countries-110m.json';
-import { IconRefresh } from 'twenty-ui/icon';
+import type { GeometryCollection, Topology } from 'topojson-specification';
+import landTopo from 'world-atlas/land-110m.json';
+import { IconRefresh, IconX } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { type CustomerPoint, fetchCustomerPoints, refreshMap } from '@/custom-pages/os/data';
-import { fmtUsd, PillButton, StyledCard, StyledField, StyledMuted, StyledRow, StyledTable, StyledTextLink } from '@/custom-pages/os/ui';
+import { fmtUsd, PillButton, StyledField, StyledMuted, StyledTextLink } from '@/custom-pages/os/ui';
 
 // Country centroids for customers Stripe could not geocode past the country.
 const COUNTRY: Record<string, { name: string; lat: number; lng: number }> = {
@@ -62,31 +62,50 @@ const coordFor = (p: CustomerPoint): [number, number] | null => {
 };
 
 const W = 1000;
-const H = 520;
+const H = 500;
+const GRID_STEP = 1.7; // degrees between land dots; smaller = denser, slower to compute once
 
-const StyledLayout = styled.div`
-  display: grid;
-  gap: ${t.spacing[4]};
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
-  @media (max-width: 960px) { grid-template-columns: 1fr; }
+const StyledFrame = styled.div`
+  background: ${t.background.secondary};
+  border: 1px solid ${t.border.color.light};
+  border-radius: ${t.border.radius.md};
+  overflow: hidden;
+  position: relative;
 `;
 
-const StyledMapWrap = styled.div`
-  position: relative;
-  svg { display: block; height: auto; width: 100%; }
-  path[data-land] { fill: ${t.background.tertiary}; stroke: ${t.border.color.medium}; stroke-width: 0.5; }
+const StyledToolbar = styled.div`
+  align-items: center;
+  display: flex;
+  gap: ${t.spacing[2]};
+  justify-content: space-between;
+  left: ${t.spacing[3]};
+  pointer-events: none;
+  position: absolute;
+  right: ${t.spacing[3]};
+  top: ${t.spacing[3]};
+  z-index: 2;
+  > div { align-items: center; display: flex; gap: ${t.spacing[2]}; pointer-events: auto; }
+`;
+
+const StyledMap = styled.svg`
+  display: block;
+  height: auto;
+  width: 100%;
+  circle[data-land] { fill: ${t.font.color.light}; opacity: 0.55; }
+  circle[data-halo] { fill: ${t.color.blue}; opacity: 0.14; }
   circle[data-dot] {
     cursor: pointer;
     fill: ${t.color.blue};
-    fill-opacity: 0.75;
-    stroke: ${t.background.primary};
-    stroke-width: 1;
-    transition-property: r, fill-opacity;
+    stroke: ${t.background.secondary};
+    stroke-width: 1.5;
+    transition-property: r;
     transition-duration: 120ms;
     transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
-  circle[data-dot][data-on] { fill: ${t.tag.text.green}; fill-opacity: 1; }
-  circle[data-dot]:hover { fill-opacity: 1; }
+  circle[data-dot][data-on] { fill: ${t.tag.text.green}; }
+  circle[data-dot]:focus-visible { outline: none; stroke: ${t.color.blue}; stroke-width: 3; }
+  g[data-inactive] circle[data-dot] { fill: ${t.font.color.light}; }
+  g[data-inactive] circle[data-halo] { fill: ${t.font.color.light}; }
 `;
 
 const StyledTooltip = styled.div`
@@ -95,35 +114,56 @@ const StyledTooltip = styled.div`
   border-radius: ${t.border.radius.sm};
   box-shadow: ${t.boxShadow.light};
   font-size: ${t.font.size.sm};
-  padding: ${t.spacing[2]} ${t.spacing[3]};
+  padding: ${t.spacing[1]} ${t.spacing[2]};
   pointer-events: none;
   position: absolute;
+  transform: translate(-50%, calc(-100% - 12px));
   white-space: nowrap;
-  z-index: 2;
+  z-index: 3;
   div[data-name] { color: ${t.font.color.primary}; font-weight: ${t.font.weight.medium}; }
   div[data-sub] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; }
 `;
 
-const StyledList = styled.div`
-  max-height: 520px;
-  overflow: auto;
-  tr[data-on] td { background: ${t.background.tertiary}; }
-  tbody tr { cursor: pointer; }
+// Detail card for a pinned customer. Enters with a short fade and rise; exits by unmounting.
+const StyledDetail = styled.div`
+  animation: os-map-detail 160ms cubic-bezier(0.2, 0, 0, 1) both;
+  background: ${t.background.primary};
+  border: 1px solid ${t.border.color.medium};
+  border-radius: ${t.border.radius.md};
+  bottom: ${t.spacing[3]};
+  box-shadow: ${t.boxShadow.strong};
+  left: ${t.spacing[3]};
+  max-width: 320px;
+  padding: ${t.spacing[3]} ${t.spacing[4]};
+  position: absolute;
+  z-index: 3;
+  @keyframes os-map-detail { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  div[data-head] { align-items: flex-start; display: flex; gap: ${t.spacing[2]}; justify-content: space-between; }
+  div[data-name] { color: ${t.font.color.primary}; font-size: ${t.font.size.md}; font-weight: ${t.font.weight.semiBold}; }
+  div[data-where] { color: ${t.font.color.secondary}; font-size: ${t.font.size.sm}; margin-top: 2px; }
+  div[data-stats] { display: flex; gap: ${t.spacing[4]}; margin-top: ${t.spacing[2]}; }
+  div[data-stats] div[data-k] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; }
+  div[data-stats] div[data-v] { color: ${t.font.color.primary}; font-size: ${t.font.size.lg}; font-weight: ${t.font.weight.semiBold}; font-variant-numeric: tabular-nums; }
+  div[data-foot] { margin-top: ${t.spacing[2]}; }
 `;
 
-const StyledCountries = styled.div`
+const StyledLegend = styled.div`
+  align-items: center;
+  border-top: 1px solid ${t.border.color.light};
+  color: ${t.font.color.tertiary};
   display: flex;
   flex-wrap: wrap;
-  gap: ${t.spacing[1]};
-  margin-bottom: ${t.spacing[3]};
-  span {
+  font-size: ${t.font.size.xs};
+  gap: ${t.spacing[1]} ${t.spacing[2]};
+  padding: ${t.spacing[2]} ${t.spacing[3]};
+  span[data-chip] {
     background: ${t.background.tertiary};
     border-radius: ${t.border.radius.sm};
     color: ${t.font.color.secondary};
-    font-size: ${t.font.size.xs};
     padding: 2px ${t.spacing[2]};
   }
-  span b { color: ${t.font.color.primary}; font-weight: ${t.font.weight.medium}; }
+  span[data-chip] b { color: ${t.font.color.primary}; font-weight: ${t.font.weight.medium}; }
+  span[data-count] { margin-right: auto; }
 `;
 
 type Dot = { p: CustomerPoint; x: number; y: number };
@@ -133,18 +173,26 @@ export const CustomerMap = () => {
   const [onlyActive, setOnlyActive] = useState(true);
   const [q, setQ] = useState('');
   const [hover, setHover] = useState<Dot | null>(null);
-  const [pinned, setPinned] = useState<CustomerPoint | null>(null);
+  const [pinned, setPinned] = useState<Dot | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => { fetchCustomerPoints().then(setPoints).catch(() => setPoints([])); }, []);
 
-  const { landPaths, projection } = useMemo(() => {
-    const topo = countriesTopo as unknown as Topology<{ countries: GeometryCollection }>;
-    const collection = feature(topo, topo.objects.countries);
-    const proj = geoNaturalEarth1().fitSize([W, H], collection);
-    const path = geoPath(proj);
-    return { landPaths: collection.features.map((f) => path(f)).filter((d): d is string => !!d), projection: proj };
+  const { projection, landDots } = useMemo(() => {
+    const topo = landTopo as unknown as Topology<{ land: GeometryCollection }>;
+    const land = feature(topo, topo.objects.land);
+    const proj = geoNaturalEarth1().fitSize([W, H], land);
+    geoPath(proj);
+    const dots: [number, number][] = [];
+    for (let lat = -58; lat <= 84; lat += GRID_STEP) {
+      for (let lng = -180; lng < 180; lng += GRID_STEP) {
+        if (!geoContains(land, [lng, lat])) continue;
+        const xy = proj([lng, lat]);
+        if (xy) dots.push([Math.round(xy[0] * 10) / 10, Math.round(xy[1] * 10) / 10]);
+      }
+    }
+    return { projection: proj, landDots: dots };
   }, []);
 
   const filtered = useMemo(() => {
@@ -165,9 +213,11 @@ export const CustomerMap = () => {
   const countries = useMemo(() => {
     const m = new Map<string, number>();
     for (const p of filtered) m.set(p.country, (m.get(p.country) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   }, [filtered]);
   const activeCount = (points ?? []).filter((p) => p.active).length;
+
+  useEffect(() => { setPinned(null); setHover(null); }, [onlyActive, q]);
 
   const resync = async () => {
     setSyncing('Starting…');
@@ -183,81 +233,81 @@ export const CustomerMap = () => {
     }
   };
 
-  const toggle = (p: CustomerPoint) => setPinned((cur) => (cur?.customer_id === p.customer_id ? null : p));
-  const isOn = (p: CustomerPoint) => pinned?.customer_id === p.customer_id || hover?.p.customer_id === p.customer_id;
+  const isOn = (d: Dot) => pinned?.p.customer_id === d.p.customer_id;
+  const tip = hover && !isOn(hover) ? hover : null;
 
   return (
-    <StyledLayout>
-      <StyledCard>
-        <StyledRow style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-          <StyledRow>
-            <PillButton title={`Active · ${activeCount}`} active={onlyActive} onClick={() => setOnlyActive(true)} />
-            <PillButton title={`All paid · ${points?.length ?? 0}`} active={!onlyActive} onClick={() => setOnlyActive(false)} />
-          </StyledRow>
-          <StyledRow>
-            {syncStatus && !syncing && <Tag color={syncStatus.ok ? 'green' : 'orange'} text={syncStatus.msg} />}
-            {syncing && <StyledMuted>{syncing}</StyledMuted>}
-            <Button size="small" variant="secondary" Icon={IconRefresh} title="Refresh locations" disabled={!!syncing} onClick={resync} />
-          </StyledRow>
-        </StyledRow>
-        <StyledMapWrap>
-          <svg viewBox={`0 0 ${W} ${H}`} onClick={() => setPinned(null)}>
-            {landPaths.map((d, i) => <path key={i} data-land d={d} />)}
-            {dots.map(({ p, x, y }) => (
-              <circle
-                key={p.customer_id}
-                data-dot
-                data-on={isOn(p) ? '' : undefined}
-                cx={x}
-                cy={y}
-                r={isOn(p) ? 7 : 4}
-                onMouseEnter={() => setHover({ p, x, y })}
-                onMouseLeave={() => setHover(null)}
-                onClick={(e) => { e.stopPropagation(); toggle(p); }}
-              />
-            ))}
-          </svg>
-          {(hover ?? (pinned && dots.find((d) => d.p.customer_id === pinned.customer_id))) && (() => {
-            const d = hover ?? dots.find((x) => x.p.customer_id === pinned!.customer_id)!;
-            return (
-              <StyledTooltip style={{ left: `${(d.x / W) * 100}%`, top: `${(d.y / H) * 100}%`, transform: 'translate(12px, 12px)' }}>
-                <div data-name>{d.p.name}</div>
-                <div data-sub>{flag(d.p.country)} {d.p.city ? `${d.p.city}, ` : ''}{countryName(d.p.country)} · {d.p.payments} payment{d.p.payments === 1 ? '' : 's'} · {fmtUsd(d.p.total_paid)}</div>
-              </StyledTooltip>
-            );
-          })()}
-        </StyledMapWrap>
-        <StyledMuted>{dots.length} customers on the map · hover a dot or click to pin</StyledMuted>
-      </StyledCard>
+    <StyledFrame>
+      <StyledToolbar>
+        <div>
+          <PillButton title={`Active · ${activeCount}`} active={onlyActive} onClick={() => setOnlyActive(true)} />
+          <PillButton title={`All paid · ${points?.length ?? 0}`} active={!onlyActive} onClick={() => setOnlyActive(false)} />
+        </div>
+        <div>
+          {syncStatus && !syncing && <Tag color={syncStatus.ok ? 'green' : 'orange'} text={syncStatus.msg} />}
+          {syncing && <StyledMuted>{syncing}</StyledMuted>}
+          <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, city or country" style={{ width: 200 }} /></StyledField>
+          <Button size="small" variant="secondary" Icon={IconRefresh} title="Refresh" disabled={!!syncing} onClick={resync} />
+        </div>
+      </StyledToolbar>
 
-      <StyledCard>
-        <StyledRow style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-          <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, city or country" style={{ width: 220 }} /></StyledField>
-          {pinned && <Button size="small" variant="tertiary" title="Clear" onClick={() => setPinned(null)} />}
-        </StyledRow>
-        <StyledCountries>
-          {countries.map(([cc, n]) => <span key={cc}>{flag(cc)} {countryName(cc)} <b>{n}</b></span>)}
-        </StyledCountries>
-        <StyledList>
-          <StyledTable>
-            <thead><tr><th>Customer</th><th>Location</th><th>Paid</th></tr></thead>
-            <tbody>
-              {points === null && <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>Loading…</StyledMuted></td></tr>}
-              {points !== null && filtered.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>No matches.</StyledMuted></td></tr>}
-              {filtered.map((p) => (
-                <tr key={p.customer_id} data-on={pinned?.customer_id === p.customer_id ? '' : undefined} onClick={() => toggle(p)}>
-                  <td>
-                    <StyledTextLink to={`/records?type=customer_payments&arg=${encodeURIComponent(p.customer_id)}&name=${encodeURIComponent(p.name)}&back=/customers?view=map`} onClick={(e) => e.stopPropagation()}>{p.name}</StyledTextLink>
-                    {!p.active && <StyledMuted style={{ marginLeft: 6 }}>inactive</StyledMuted>}
-                  </td>
-                  <td>{flag(p.country)} {p.city ?? countryName(p.country)}</td>
-                  <td>{fmtUsd(p.total_paid)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </StyledTable>
-        </StyledList>
-      </StyledCard>
-    </StyledLayout>
+      <StyledMap viewBox={`0 0 ${W} ${H}`} onClick={() => setPinned(null)} role="img" aria-label="Customer locations">
+        {landDots.map(([x, y], i) => <circle key={i} data-land cx={x} cy={y} r={1.25} />)}
+        <g data-inactive={onlyActive ? undefined : ''}>
+          {dots.map((d) => (
+            <g key={d.p.customer_id} data-inactive={d.p.active ? undefined : ''}>
+              <circle data-halo cx={d.x} cy={d.y} r={isOn(d) ? 14 : 9} />
+              <circle
+                data-dot
+                data-on={isOn(d) ? '' : undefined}
+                cx={d.x}
+                cy={d.y}
+                r={isOn(d) || hover?.p.customer_id === d.p.customer_id ? 5.5 : 3.75}
+                tabIndex={0}
+                aria-label={d.p.name}
+                onMouseEnter={() => setHover(d)}
+                onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover(d)}
+                onBlur={() => setHover(null)}
+                onClick={(e) => { e.stopPropagation(); setPinned((cur) => (cur?.p.customer_id === d.p.customer_id ? null : d)); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPinned((cur) => (cur?.p.customer_id === d.p.customer_id ? null : d)); } }}
+              />
+            </g>
+          ))}
+        </g>
+      </StyledMap>
+
+      {tip && (
+        <StyledTooltip style={{ left: `${(tip.x / W) * 100}%`, top: `${(tip.y / H) * 100}%` }}>
+          <div data-name>{tip.p.name}</div>
+          <div data-sub>{flag(tip.p.country)} {tip.p.city ? `${tip.p.city}, ` : ''}{countryName(tip.p.country)} · {fmtUsd(tip.p.total_paid)}</div>
+        </StyledTooltip>
+      )}
+
+      {pinned && (
+        <StyledDetail onClick={(e) => e.stopPropagation()}>
+          <div data-head>
+            <div>
+              <div data-name>{pinned.p.name}</div>
+              <div data-where>{flag(pinned.p.country)} {pinned.p.city ? `${pinned.p.city}, ` : ''}{pinned.p.state ? `${pinned.p.state}, ` : ''}{countryName(pinned.p.country)}{!pinned.p.active && ' · inactive'}</div>
+            </div>
+            <Button size="small" variant="tertiary" Icon={IconX} title="" onClick={() => setPinned(null)} />
+          </div>
+          <div data-stats>
+            <div><div data-k>Total paid</div><div data-v>{fmtUsd(pinned.p.total_paid)}</div></div>
+            <div><div data-k>Payments</div><div data-v>{pinned.p.payments}</div></div>
+          </div>
+          <div data-foot>
+            <StyledTextLink to={`/records?type=customer_payments&arg=${encodeURIComponent(pinned.p.customer_id)}&name=${encodeURIComponent(pinned.p.name)}&back=/customers?view=map`}>Payment history →</StyledTextLink>
+            {pinned.p.email && <StyledMuted style={{ marginLeft: 12 }}>{pinned.p.email}</StyledMuted>}
+          </div>
+        </StyledDetail>
+      )}
+
+      <StyledLegend>
+        <span data-count>{points === null ? 'Loading…' : `${dots.length} customers on the map · click a dot for details`}</span>
+        {countries.map(([cc, n]) => <span key={cc} data-chip>{flag(cc)} {countryName(cc)} <b>{n}</b></span>)}
+      </StyledLegend>
+    </StyledFrame>
   );
 };

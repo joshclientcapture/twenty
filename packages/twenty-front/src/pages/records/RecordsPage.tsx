@@ -128,8 +128,22 @@ const CONFIG: Record<string, { title: string; sub: string; cols: Col[]; back: st
       { key: 'recording', header: 'Call', kind: 'recording' },
     ],
   },
+  closer_customers: {
+    title: 'Customers closed', sub: "Every customer this closer closed · filter by status or plan to see who's still active", back: '/closers',
+    cols: [
+      { key: 'name', header: 'Customer', kind: 'text' },
+      { key: 'email', header: 'Email', kind: 'text' },
+      { key: 'status', header: 'Status', kind: 'text' },
+      { key: 'paid', header: 'Active', kind: 'bool' },
+      { key: 'plan', header: 'Plan', kind: 'text' },
+      { key: 'mrr', header: 'MRR / mo', kind: 'money' },
+      { key: 'total_paid', header: 'Total paid', kind: 'money' },
+      { key: 'date', header: 'First paid', kind: 'date' },
+      { key: 'recording', header: 'Call', kind: 'recording' },
+    ],
+  },
   sales: {
-    title: 'Sales — payments', sub: 'Every payment attributed to Therapon · repeat payments marked · click a name for full history', back: '/therapon',
+    title: 'Sales — payments', sub: 'Every payment attributed to this closer · repeat payments marked · click a name for full history', back: '/closers',
     cols: [
       { key: 'name', header: 'Customer', kind: 'text' },
       { key: 'email', header: 'Email', kind: 'text' },

@@ -276,6 +276,12 @@ export async function fetchRecords(type: string, month: string | null, arg: stri
     if (error) throw error;
     return (data ?? []) as RecordRow[];
   }
+  // `arg` carries the closer id for the per-closer customers drill-down.
+  if (type === "closer_customers") {
+    const { data, error } = await osClient.rpc("get_closer_customers", { p_closer_id: arg, p_month: month, p_from: from, p_to: to });
+    if (error) throw error;
+    return (data ?? []) as RecordRow[];
+  }
   const { data, error } = await osClient.rpc("get_records", { p_type: type, p_month: month, p_arg: arg, p_from: from, p_to: to });
   if (error) throw error;
   return (data ?? []) as RecordRow[];

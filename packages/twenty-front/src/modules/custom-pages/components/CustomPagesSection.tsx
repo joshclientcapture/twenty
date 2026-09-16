@@ -21,7 +21,7 @@ export const CustomPagesSection = ({ section }: { section: CustomPageSectionKey 
           label={label}
           to={path}
           Icon={Icon}
-          active={pathname === path}
+          active={pathname === path || pathname.startsWith(`${path}/`)}
         />
       ))}
     </CollapsibleNavigationDrawerSection>

@@ -53,9 +53,15 @@ const RecordsPage = lazy(() =>
   })),
 );
 
-const TheraponPage = lazy(() =>
-  import('~/pages/therapon/TheraponPage').then((module) => ({
-    default: module.TheraponPage,
+const CloserPage = lazy(() =>
+  import('~/pages/closers/CloserPage').then((module) => ({
+    default: module.CloserPage,
+  })),
+);
+
+const ClosersPage = lazy(() =>
+  import('~/pages/closers/ClosersPage').then((module) => ({
+    default: module.ClosersPage,
   })),
 );
 
@@ -164,7 +170,25 @@ export const createWorkspaceRouteObjects = ({
       path: AppPath.Therapon,
       element: (
         <LazyRoute>
-          <TheraponPage />
+          <CloserPage closerId="therapon" />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Closers,
+      element: (
+        <LazyRoute>
+          <ClosersPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Closer,
+      element: (
+        <LazyRoute>
+          <CloserPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

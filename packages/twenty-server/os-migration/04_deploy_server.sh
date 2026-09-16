@@ -9,6 +9,8 @@ cd /root/twenty
 git checkout -q -- yarn.lock 2>/dev/null
 git pull --ff-only || { echo "PULL_FAIL"; exit 1; }
 git log -1 --format='deploying %h %s'
+# Front-end dependencies change occasionally (e.g. cobe for the customer globe).
+yarn install 2>&1 | tail -1
 
 npx nx build twenty-shared --skip-nx-cache || { echo "SHARED_BUILD_FAIL"; exit 1; }
 npx nx build twenty-server || { echo "SERVER_BUILD_FAIL"; exit 1; }

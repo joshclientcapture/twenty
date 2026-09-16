@@ -8,6 +8,7 @@ import { Tag } from 'twenty-ui/data-display';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { PageHeader } from '@/ui/layout/page/components/PageHeader';
+import { CustomerGlobe } from '@/custom-pages/os/CustomerGlobe';
 import {
   CAUTION,
   fmtDate,
@@ -23,7 +24,6 @@ import {
   StyledCardTitle,
   StyledChip,
   StyledContent,
-  StyledDivider,
   StyledError,
   StyledExtLink,
   StyledField,
@@ -54,17 +54,31 @@ import {
 } from '@/custom-pages/os/data';
 import { type Closer, fetchClosers } from '@/custom-pages/os/closers';
 
-type View = 'customers' | 'agencies';
-type SourceFilter = 'all' | 'linkedin_outreach' | 'email_marketing' | 'organic' | 'paid_ads' | 'unattributed';
+// Attribution editing (source / closer dropdowns, dud deletion, per-closer totals) is parked
+// until the ledger itself is settled. Flip to true to bring the controls back.
+const SHOW_ATTRIBUTION = false;
 
-const fmtShortDate = (s: string | null) => (s ? new Date(s).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—');
+type View = 'customers' | 'agencies' | 'map';
+type SourceFilter = 'all' | 'linkedin_outreach' | 'email_marketing' | 'organic' | 'paid_ads' | 'unattributed';
+type LedgerSortKey = 'name' | 'total_paid' | 'payments' | 'first_paid' | 'last_paid' | 'status';
+
 const srcLabel = (s: string | null) => SOURCES.find((x) => x.key === s)?.label ?? '—';
 const bucketOf = (r: SalesLedgerRow): SourceFilter => (r.source as SourceFilter) ?? 'unattributed';
+const firstName = (name: string | null) => (name ? name.split(' ')[0] : '—');
 
-const STANDING: Record<string, { label: string; tone: 'positive' | 'caution' | 'danger' }> = {
+const LEDGER_SORT: Record<LedgerSortKey, { numeric: boolean; get: (r: SalesLedgerRow) => number | string }> = {
+  name: { numeric: false, get: (r) => (r.name ?? '').toLowerCase() },
+  total_paid: { numeric: true, get: (r) => r.total_paid ?? 0 },
+  payments: { numeric: true, get: (r) => r.payments ?? 0 },
+  first_paid: { numeric: true, get: (r) => (r.first_paid ? new Date(r.first_paid).getTime() : 0) },
+  last_paid: { numeric: true, get: (r) => (r.last_paid ? new Date(r.last_paid).getTime() : 0) },
+  status: { numeric: false, get: (r) => r.status ?? '' },
+};
+
+const STANDING: Record<string, { label: string; tone: 'positive' | 'caution' }> = {
   good: { label: 'Good standing', tone: 'positive' },
   watch: { label: 'Watch', tone: 'caution' },
-  at_risk: { label: 'At risk', tone: 'danger' },
+  at_risk: { label: 'At risk', tone: 'caution' },
 };
 const STANDING_ORDER = ['good', 'watch', 'at_risk'];
 const PAYMENT_BADGE: Record<string, { label: string; color: 'blue' | 'red' | 'gray' } | null> = {
@@ -87,7 +101,7 @@ const health = (a: AgencyPartner): 'green' | 'amber' | 'red' | 'grey' => {
 };
 const HEALTH_COLOR: Record<string, string | undefined> = { green: POSITIVE, amber: CAUTION, red: 'var(--t-tag-text-red)', grey: undefined };
 
-const SORT_COLUMNS: Record<string, { numeric: boolean; get: (r: AgencyPartner) => number | string }> = {
+const AGENCY_SORT: Record<string, { numeric: boolean; get: (r: AgencyPartner) => number | string }> = {
   name: { numeric: false, get: (r) => (r.name ?? '').toLowerCase() },
   plan: { numeric: false, get: (r) => r.plan },
   total_mrr: { numeric: true, get: (r) => r.total_mrr },
@@ -98,7 +112,7 @@ const SORT_COLUMNS: Record<string, { numeric: boolean; get: (r: AgencyPartner) =
 const SEAT_FILTERS = [
   { key: 'all', label: 'All seats' }, { key: 'disconnected', label: 'Disconnected' }, { key: 'idle', label: 'Idle' }, { key: 'live', label: 'Live' },
 ] as const;
-const SEAT_TONE: Record<string, 'positive' | 'caution' | 'danger'> = { live: 'positive', idle: 'caution', disconnected: 'danger' };
+const SEAT_TONE: Record<string, 'positive' | 'caution'> = { live: 'positive', idle: 'caution', disconnected: 'caution' };
 
 const StyledSelect = styled.select`
   background: ${t.background.primary};
@@ -136,11 +150,16 @@ const StyledNotes = styled.textarea`
 const StyledSortHead = styled.button`
   background: none;
   border: 0;
+  border-radius: 2px;
   color: inherit;
   cursor: pointer;
   font: inherit;
   padding: 0;
+  white-space: nowrap;
   span { color: ${t.font.color.light}; margin-left: 4px; }
+  &[data-on] { color: ${t.font.color.primary}; }
+  &[data-on] span { color: ${t.font.color.secondary}; }
+  &:focus-visible { outline: 2px solid ${t.color.blue}; outline-offset: 2px; }
 `;
 
 const StyledHealthButton = styled.button`
@@ -188,6 +207,18 @@ const StyledSeatList = styled.ul`
 const StyledScroll = styled.div`
   overflow-x: auto;
 `;
+
+const StyledLedgerRow = styled.tr`
+  td[data-num] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td[data-name] div[data-primary] { color: ${t.font.color.primary}; font-weight: ${t.font.weight.medium}; }
+  td[data-name] div[data-secondary] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; }
+`;
+
+const SortHead = ({ label, sortKey, activeKey, dir, onSort }: { label: string; sortKey: string; activeKey: string | null; dir: 'asc' | 'desc'; onSort: (key: string) => void }) => (
+  <StyledSortHead data-on={activeKey === sortKey ? '' : undefined} onClick={() => onSort(sortKey)}>
+    {label}<span>{activeKey === sortKey ? (dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+  </StyledSortHead>
+);
 
 const SeatDrilldown = ({ agency, onClose }: { agency: AgencyPartner; onClose: () => void }) => {
   const [data, setData] = useState<AgencyAccounts | null>(null);
@@ -239,7 +270,8 @@ const SeatDrilldown = ({ agency, onClose }: { agency: AgencyPartner; onClose: ()
 
 export const CustomersPage = () => {
   const [params, setParams] = useSearchParams();
-  const view: View = params.get('view') === 'agencies' ? 'agencies' : 'customers';
+  const viewParam = params.get('view');
+  const view: View = viewParam === 'agencies' ? 'agencies' : viewParam === 'map' ? 'map' : 'customers';
   const setView = (next: View) => setParams((p) => { const q = new URLSearchParams(p); q.set('view', next); return q; }, { replace: true });
 
   /* ---- customers (sales ledger) ---- */
@@ -247,14 +279,16 @@ export const CustomersPage = () => {
   const [closers, setClosers] = useState<Closer[]>([]);
   const [filter, setFilter] = useState<SourceFilter>(() => {
     const b = params.get('b');
-    return b === 'unattributed' ? 'unattributed' : b === 'all' ? 'all' : 'linkedin_outreach';
+    return b === 'unattributed' ? 'unattributed' : b === 'attributed' ? 'linkedin_outreach' : 'all';
   });
   const [q, setQ] = useState('');
+  const [sortKey, setSortKey] = useState<LedgerSortKey>('total_paid');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const loadLedger = () => fetchSalesLedger().then(setRows).catch(() => setRows([]));
-  useEffect(() => { loadLedger(); fetchClosers().then(setClosers).catch(() => setClosers([])); }, []);
+  useEffect(() => { loadLedger(); if (SHOW_ATTRIBUTION) fetchClosers().then(setClosers).catch(() => setClosers([])); }, []);
 
   const act = async (promise: Promise<unknown>, id: string) => {
     setBusy(id);
@@ -263,32 +297,41 @@ export const CustomersPage = () => {
     catch (e) { setErr('Action failed: ' + (e as Error).message); }
     finally { setBusy(null); }
   };
-
   const closerNames = closers.filter((c) => c.active).map((c) => c.name);
   const defaultCloser = closerNames[0] ?? 'Therapon Savvas';
-  const closerShort = (name: string | null) => closers.find((c) => c.name === name)?.name.split(' ')[0] ?? (name ? name.split(' ')[0] : '—');
 
-  const stats = useMemo(() => {
+  const counts = useMemo(() => {
     const all = rows ?? [];
-    const s = (f: SourceFilter) => { const r = f === 'all' ? all : all.filter((x) => bucketOf(x) === f); return { n: r.length, v: r.reduce((a, x) => a + (x.total_paid || 0), 0) }; };
-    const byCloser = closerNames.map((name) => ({ name, v: all.filter((x) => x.closer === name).reduce((a, x) => a + (x.total_paid || 0), 0) }));
-    return { all: s('all'), linkedin: s('linkedin_outreach'), email: s('email_marketing'), organic: s('organic'), paid: s('paid_ads'), unattributed: s('unattributed'), byCloser };
-  }, [rows, closerNames.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+    const s = (f: SourceFilter) => (f === 'all' ? all : all.filter((x) => bucketOf(x) === f)).length;
+    return { all: s('all'), linkedin_outreach: s('linkedin_outreach'), email_marketing: s('email_marketing'), organic: s('organic'), paid_ads: s('paid_ads'), unattributed: s('unattributed') };
+  }, [rows]);
 
   const visible = useMemo(() => {
     let r = (rows ?? []).filter((x) => filter === 'all' || bucketOf(x) === filter);
     const s = q.trim().toLowerCase();
     if (s) r = r.filter((x) => (x.name ?? '').toLowerCase().includes(s) || (x.email ?? '').toLowerCase().includes(s));
-    return r;
-  }, [rows, filter, q]);
+    const col = LEDGER_SORT[sortKey];
+    return [...r].sort((a, b) => {
+      const av = col.get(a); const bv = col.get(b);
+      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, filter, q, sortKey, sortDir]);
+  const visibleTotal = visible.reduce((a, r) => a + (r.total_paid || 0), 0);
 
-  const tabs: { key: SourceFilter; label: string; s: { n: number; v: number } }[] = [
-    { key: 'linkedin_outreach', label: 'LinkedIn outreach', s: stats.linkedin },
-    { key: 'email_marketing', label: 'Email marketing', s: stats.email },
-    { key: 'organic', label: 'Organic', s: stats.organic },
-    { key: 'paid_ads', label: 'Paid ads', s: stats.paid },
-    { key: 'unattributed', label: 'Unattributed', s: stats.unattributed },
-    { key: 'all', label: 'All paid', s: stats.all },
+  const onLedgerSort = (key: string) => {
+    const k = key as LedgerSortKey;
+    if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(k); setSortDir(LEDGER_SORT[k].numeric ? 'desc' : 'asc'); }
+  };
+
+  const sourceTabs: { key: SourceFilter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'linkedin_outreach', label: 'LinkedIn outreach' },
+    { key: 'email_marketing', label: 'Email marketing' },
+    { key: 'organic', label: 'Organic' },
+    { key: 'paid_ads', label: 'Paid ads' },
+    { key: 'unattributed', label: 'Unattributed' },
   ];
 
   /* ---- agencies ---- */
@@ -296,8 +339,8 @@ export const CustomersPage = () => {
   const [agencyRows, setAgencyRows] = useState<AgencyPartner[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [agencySortKey, setAgencySortKey] = useState<string | null>(null);
+  const [agencySortDir, setAgencySortDir] = useState<'asc' | 'desc'>('desc');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [drilldown, setDrilldown] = useState<AgencyPartner | null>(null);
@@ -326,20 +369,19 @@ export const CustomersPage = () => {
     finally { setSaving(null); }
   };
   const setLocal = (customerId: string, patch: Partial<AgencyPartner>) => setAgencyRows((rs) => rs.map((r) => (r.customer_id === customerId ? { ...r, ...patch } : r)));
-  const toggleSort = (key: string) => {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir(SORT_COLUMNS[key].numeric ? 'desc' : 'asc'); }
+  const onAgencySort = (key: string) => {
+    if (agencySortKey === key) setAgencySortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setAgencySortKey(key); setAgencySortDir(AGENCY_SORT[key].numeric ? 'desc' : 'asc'); }
   };
-  const sortArrow = (key: string) => <span>{sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}</span>;
   const displayAgencies = useMemo(() => {
-    const col = sortKey ? SORT_COLUMNS[sortKey] : null;
+    const col = agencySortKey ? AGENCY_SORT[agencySortKey] : null;
     if (!col) return agencyRows;
     return [...agencyRows].sort((a, b) => {
       const av = col.get(a); const bv = col.get(b);
       const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv));
-      return sortDir === 'asc' ? cmp : -cmp;
+      return agencySortDir === 'asc' ? cmp : -cmp;
     });
-  }, [agencyRows, sortKey, sortDir]);
+  }, [agencyRows, agencySortKey, agencySortDir]);
   const summary = agencies?.summary;
   const seatFill = summary ? summary.total_accounts_active / Math.max(summary.total_seats, 1) : 0;
   const agencyKpis: Kpi[] = summary ? [
@@ -355,8 +397,9 @@ export const CustomersPage = () => {
     <StyledPage>
       <PageHeader title="Customers" Icon={IconBuildingSkyscraper}>
         <StyledHeaderActions>
-          <PillButton title="Paying customers" active={view === 'customers'} onClick={() => setView('customers')} />
+          <PillButton title="Customers" active={view === 'customers'} onClick={() => setView('customers')} />
           <PillButton title="Agencies" active={view === 'agencies'} onClick={() => setView('agencies')} />
+          <PillButton title="Map" active={view === 'map'} onClick={() => setView('map')} />
         </StyledHeaderActions>
       </PageHeader>
       <StyledBody>
@@ -365,39 +408,50 @@ export const CustomersPage = () => {
             {err && <StyledError>{err}</StyledError>}
 
             {view === 'customers' && (
-              <>
-                <StyledRow>
-                  {tabs.map((tab) => <PillButton key={tab.key} title={`${tab.label} · ${tab.s.n} · ${fmtUsd(tab.s.v)}`} active={filter === tab.key} onClick={() => setFilter(tab.key)} />)}
-                  <StyledDivider />
+              <StyledCard>
+                <StyledRow style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+                  <StyledRow>
+                    {sourceTabs.map((tab) => <PillButton key={tab.key} title={`${tab.label} · ${counts[tab.key]}`} active={filter === tab.key} onClick={() => setFilter(tab.key)} />)}
+                  </StyledRow>
                   <StyledField><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or email" style={{ width: 220 }} /></StyledField>
                 </StyledRow>
-                {filter === 'linkedin_outreach' && stats.byCloser.length > 0 && (
-                  <StyledMuted>{stats.byCloser.map((c, i) => <span key={c.name}>{i > 0 && ' · '}{closerShort(c.name)}: <b>{fmtUsd(c.v)}</b></span>)}</StyledMuted>
-                )}
-                {filter === 'unattributed' && (
-                  <StyledMuted>Allocate each to a source (and a closer if LinkedIn outreach), or delete duds. Deletion is only allowed here.</StyledMuted>
-                )}
-                <StyledCard>
-                  <StyledScroll>
-                    <StyledTable>
-                      <thead><tr><th>Customer</th><th>Paid</th><th>Payments</th><th>First call</th><th>Source</th><th>Closer</th><th>Attribution</th></tr></thead>
-                      <tbody>
-                        {rows === null && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>Loading…</StyledMuted></td></tr>}
-                        {rows !== null && visible.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>No customers.</StyledMuted></td></tr>}
-                        {visible.map((r) => {
-                          const isBusy = busy === r.customer_id;
-                          const isLinkedin = r.source === 'linkedin_outreach';
-                          return (
-                            <tr key={r.customer_id} style={isBusy ? { opacity: 0.4 } : undefined}>
-                              <td>
-                                <StyledTextLink to={`/records?type=customer_payments&arg=${encodeURIComponent(r.customer_id)}&name=${encodeURIComponent(r.name ?? '')}&back=/customers`}>{r.name}</StyledTextLink>
-                                <div><StyledMuted>{r.email}{r.stripe_email && ` · stripe: ${r.stripe_email}`}</StyledMuted></div>
-                              </td>
-                              <td>{fmtUsd(r.total_paid)}</td>
-                              <td style={r.payments > 1 ? { color: POSITIVE } : undefined}>{r.payments}×</td>
-                              <td>{r.fathom_url ? <StyledExtLink href={r.fathom_url} target="_blank" rel="noreferrer">▶ {fmtShortDate(r.first_call)}</StyledExtLink> : <StyledMuted>—</StyledMuted>}</td>
-                              <td>{r.source ? srcLabel(r.source) : <StyledMuted>—</StyledMuted>}</td>
-                              <td>{isLinkedin ? <span style={{ fontWeight: 500 }}>{closerShort(r.closer)}{r.is_manual && <StyledMuted title="Set manually"> •</StyledMuted>}</span> : <StyledMuted>—</StyledMuted>}</td>
+                <StyledScroll>
+                  <StyledTable>
+                    <thead>
+                      <tr>
+                        <th><SortHead label="Customer" sortKey="name" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th><SortHead label="Status" sortKey="status" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th>Source</th>
+                        <th>Closer</th>
+                        <th><SortHead label="Total paid" sortKey="total_paid" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th><SortHead label="Payments" sortKey="payments" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th><SortHead label="First paid" sortKey="first_paid" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th><SortHead label="Last paid" sortKey="last_paid" activeKey={sortKey} dir={sortDir} onSort={onLedgerSort} /></th>
+                        <th>Call</th>
+                        {SHOW_ATTRIBUTION && <th>Attribution</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows === null && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>Loading…</StyledMuted></td></tr>}
+                      {rows !== null && visible.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 24 }}><StyledMuted>No customers.</StyledMuted></td></tr>}
+                      {visible.map((r) => {
+                        const isBusy = busy === r.customer_id;
+                        const isLinkedin = r.source === 'linkedin_outreach';
+                        return (
+                          <StyledLedgerRow key={r.customer_id} style={isBusy ? { opacity: 0.4 } : undefined}>
+                            <td data-name>
+                              <div data-primary><StyledTextLink to={`/records?type=customer_payments&arg=${encodeURIComponent(r.customer_id)}&name=${encodeURIComponent(r.name ?? '')}&back=/customers`}>{r.name}</StyledTextLink></div>
+                              <div data-secondary>{r.email}{r.plan ? ` · ${r.plan}` : ''}</div>
+                            </td>
+                            <td>{r.status ? <StyledChip data-tone={r.status === 'active' ? 'positive' : undefined}>{r.status}</StyledChip> : <StyledMuted>—</StyledMuted>}</td>
+                            <td>{r.source ? srcLabel(r.source) : <StyledMuted>—</StyledMuted>}</td>
+                            <td>{isLinkedin && r.closer ? firstName(r.closer) : <StyledMuted>—</StyledMuted>}</td>
+                            <td data-num style={{ fontWeight: 600 }}>{fmtUsd(r.total_paid)}</td>
+                            <td data-num style={r.payments > 1 ? { color: POSITIVE } : undefined}>{r.payments}×</td>
+                            <td data-num>{fmtDate(r.first_paid)}</td>
+                            <td data-num>{fmtDate(r.last_paid)}</td>
+                            <td>{r.fathom_url ? <StyledExtLink href={r.fathom_url} target="_blank" rel="noreferrer">▶ Watch</StyledExtLink> : <StyledMuted>—</StyledMuted>}</td>
+                            {SHOW_ATTRIBUTION && (
                               <td>
                                 <StyledRow>
                                   <StyledSelect disabled={isBusy} value={r.source ?? ''} onChange={(e) => {
@@ -416,16 +470,18 @@ export const CustomersPage = () => {
                                   {!r.source && <Button size="small" variant="tertiary" title="Delete dud" disabled={isBusy} onClick={() => { if (window.confirm(`Delete ${r.name}? This hides a dud from every number.`)) act(excludeSale(r.customer_id), r.customer_id); }} />}
                                 </StyledRow>
                               </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </StyledTable>
-                  </StyledScroll>
-                  <StyledFootnote>Showing {visible.length} of {stats.all.n} paying customers · changes save instantly · deleted duds are hidden</StyledFootnote>
-                </StyledCard>
-              </>
+                            )}
+                          </StyledLedgerRow>
+                        );
+                      })}
+                    </tbody>
+                  </StyledTable>
+                </StyledScroll>
+                <StyledFootnote>{visible.length} of {counts.all} paying customers · {fmtUsd(visibleTotal)} paid in this view · click a column to sort</StyledFootnote>
+              </StyledCard>
             )}
+
+            {view === 'map' && <CustomerGlobe />}
 
             {view === 'agencies' && (
               <>
@@ -452,11 +508,11 @@ export const CustomersPage = () => {
                     <StyledTable>
                       <thead>
                         <tr>
-                          <th><StyledSortHead onClick={() => toggleSort('name')}>Agency {sortArrow('name')}</StyledSortHead></th>
-                          <th><StyledSortHead onClick={() => toggleSort('plan')}>Plan {sortArrow('plan')}</StyledSortHead></th>
-                          <th><StyledSortHead onClick={() => toggleSort('total_mrr')}>MRR / mo {sortArrow('total_mrr')}</StyledSortHead></th>
-                          <th><StyledSortHead onClick={() => toggleSort('ltv')}>LTV {sortArrow('ltv')}</StyledSortHead></th>
-                          <th><StyledSortHead onClick={() => toggleSort('accounts_active')}>Activity {sortArrow('accounts_active')}</StyledSortHead></th>
+                          <th><SortHead label="Agency" sortKey="name" activeKey={agencySortKey} dir={agencySortDir} onSort={onAgencySort} /></th>
+                          <th><SortHead label="Plan" sortKey="plan" activeKey={agencySortKey} dir={agencySortDir} onSort={onAgencySort} /></th>
+                          <th><SortHead label="MRR / mo" sortKey="total_mrr" activeKey={agencySortKey} dir={agencySortDir} onSort={onAgencySort} /></th>
+                          <th><SortHead label="LTV" sortKey="ltv" activeKey={agencySortKey} dir={agencySortDir} onSort={onAgencySort} /></th>
+                          <th><SortHead label="Activity" sortKey="accounts_active" activeKey={agencySortKey} dir={agencySortDir} onSort={onAgencySort} /></th>
                           <th>Standing</th>
                           <th>Notes</th>
                         </tr>
@@ -492,7 +548,7 @@ export const CustomersPage = () => {
                               </td>
                               <td>
                                 <StyledRow>
-                                  <StyledChip data-tone={standing.tone === 'danger' ? 'caution' : standing.tone}>{standing.label}</StyledChip>
+                                  <StyledChip data-tone={standing.tone}>{standing.label}</StyledChip>
                                   <StyledSelect value={r.status} disabled={saving === r.customer_id} onChange={(e) => { setLocal(r.customer_id, { status: e.target.value }); persist(r.customer_id, e.target.value, r.notes); }}>
                                     {STANDING_ORDER.map((k) => <option key={k} value={k}>{STANDING[k].label}</option>)}
                                   </StyledSelect>

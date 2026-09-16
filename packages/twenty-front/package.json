@@ -86,6 +86,7 @@
     "apollo-link-rest": "^0.10.0-rc.2",
     "apollo-upload-client": "^19.0.0",
     "buffer": "^6.0.3",
+    "cobe": "0.6.3",
     "country-flag-icons": "^1.5.11",
     "cron-parser": "5.1.1",
     "d3-shape": "^3.2.0",

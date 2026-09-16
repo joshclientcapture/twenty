@@ -6,6 +6,8 @@ export NVM_DIR=$HOME/.nvm; . $NVM_DIR/nvm.sh
 export NODE_OPTIONS="--max-old-space-size=8192"
 cd /root/twenty
 
+git checkout -q -- yarn.lock 2>/dev/null
+git pull --ff-only || { echo "PULL_FAIL"; exit 1; }
 git log -1 --format='deploying %h %s'
 
 npx nx build twenty-shared --skip-nx-cache || { echo "SHARED_BUILD_FAIL"; exit 1; }

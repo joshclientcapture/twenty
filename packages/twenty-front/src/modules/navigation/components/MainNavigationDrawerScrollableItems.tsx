@@ -34,9 +34,9 @@ export const MainNavigationDrawerScrollableItems = () => {
     <StyledScrollableItemsContainer>
       <NavigationDrawerOpenedSection />
       <Suspense fallback={<NavigationDrawerWorkspaceSectionSkeletonLoader />}>
+        <CustomPagesSection />
         <FavoritesSectionDispatcher />
         <WorkspaceSectionDispatcher />
-        <CustomPagesSection />
       </Suspense>
     </StyledScrollableItemsContainer>
   );

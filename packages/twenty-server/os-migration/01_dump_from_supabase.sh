@@ -7,7 +7,9 @@ set -euo pipefail
 OUT=/root/os-migration
 mkdir -p "$OUT"
 
-PGDUMP="docker exec -i twenty-dev-db-1 pg_dump"
+# Supabase's direct host is IPv6-only and the pooler does not know this tenant, so pg_dump runs
+# in a throwaway container on the host network (containers have no IPv6 by default).
+PGDUMP="docker run --rm --network host postgres:17 pg_dump"
 
 # Structure: tables, sequences, views, functions, indexes. No owners, grants, RLS policies or
 # Supabase-only bits; those are stripped again in 02 before restore.
@@ -16,8 +18,7 @@ $PGDUMP "$OS_SUPABASE_DB_URL" --schema=public --schema-only --no-owner --no-priv
 
 # Data for every table except the sync log (7k rows of history nobody reads).
 $PGDUMP "$OS_SUPABASE_DB_URL" --schema=public --data-only --no-owner --no-privileges \
-  --exclude-table=public.calendly_sync_log --column-inserts=false --rows-per-insert=500 --inserts=false \
-  > "$OUT/data_public.sql"
+  --exclude-table=public.calendly_sync_log > "$OUT/data_public.sql"
 
 ls -la "$OUT"
 grep -c "^CREATE TABLE" "$OUT/schema_public.sql" | sed 's/^/tables: /'

@@ -22,6 +22,7 @@ transform() {
     -e '/^REVOKE /d' \
     -e '/^ALTER DEFAULT PRIVILEGES /d' \
     -e '/^CREATE EXTENSION /d' \
+    -e '/^SET transaction_timeout/d' \
     -e '/^COMMENT ON EXTENSION /d' \
     -e '/^CREATE EVENT TRIGGER /,/;$/d' \
     -e '/^ALTER EVENT TRIGGER /d' \

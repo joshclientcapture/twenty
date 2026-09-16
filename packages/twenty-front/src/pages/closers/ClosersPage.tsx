@@ -76,12 +76,16 @@ const StyledCloserCard = styled.div`
     margin: 0;
   }
   div[data-actions] {
+    bottom: ${t.spacing[3]};
     display: flex;
     gap: ${t.spacing[1]};
+    opacity: 0;
     position: absolute;
     right: ${t.spacing[3]};
-    top: ${t.spacing[3]};
+    transition: opacity 120ms ${EASE_OUT};
+    @media (hover: none) { opacity: 1; }
   }
+  &:hover div[data-actions], &:focus-within div[data-actions] { opacity: 1; }
   div[data-stats] {
     display: grid;
     gap: ${t.spacing[2]} ${t.spacing[3]};
@@ -363,7 +367,7 @@ export const ClosersPage = () => {
                         <IconButton size="small" variant="tertiary" Icon={IconTrash} ariaLabel="Remove" onClick={() => remove(closer)} />
                       </div>
                     )}
-                    <StyledRow style={{ justifyContent: 'space-between', paddingRight: isAdmin ? 56 : 0 }}>
+                    <StyledRow style={{ justifyContent: 'space-between' }}>
                       <h3>{closer.name}</h3>
                       <StyledRow>
                         <StyledChip data-tone={closer.commissioned ? 'accent' : undefined}>{closer.commissioned ? `${Math.round(closer.commissionRate * 100)}% commission` : 'No commission'}</StyledChip>

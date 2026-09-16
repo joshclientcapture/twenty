@@ -425,9 +425,9 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
 
   const kpis: Kpi[] = [
     { label: 'Appointments held', value: (suD?.held ?? 0).toLocaleString(), delta: `${(suD?.upcoming ?? 0).toLocaleString()} upcoming`, to: '/showup' },
-    { label: 'Appointments sat', value: (suD?.recorded ?? 0).toLocaleString(), delta: 'Fathom-confirmed', to: `${recordsBase}calls${qp}` },
+    { label: 'Appointments sat', value: (suD?.recorded ?? 0).toLocaleString(), delta: 'Fathom-confirmed', to: `${recordsBase}calls&${customersQ}${qp}` },
     { label: 'Show-up rate', value: suD?.rate != null ? `${suD.rate}%` : '—', delta: `${suD?.recorded ?? 0} of ${suD?.held ?? 0} held`, valueTone: (suD?.rate ?? 0) >= 55 ? 'positive' : 'caution', to: '/showup' },
-    { label: 'Cancellations', value: suD?.cancel_rate != null ? `${suD.cancel_rate}%` : '—', delta: `${suD?.canceled ?? 0} genuine`, to: `${recordsBase}cancellations${qp}` },
+    { label: 'Cancellations', value: suD?.cancel_rate != null ? `${suD.cancel_rate}%` : '—', delta: `${suD?.canceled ?? 0} genuine`, to: `${recordsBase}cancellations&${customersQ}${qp}` },
     { label: 'Trials started', value: (cvD?.sat_trials ?? 0).toLocaleString(), delta: `of ${cvD?.trials_total ?? 0} company-wide`, to: `${recordsBase}trials${qp}` },
     { label: 'Trial conversion', value: cvD?.rate != null ? `${cvD.rate}%` : '—', delta: `${cvD?.sat_trials ?? 0} of ${cvD?.sat ?? 0} sat`, valueTone: (cvD?.rate ?? 0) >= 30 ? 'positive' : 'caution', to: `${recordsBase}trials${qp}` },
   ];

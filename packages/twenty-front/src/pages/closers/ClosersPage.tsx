@@ -2,7 +2,7 @@ import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
-import { IconPencil, IconPlus, IconTrash, IconUsers } from 'twenty-ui/icon';
+import { IconPlus, IconUsers } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
@@ -60,7 +60,6 @@ const StyledCloserCard = styled.div`
   transition: border-color 120ms ${EASE_OUT}, transform 120ms ${EASE_OUT}, background 120ms ${EASE_OUT};
   @media (hover: hover) {
     &:hover { border-color: ${t.border.color.strong}; background: ${t.background.tertiary}; }
-    &:hover div[data-actions] { opacity: 1; }
   }
   &:active { transform: scale(${PRESS_SCALE}); }
   &:focus-visible { outline: 2px solid ${t.color.blue}; outline-offset: 2px; }
@@ -73,9 +72,6 @@ const StyledCloserCard = styled.div`
   div[data-actions] {
     display: flex;
     gap: ${t.spacing[1]};
-    opacity: 0;
-    transition: opacity 120ms ${EASE_OUT};
-    @media (hover: none) { opacity: 1; }
   }
   div[data-stats] {
     display: grid;
@@ -329,7 +325,7 @@ export const ClosersPage = () => {
                   <StyledActions>
                     <Button type="submit" size="small" variant="primary" accent="blue" title={saving ? 'Saving…' : editing ? 'Save changes' : 'Add closer'} disabled={saving || !form.name.trim() || !form.email.trim()} />
                     <Button size="small" variant="tertiary" title="Cancel" onClick={closeEditor} />
-                    {editing && <div style={{ marginLeft: 'auto' }}><Button size="small" variant="tertiary" accent="danger" Icon={IconTrash} title="Remove" onClick={() => remove(editing)} /></div>}
+                    {editing && <div style={{ marginLeft: 'auto' }}><Button size="small" variant="tertiary" title="Remove" onClick={() => remove(editing)} /></div>}
                   </StyledActions>
                 </StyledEditorCard>
               </StyledReveal>
@@ -359,8 +355,8 @@ export const ClosersPage = () => {
                         {!closer.calendlyHostEmail && <StyledChip data-tone="caution" title="No work email linked, so appointments stay at zero">No calendar</StyledChip>}
                         {isAdmin && (
                           <div data-actions onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                            <Button size="small" variant="tertiary" Icon={IconPencil} title="Edit" onClick={() => openEdit(closer)} />
-                            <Button size="small" variant="tertiary" Icon={IconTrash} title="Remove" onClick={() => remove(closer)} />
+                            <Button size="small" variant="tertiary" title="Edit" onClick={() => openEdit(closer)} />
+                            <Button size="small" variant="tertiary" title="Remove" onClick={() => remove(closer)} />
                           </div>
                         )}
                       </StyledRow>

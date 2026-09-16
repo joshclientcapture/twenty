@@ -23,7 +23,6 @@ import {
   StyledChip,
   StyledContent,
   StyledError,
-  StyledGrid3,
   StyledHeaderActions,
   StyledMuted,
   StyledNotice,
@@ -46,6 +45,13 @@ import {
 import { type ShowUp } from '@/custom-pages/os/data';
 
 type CloserStats = { showUp: ShowUp | null; sales: CloserSales | null; commission: CloserCommission | null };
+
+// auto-fill keeps empty tracks, so one closer still gets a card-sized column rather than the full row.
+const StyledCloserGrid = styled.div`
+  display: grid;
+  gap: ${t.spacing[4]};
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+`;
 
 const StyledCloserCard = styled.div`
   background: ${t.background.secondary};
@@ -333,7 +339,7 @@ export const ClosersPage = () => {
 
             {closers && active.length === 0 && <StyledNotice>No closers yet.</StyledNotice>}
 
-            <StyledGrid3>
+            <StyledCloserGrid>
               {!closers && Array.from({ length: 2 }).map((_, i) => (
                 <StyledCard key={i} style={{ minHeight: 160, justifyContent: 'space-between' }}>
                   <Skeleton width={120} height={14} />
@@ -374,7 +380,7 @@ export const ClosersPage = () => {
                   </StyledCloserCard>
                 );
               })}
-            </StyledGrid3>
+            </StyledCloserGrid>
           </StyledContent>
         </SkeletonTheme>
       </StyledBody>

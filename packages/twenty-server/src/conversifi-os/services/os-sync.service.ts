@@ -405,7 +405,10 @@ export class OsSyncService {
   private async calendlyHost(token: string, organization: string, hostUserUri: string, windowDays: number) {
     const CAL = 'https://api.calendly.com';
     const headers = { Authorization: `Bearer ${token}` };
-    const minStart = new Date(Date.now() - windowDays * 86400000).toISOString();
+    // A host we have never synced gets a full year back, so a newly added closer's history fills in.
+    const [{ count }] = await this.dataSource.query(`select count(*)::int as count from os.calendly_bookings where host_user_uri = $1`, [hostUserUri]);
+    const effectiveWindowDays = count === 0 ? 365 : windowDays;
+    const minStart = new Date(Date.now() - effectiveWindowDays * 86400000).toISOString();
 
     try {
       const hostResponse = await fetch(hostUserUri, { headers });

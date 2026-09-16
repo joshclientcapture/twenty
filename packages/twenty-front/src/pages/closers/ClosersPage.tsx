@@ -2,8 +2,8 @@ import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Skeleton, { SkeletonTheme } from 'react-loading-skeleton';
-import { IconPlus, IconUsers } from 'twenty-ui/icon';
-import { Button } from 'twenty-ui/input';
+import { IconPencil, IconPlus, IconTrash, IconUsers } from 'twenty-ui/icon';
+import { Button, IconButton } from 'twenty-ui/input';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { currentUserState } from '@/auth/states/currentUserState';
@@ -78,6 +78,9 @@ const StyledCloserCard = styled.div`
   div[data-actions] {
     display: flex;
     gap: ${t.spacing[1]};
+    position: absolute;
+    right: ${t.spacing[3]};
+    top: ${t.spacing[3]};
   }
   div[data-stats] {
     display: grid;
@@ -104,7 +107,6 @@ const StyledEditorCard = styled.form`
   display: flex;
   flex-direction: column;
   gap: ${t.spacing[4]};
-  max-width: 480px;
   padding: ${t.spacing[4]};
   h3 {
     color: ${t.font.color.primary};
@@ -121,9 +123,10 @@ const StyledEditorCard = styled.form`
 `;
 
 const StyledFields = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${t.spacing[3]};
+  display: grid;
+  gap: ${t.spacing[3]} ${t.spacing[5]};
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  @media (max-width: 720px) { grid-template-columns: 1fr; }
 `;
 
 const StyledFormField = styled.label`
@@ -354,17 +357,17 @@ export const ClosersPage = () => {
                   <StyledCloserCard key={closer.id} role="link" tabIndex={0}
                     onClick={() => navigate(`/closers/${closer.id}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/closers/${closer.id}`); } }}>
-                    <StyledRow style={{ justifyContent: 'space-between' }}>
+                    {isAdmin && (
+                      <div data-actions onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        <IconButton size="small" variant="tertiary" Icon={IconPencil} ariaLabel="Edit" onClick={() => openEdit(closer)} />
+                        <IconButton size="small" variant="tertiary" Icon={IconTrash} ariaLabel="Remove" onClick={() => remove(closer)} />
+                      </div>
+                    )}
+                    <StyledRow style={{ justifyContent: 'space-between', paddingRight: isAdmin ? 56 : 0 }}>
                       <h3>{closer.name}</h3>
                       <StyledRow>
                         <StyledChip data-tone={closer.commissioned ? 'accent' : undefined}>{closer.commissioned ? `${Math.round(closer.commissionRate * 100)}% commission` : 'No commission'}</StyledChip>
                         {!closer.calendlyHostEmail && <StyledChip data-tone="caution" title="No work email linked, so appointments stay at zero">No calendar</StyledChip>}
-                        {isAdmin && (
-                          <div data-actions onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-                            <Button size="small" variant="tertiary" title="Edit" onClick={() => openEdit(closer)} />
-                            <Button size="small" variant="tertiary" title="Remove" onClick={() => remove(closer)} />
-                          </div>
-                        )}
                       </StyledRow>
                     </StyledRow>
                     <div data-stats>

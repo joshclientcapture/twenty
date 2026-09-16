@@ -12,6 +12,12 @@ export const ACCENT = 'var(--t-color-blue, #1b4498)';
 export const POSITIVE = t.tag.text.green;
 export const CAUTION = t.tag.text.orange;
 
+// Motion values (better-ui / emil-design-eng): exact, not approximate.
+// Press feedback is always scale 0.96; entrances use a strong ease-out; hover/colour
+// changes get ≤150ms on named properties only, never `transition: all`.
+export const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
+export const PRESS_SCALE = '0.96';
+
 // Drill-down routes that exist in the CRM. Anything else stays a plain (unlinked) tile.
 const PORTED_PREFIXES = ['/records', '/sales', '/therapon'];
 export const internalHref = (to?: string) =>
@@ -260,13 +266,26 @@ export const StyledTile = styled.div`
   min-height: 92px;
   min-width: 0;
   padding: ${t.spacing[3]};
-  transition: ${t.clickableElementBackgroundTransition};
+  transition-property: background-color, border-color, scale;
+  transition-duration: 100ms, 100ms, 150ms;
+  transition-timing-function: ease, ease, ease-out;
   &[data-clickable] {
     cursor: pointer;
   }
-  &[data-clickable]:hover {
-    background: ${t.background.transparent.light};
-    border-color: ${t.border.color.strong};
+  /* hover gated to real pointers so a tap on touch doesn't leave a stuck hover */
+  @media (hover: hover) and (pointer: fine) {
+    &[data-clickable]:hover {
+      background: ${t.background.transparent.light};
+      border-color: ${t.border.color.strong};
+    }
+  }
+  &[data-clickable]:active {
+    scale: ${PRESS_SCALE};
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &[data-clickable]:active {
+      scale: none;
+    }
   }
   div[data-label] {
     align-items: center;
@@ -333,8 +352,9 @@ export const KpiTile = ({ kpi }: { kpi: Kpi }) => {
         <span>{kpi.label}</span>
         {href && <IconArrowUpRight size={12} />}
       </div>
-      <div data-value={kpi.valueTone}>{kpi.value}</div>
-      {kpi.delta !== undefined && <div data-delta={kpi.tone}>{kpi.delta}</div>}
+      {/* '' keeps the attribute present (so [data-value] styles apply) when there is no tone */}
+      <div data-value={kpi.valueTone ?? ''}>{kpi.value}</div>
+      {kpi.delta !== undefined && <div data-delta={kpi.tone ?? ''}>{kpi.delta}</div>}
     </StyledTile>
   );
   return href ? <StyledTileLink to={href}>{tile}</StyledTileLink> : tile;
@@ -420,10 +440,14 @@ export const StyledTable = styled.table`
   }
   tbody tr[data-clickable] {
     cursor: pointer;
-    transition: ${t.clickableElementBackgroundTransition};
+    transition-property: background-color;
+    transition-duration: 100ms;
+    transition-timing-function: ease;
   }
-  tbody tr[data-clickable]:hover {
-    background: ${t.background.transparent.light};
+  @media (hover: hover) and (pointer: fine) {
+    tbody tr[data-clickable]:hover {
+      background: ${t.background.transparent.light};
+    }
   }
   tbody tr[data-selected] {
     background: ${t.background.transparent.blue};
@@ -510,9 +534,50 @@ export const StyledChip = styled.span`
   &[data-button] {
     cursor: pointer;
     border: 1px solid transparent;
+    transition-property: border-color, scale;
+    transition-duration: 100ms, 150ms;
+    transition-timing-function: ease, ease-out;
   }
-  &[data-button]:hover {
-    border-color: ${t.border.color.strong};
+  @media (hover: hover) and (pointer: fine) {
+    &[data-button]:hover {
+      border-color: ${t.border.color.strong};
+    }
+  }
+  &[data-button]:active {
+    scale: ${PRESS_SCALE};
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &[data-button]:active {
+      scale: none;
+    }
+  }
+`;
+
+/* One-shot entrance for content that expands into view (an inline editor, a notice).
+   Keyframes are right here: it runs once per open, is not interruptible-by-design,
+   and stays under 300ms. Exit is immediate — the user's attention has already moved. */
+export const StyledReveal = styled.div`
+  animation: os-reveal 160ms ${EASE_OUT} both;
+  @keyframes os-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes os-reveal-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    animation-name: os-reveal-fade;
   }
 `;
 

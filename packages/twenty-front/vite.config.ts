@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
   const apiProxy = Object.fromEntries(
     API_PROXY_PATHS.map((apiPath) => [
       buildApiProxyMatcher(apiPath),
-      { target: apiProxyTarget },
+      { target: apiProxyTarget, changeOrigin: true },
     ]),
   );
 

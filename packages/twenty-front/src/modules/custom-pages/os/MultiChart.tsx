@@ -69,7 +69,7 @@ const StyledLegend = styled.div`
 `;
 
 const W = 820;
-const PAD = { top: 16, right: 16, bottom: 26, left: 8 };
+const PAD = { top: 16, right: 28, bottom: 26, left: 52 };
 
 // Line, bar and dashed series on one x axis, with an optional goal line and hover readout.
 export const MultiChart = ({ labels, sublabels, series, format = (n) => String(n), goal, goalLabel, height = 240, logScale = false, mutedFrom }: MultiChartProps) => {
@@ -125,13 +125,13 @@ export const MultiChart = ({ labels, sublabels, series, format = (n) => String(n
         {gridValues.map((g, i) => (
           <g key={i}>
             <line data-grid x1={PAD.left} x2={W - PAD.right} y1={y(g)} y2={y(g)} />
-            <text x={W - PAD.right} y={y(g) - 3} textAnchor="end">{format(g)}</text>
+            <text x={PAD.left - 8} y={y(g) + 4} textAnchor="end">{format(g)}</text>
           </g>
         ))}
         {goal != null && goal <= top && (
           <g>
             <line data-goal x1={PAD.left} x2={W - PAD.right} y1={y(goal)} y2={y(goal)} />
-            <text x={PAD.left + 4} y={y(goal) - 4} style={{ fill: CAUTION }}>{goalLabel ?? format(goal)}</text>
+            <text x={W - PAD.right} y={y(goal) - 5} textAnchor="end" style={{ fill: CAUTION }}>{goalLabel ?? format(goal)}</text>
           </g>
         )}
         {barSeries.map((s, si) =>

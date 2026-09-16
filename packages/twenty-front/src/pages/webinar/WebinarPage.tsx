@@ -11,8 +11,6 @@ import { MultiChart } from '@/custom-pages/os/MultiChart';
 import {
   ACCENT,
   addDays,
-  CAUTION,
-  EASE_OUT,
   isoDate,
   PillButton,
   POSITIVE,
@@ -96,9 +94,13 @@ const StyledFunnel = styled.div`
     grid-template-columns: minmax(0, 1fr) auto;
     padding: ${t.spacing[2]};
     text-align: left;
-    transition: background 120ms ${EASE_OUT};
+    transition-property: background-color, transform;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
   button[data-stage]:hover { background: ${t.background.tertiary}; }
+  button[data-stage]:active { transform: scale(0.96); }
+  button[data-stage]:focus-visible { outline: 2px solid ${t.color.blue}; outline-offset: 2px; }
   div[data-title] { color: ${t.font.color.primary}; font-size: ${t.font.size.sm}; font-weight: ${t.font.weight.medium}; }
   div[data-hint] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; }
   div[data-nums] { color: ${t.font.color.primary}; font-size: ${t.font.size.md}; font-variant-numeric: tabular-nums; text-align: right; }
@@ -113,6 +115,7 @@ const StyledRates = styled.div`
   gap: ${t.spacing[2]};
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: ${t.spacing[3]};
+  @media (max-width: 720px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   div[data-rate] { background: ${t.background.tertiary}; border-radius: ${t.border.radius.sm}; padding: ${t.spacing[2]}; }
   div[data-rate][data-hi] { background: color-mix(in srgb, ${POSITIVE} 10%, transparent); }
   div[data-k] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; }
@@ -134,9 +137,10 @@ const StyledMembers = styled.div`
     grid-template-columns: minmax(0, 1fr) auto auto;
     padding: ${t.spacing[1]} ${t.spacing[2]};
   }
-  div[data-row]:hover { background: ${t.background.tertiary}; }
-  div[data-row] div[data-actions] { display: flex; gap: 2px; opacity: 0; }
-  div[data-row]:hover div[data-actions] { opacity: 1; }
+  div[data-row]:hover, div[data-row]:focus-within { background: ${t.background.tertiary}; }
+  div[data-row] div[data-actions] { display: flex; gap: 2px; opacity: 0; transition: opacity 120ms cubic-bezier(0.2, 0, 0, 1); }
+  div[data-row]:hover div[data-actions], div[data-row]:focus-within div[data-actions] { opacity: 1; }
+  @media (hover: none) { div[data-row] div[data-actions] { opacity: 1; } }
   span[data-name] { color: ${t.font.color.primary}; font-size: ${t.font.size.sm}; font-weight: ${t.font.weight.medium}; }
   span[data-email] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; margin-left: ${t.spacing[2]}; }
   span[data-when] { color: ${t.font.color.tertiary}; font-size: ${t.font.size.xs}; white-space: nowrap; }
@@ -272,12 +276,12 @@ export const WebinarPage = () => {
             </StyledRow>
 
             <StyledGrid3>
-              <StyledTile data-clickable="" onClick={() => open('registered', 'Registered')} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
+              <StyledTile data-clickable="" role="button" tabIndex={0} onClick={() => open('registered', 'Registered')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open('registered', 'Registered'); } }} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
                 <div data-label><span>Registered</span></div>
                 <div data-value="">{funnel ? nf(f.shared.registered) : <Skeleton width={50} />}</div>
                 <div data-delta="">{f.shared.upcoming > 0 ? `${nf(f.shared.upcoming)} still upcoming` : 'booked a session'}</div>
               </StyledTile>
-              <StyledTile data-clickable="" onClick={() => open('entered', 'Showed up')} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
+              <StyledTile data-clickable="" role="button" tabIndex={0} onClick={() => open('entered', 'Showed up')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open('entered', 'Showed up'); } }} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
                 <div data-label><span>Showed up</span></div>
                 <div data-value="">{funnel ? nf(f.shared.entered) : <Skeleton width={50} />}</div>
                 <div data-delta="">reached the live room</div>
@@ -342,7 +346,7 @@ export const WebinarPage = () => {
               </StyledCardHead>
               <StyledGrid5>
                 {outcomeTiles.map((o) => (
-                  <StyledTile key={o.key} data-clickable="" onClick={() => open(o.key, o.label)} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
+                  <StyledTile key={o.key} data-clickable="" role="button" tabIndex={0} onClick={() => open(o.key, o.label)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(o.key, o.label); } }} title="Click to see the people behind this number" style={{ cursor: 'pointer' }}>
                     <div data-label><span>{o.label}</span></div>
                     <div data-value={o.hi ? 'positive' : ''}>{funnel ? nf(o.value) : <Skeleton width={40} />}</div>
                     <div data-delta="">{o.sub}</div>
@@ -369,7 +373,6 @@ export const WebinarPage = () => {
                 {growthSeries.length === 0 ? <StyledMuted>No registrations yet.</StyledMuted> : <Chart data={growthSeries} format={(n) => `${Math.round(n)} registered`} height={200} />}
               </StyledCard>
             </StyledGrid2>
-            <StyledFootnote style={{ color: CAUTION }}>{f.shared.rescheduled > 0 ? `${nf(f.shared.rescheduled)} registrations were rescheduled and are counted once, at their latest session.` : ''}</StyledFootnote>
           </StyledContent>
         </SkeletonTheme>
       </StyledBody>

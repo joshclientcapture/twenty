@@ -13,8 +13,10 @@ git log -1 --format='deploying %h %s'
 yarn install 2>&1 | tail -1
 
 npx nx build twenty-shared --skip-nx-cache || { echo "SHARED_BUILD_FAIL"; exit 1; }
-npx nx build twenty-server || { echo "SERVER_BUILD_FAIL"; exit 1; }
+# Front first: the server build wipes dist/ (including dist/front), so the live site would 404
+# for the whole front build if the server went first. This way the gap is the server build only.
 npx nx build twenty-front || { echo "FRONT_BUILD_FAIL"; exit 1; }
+npx nx build twenty-server || { echo "SERVER_BUILD_FAIL"; exit 1; }
 rm -rf packages/twenty-server/dist/front && cp -r packages/twenty-front/build packages/twenty-server/dist/front
 
 systemctl restart twenty-server twenty-worker

@@ -58,14 +58,6 @@ const rangePreset = (kind: string): { from: string; to: string } => {
   if (kind === 'last-30') return { from: isoDate(addDays(today, -29)), to: isoDate(today) };
   return { from: isoDate(addDays(today, -6)), to: isoDate(today) };
 };
-const fmtRange = (from: string, to: string) => {
-  const f = new Date(from + 'T00:00:00');
-  const tt = new Date(to + 'T00:00:00');
-  const o: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short' };
-  return from === to
-    ? f.toLocaleDateString('en-GB', { ...o, year: 'numeric' })
-    : `${f.toLocaleDateString('en-GB', o)} – ${tt.toLocaleDateString('en-GB', { ...o, year: 'numeric' })}`;
-};
 const fmtUsd = (n: number) => '$' + Math.round(n).toLocaleString();
 const fmtWhen = (s: string | null) =>
   s ? new Date(s).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
@@ -836,8 +828,8 @@ const OperatingSystem = () => {
               </StyledDateLabel>
               {range && (
                 <>
-                  <Tag color="blue" text={`${fmtRange(range.from, range.to)}${rangeM ? '' : ' · loading…'}`} weight="medium" />
                   <Button size="small" variant="tertiary" Icon={IconX} title="Clear" onClick={() => setRange(null)} />
+                  {!rangeM && <StyledLabel>Loading…</StyledLabel>}
                 </>
               )}
             </StyledRangeBox>

@@ -18,6 +18,8 @@ export enum ApiPath {
   Metadata = 'metadata',
   OAuth = 'oauth',
   OpenApi = 'open-api',
+  // Conversifi OS analytics served by twenty-server from the `os` schema.
+  Os = 'os',
   PublicAssets = 'public-assets',
   Rest = 'rest',
   RouteTrigger = 's',

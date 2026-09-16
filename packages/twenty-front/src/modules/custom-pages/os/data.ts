@@ -1,16 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
-
-// Points at the Conversifi "central brain" Supabase project (shhgojbfvatscupsaqcv).
-// This is the project Claude has access to and where all the metrics live.
-// When Lovable is able to connect to this same project, these become env vars —
-// the URL/key stay the same because it's the same database.
-const SUPABASE_URL =
-  import.meta.env.VITE_SUPABASE_URL ?? "https://shhgojbfvatscupsaqcv.supabase.co";
-const SUPABASE_ANON_KEY =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNoaGdvamJmdmF0c2N1cHNhcWN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwODQ3NjUsImV4cCI6MjA5ODY2MDc2NX0.4-RiKKYn4w7q1OHWAxtrvQiCAByYSEZKQGUjLH0Ce4Q";
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Data layer copied from the OS app's lib/supabase.ts. The functions below are served by
+// twenty-server from the `os` schema of the CRM database (see transport.ts).
+import { osClient } from "@/custom-pages/os/transport";
 
 export type DashboardMetrics = {
   generated_at: string;
@@ -39,7 +29,7 @@ export type DashboardMetrics = {
 };
 
 export async function fetchDashboardMetrics(): Promise<DashboardMetrics> {
-  const { data, error } = await supabase.rpc("get_dashboard_metrics");
+  const { data, error } = await osClient.rpc("get_dashboard_metrics");
   if (error) throw error;
   return data as DashboardMetrics;
 }
@@ -49,7 +39,7 @@ export type ShowUp = ShowUpStats & { monthly: Record<string, ShowUpStats> };
 // Show-up rate EXCLUDES cancellations: rate = recorded ÷ held. Cancellations are
 // reported separately (canceled / cancel_rate). See get_show_up() RPC.
 export async function fetchShowUp(): Promise<ShowUp> {
-  const { data, error } = await supabase.rpc("get_show_up");
+  const { data, error } = await osClient.rpc("get_show_up");
   if (error) throw error;
   return data as ShowUp;
 }
@@ -82,7 +72,7 @@ export type WebinarFunnel = {
 };
 
 export async function fetchWebinarFunnel(from: string | null = null, to: string | null = null): Promise<WebinarFunnel> {
-  const { data, error } = await supabase.rpc("get_webinar_funnel", { p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_webinar_funnel", { p_from: from, p_to: to });
   if (error) throw error;
   return data as WebinarFunnel;
 }
@@ -92,7 +82,7 @@ export async function fetchWebinarFunnel(from: string | null = null, to: string 
 // they actually booked (props.slot on the registered event) — only set for attendees.
 export type WebinarMember = { email: string; name: string | null; at: string | null; slot: string | null; rescheduled: boolean; bookings: number };
 export async function fetchWebinarStageMembers(stage: string, from: string | null = null, to: string | null = null): Promise<WebinarMember[]> {
-  const { data, error } = await supabase.rpc("get_webinar_stage_members", { p_stage: stage, p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_webinar_stage_members", { p_stage: stage, p_from: from, p_to: to });
   if (error) throw error;
   return (data as WebinarMember[]) ?? [];
 }
@@ -101,7 +91,7 @@ export async function fetchWebinarStageMembers(stage: string, from: string | nul
 // Only works for event stages (registered/entered/reached_offer/offer_click/trial_click/offer_paid);
 // the Stripe-derived stages have no event rows to delete. Returns the number of rows removed.
 export async function deleteWebinarStageMember(stage: string, email: string, from: string | null = null, to: string | null = null): Promise<number> {
-  const { data, error } = await supabase.rpc("delete_webinar_stage_member", { p_stage: stage, p_email: email, p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("delete_webinar_stage_member", { p_stage: stage, p_email: email, p_from: from, p_to: to });
   if (error) throw error;
   return (data as number) ?? 0;
 }
@@ -117,13 +107,13 @@ export type RangeMetrics = {
 export type ConvStats = { sat: number; sat_trials: number; trials_total: number; rate: number | null };
 export type Conversion = { total: ConvStats; monthly: Record<string, ConvStats> };
 export async function fetchConversion(): Promise<Conversion> {
-  const { data, error } = await supabase.rpc("get_conversion");
+  const { data, error } = await osClient.rpc("get_conversion");
   if (error) throw error;
   return data as Conversion;
 }
 // All dashboard KPIs computed for an arbitrary [from,to] date range.
 export async function fetchRangeMetrics(from: string, to: string): Promise<RangeMetrics> {
-  const { data, error } = await supabase.rpc("get_range_metrics", { p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_range_metrics", { p_from: from, p_to: to });
   if (error) throw error;
   return data as RangeMetrics;
 }
@@ -132,7 +122,7 @@ export type CountryGeo = { country: string; count: number };
 export type CustomerGeo = { total_located: number; countries: CountryGeo[] };
 // Customer locations (from Stripe billing/card country), aggregated by country.
 export async function fetchCustomerGeo(): Promise<CustomerGeo> {
-  const { data, error } = await supabase.rpc("get_customer_geo");
+  const { data, error } = await osClient.rpc("get_customer_geo");
   if (error) throw error;
   return data as CustomerGeo;
 }
@@ -144,7 +134,7 @@ export type CustomerPoint = {
 };
 // One row per paying customer with precise coords (ZIP-geocoded for US/CA/UK) + payment stats.
 export async function fetchCustomerPoints(): Promise<CustomerPoint[]> {
-  const { data, error } = await supabase.rpc("get_customer_points");
+  const { data, error } = await osClient.rpc("get_customer_points");
   if (error) throw error;
   return (data ?? []) as CustomerPoint[];
 }
@@ -152,7 +142,7 @@ export async function fetchCustomerPoints(): Promise<CustomerPoint[]> {
 export type GrowthPoint = { month: string; arr: number; subscribers: number };
 export type Growth = { current_arr: number; current_mrr: number; current_subscribers: number; arr_goal: number; series: GrowthPoint[] };
 export async function fetchGrowth(): Promise<Growth> {
-  const { data, error } = await supabase.rpc("get_growth");
+  const { data, error } = await osClient.rpc("get_growth");
   if (error) throw error;
   return data as Growth;
 }
@@ -160,7 +150,7 @@ export async function fetchGrowth(): Promise<Growth> {
 export type ChurnMonth = { month: string; start: number; new: number; churned: number; reactivated: number; net: number; churn_rate: number | null; churned_arr: number };
 export type Churn = { months: ChurnMonth[]; series: { month: string; rate: number | null }[] };
 export async function fetchChurn(): Promise<Churn> {
-  const { data, error } = await supabase.rpc("get_churn");
+  const { data, error } = await osClient.rpc("get_churn");
   if (error) throw error;
   return data as Churn;
 }
@@ -169,7 +159,7 @@ export type ChurnListRow = {
   mrr: number; arr: number; cancel_date: string | null; start_date: string; status: string;
 };
 export async function fetchChurnList(type: string, month: string | null = null): Promise<ChurnListRow[]> {
-  const { data, error } = await supabase.rpc("get_churn_list", { p_type: type, p_month: month });
+  const { data, error } = await osClient.rpc("get_churn_list", { p_type: type, p_month: month });
   if (error) throw error;
   return (data ?? []) as ChurnListRow[];
 }
@@ -182,7 +172,7 @@ export type RenewalRow = {
 export type Renewals = { days: number; count: number; past_due_count: number; total_expected: number; rows: RenewalRow[] };
 // Upcoming subscription renewals due within N days (forecast).
 export async function fetchUpcomingRenewals(days: number): Promise<Renewals> {
-  const { data, error } = await supabase.rpc("get_upcoming_renewals", { p_days: days });
+  const { data, error } = await osClient.rpc("get_upcoming_renewals", { p_days: days });
   if (error) throw error;
   return data as Renewals;
 }
@@ -197,31 +187,31 @@ export type TrialForecast = {
 };
 // Trials expiring within N days × conversion rate → expected new revenue.
 export async function fetchTrialForecast(days: number): Promise<TrialForecast> {
-  const { data, error } = await supabase.rpc("get_trial_forecast", { p_days: days });
+  const { data, error } = await osClient.rpc("get_trial_forecast", { p_days: days });
   if (error) throw error;
   return data as TrialForecast;
 }
 // Manually hide (or restore) a specific trial subscription from the forecast.
 export async function hideTrial(subId: string): Promise<void> {
-  const { error } = await supabase.rpc("hide_trial", { p_sub_id: subId });
+  const { error } = await osClient.rpc("hide_trial", { p_sub_id: subId });
   if (error) throw error;
 }
 export async function unhideTrial(subId: string): Promise<void> {
-  const { error } = await supabase.rpc("unhide_trial", { p_sub_id: subId });
+  const { error } = await osClient.rpc("unhide_trial", { p_sub_id: subId });
   if (error) throw error;
 }
 
 export type GoalMonth = { month: string; clients: number; trials: number };
 // Actual new clients + trials per month, for the Goals page (vs the growth-plan ramp).
 export async function fetchGoalTracker(): Promise<GoalMonth[]> {
-  const { data, error } = await supabase.rpc("get_goal_tracker");
+  const { data, error } = await osClient.rpc("get_goal_tracker");
   if (error) throw error;
   return ((data as { months?: GoalMonth[] })?.months ?? []);
 }
 
 export type TheraponCash = { total: number; monthly: Record<string, number> };
 export async function fetchTheraponCash(): Promise<TheraponCash> {
-  const { data, error } = await supabase.rpc("get_therapon_cash");
+  const { data, error } = await osClient.rpc("get_therapon_cash");
   if (error) throw error;
   return data as TheraponCash;
 }
@@ -231,7 +221,7 @@ export type AttrSplit = { total: number; therapon: number; active?: number; mrr?
 export type AttributionSplit = { trials: AttrSplit; sales: AttrSplit };
 // Trials & sales, total vs Therapon-attributed (customer booked/sat a sales call).
 export async function fetchAttributionSplit(): Promise<AttributionSplit> {
-  const { data, error } = await supabase.rpc("get_attribution_split");
+  const { data, error } = await osClient.rpc("get_attribution_split");
   if (error) throw error;
   return data as AttributionSplit;
 }
@@ -243,20 +233,20 @@ export type ShowUpBucket = {
 export type ShowUpSeries = { grain: string; buckets: ShowUpBucket[]; total: Omit<ShowUpBucket, "start"> };
 // Bucketed show-up (day/week/month) with an optional [from,to] range and a total row.
 export async function fetchShowUpSeries(grain: string, from: string | null = null, to: string | null = null): Promise<ShowUpSeries> {
-  const { data, error } = await supabase.rpc("get_show_up_series", { p_grain: grain, p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_show_up_series", { p_grain: grain, p_from: from, p_to: to });
   if (error) throw error;
   return data as ShowUpSeries;
 }
 
 export async function fetchLastSync(): Promise<string | null> {
-  const { data, error } = await supabase.rpc("get_last_sync");
+  const { data, error } = await osClient.rpc("get_last_sync");
   if (error) throw error;
   return (data as string) ?? null;
 }
 
 export type DisconnectedAccount = { name: string; disconnected_at: string | null };
 export async function fetchDisconnected(): Promise<DisconnectedAccount[]> {
-  const { data, error } = await supabase.rpc("get_disconnected_accounts");
+  const { data, error } = await osClient.rpc("get_disconnected_accounts");
   if (error) throw error;
   return (data ?? []) as DisconnectedAccount[];
 }
@@ -270,23 +260,23 @@ export type MonthlyRow = {
 export type RecordRow = Record<string, string | number | boolean | null>;
 export async function fetchRecords(type: string, month: string | null, arg: string | null = null, from: string | null = null, to: string | null = null): Promise<RecordRow[]> {
   if (type.startsWith("setters")) {
-    const { data, error } = await supabase.rpc("get_setter_list", { p_bucket: type, p_month: month, p_recruiter: arg });
+    const { data, error } = await osClient.rpc("get_setter_list", { p_bucket: type, p_month: month, p_recruiter: arg });
     if (error) throw error;
     return (data ?? []) as RecordRow[];
   }
   if (type === "new_customers" || type === "churned_customers") {
-    const { data, error } = await supabase.rpc("get_customer_records", {
+    const { data, error } = await osClient.rpc("get_customer_records", {
       p_kind: type === "churned_customers" ? "churned" : "new", p_month: month, p_from: from, p_to: to,
     });
     if (error) throw error;
     return (data ?? []) as RecordRow[];
   }
   if (type === "therapon_customers") {
-    const { data, error } = await supabase.rpc("get_therapon_customers", { p_month: month, p_from: from, p_to: to });
+    const { data, error } = await osClient.rpc("get_therapon_customers", { p_month: month, p_from: from, p_to: to });
     if (error) throw error;
     return (data ?? []) as RecordRow[];
   }
-  const { data, error } = await supabase.rpc("get_records", { p_type: type, p_month: month, p_arg: arg, p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_records", { p_type: type, p_month: month, p_arg: arg, p_from: from, p_to: to });
   if (error) throw error;
   return (data ?? []) as RecordRow[];
 }
@@ -294,7 +284,7 @@ export async function fetchRecords(type: string, month: string | null, arg: stri
 // Customer-level new/churned counts for a period (month, custom range, or all-time when all null).
 export type CustomerCounts = { new: number; churned: number };
 export async function fetchCustomerCounts(month: string | null, from: string | null = null, to: string | null = null): Promise<CustomerCounts> {
-  const { data, error } = await supabase.rpc("get_customer_counts", { p_month: month, p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_customer_counts", { p_month: month, p_from: from, p_to: to });
   if (error) throw error;
   return data as CustomerCounts;
 }
@@ -312,7 +302,7 @@ export type TheraponDaily = {
   log: DailyLogRow[];
 };
 export async function fetchTheraponDaily(from: string, to: string): Promise<TheraponDaily> {
-  const { data, error } = await supabase.rpc("get_therapon_daily", { p_from: from, p_to: to });
+  const { data, error } = await osClient.rpc("get_therapon_daily", { p_from: from, p_to: to });
   if (error) throw error;
   return data as TheraponDaily;
 }
@@ -322,7 +312,7 @@ export async function setTheraponCall(p: {
   key: string; status?: string | null; trialed?: boolean | null; stripe_email?: string | null;
   name?: string | null; email?: string | null; note?: string | null; by?: string | null;
 }): Promise<void> {
-  const { error } = await supabase.rpc("set_therapon_call", {
+  const { error } = await osClient.rpc("set_therapon_call", {
     p_key: p.key, p_status: p.status ?? null, p_trialed: p.trialed ?? null,
     p_stripe_email: p.stripe_email ?? null, p_name: p.name ?? null, p_email: p.email ?? null,
     p_note: p.note ?? null, p_by: p.by ?? null,
@@ -330,7 +320,7 @@ export async function setTheraponCall(p: {
   if (error) throw error;
 }
 export async function clearTheraponCall(key: string): Promise<void> {
-  const { error } = await supabase.rpc("clear_therapon_call", { p_key: key });
+  const { error } = await osClient.rpc("clear_therapon_call", { p_key: key });
   if (error) throw error;
 }
 
@@ -351,17 +341,17 @@ export type OnboardingImpact = {
   people: OnboardPerson[];
 };
 export async function fetchOnboardingImpact(): Promise<OnboardingImpact> {
-  const { data, error } = await supabase.rpc("get_onboarding_impact");
+  const { data, error } = await osClient.rpc("get_onboarding_impact");
   if (error) throw error;
   return data as OnboardingImpact;
 }
 // Manually remove / restore a person from the onboarding analysis (e.g. an untracked call).
 export async function excludeFromOnboarding(email: string): Promise<void> {
-  const { error } = await supabase.rpc("exclude_from_onboarding", { p_email: email });
+  const { error } = await osClient.rpc("exclude_from_onboarding", { p_email: email });
   if (error) throw error;
 }
 export async function includeInOnboarding(email: string): Promise<void> {
-  const { error } = await supabase.rpc("include_in_onboarding", { p_email: email });
+  const { error } = await osClient.rpc("include_in_onboarding", { p_email: email });
   if (error) throw error;
 }
 
@@ -385,12 +375,12 @@ export type AgencyPartners = {
   };
 };
 export async function fetchAgencyPartners(): Promise<AgencyPartners> {
-  const { data, error } = await supabase.rpc("get_agency_partners");
+  const { data, error } = await osClient.rpc("get_agency_partners");
   if (error) throw error;
   return data as AgencyPartners;
 }
 export async function setAgencyPartner(customerId: string, status: string, notes: string | null): Promise<void> {
-  const { error } = await supabase.rpc("set_agency_partner", { p_customer_id: customerId, p_status: status, p_notes: notes });
+  const { error } = await osClient.rpc("set_agency_partner", { p_customer_id: customerId, p_status: status, p_notes: notes });
   if (error) throw error;
 }
 
@@ -407,7 +397,7 @@ export type AgencyAccounts = {
   summary: { total: number; live: number; idle: number; disconnected: number; requests_sent: number };
 };
 export async function fetchAgencyAccounts(customerId: string): Promise<AgencyAccounts> {
-  const { data, error } = await supabase.rpc("get_agency_accounts", { p_customer_id: customerId });
+  const { data, error } = await osClient.rpc("get_agency_accounts", { p_customer_id: customerId });
   if (error) throw error;
   return data as AgencyAccounts;
 }
@@ -421,12 +411,12 @@ export type SetterAttribution = {
 export type AttributionMeta = { last_run: string | null; total_bookings: number; matched: number; collisions: number; no_match: number };
 export type SetterAttributionData = { setters: SetterAttribution[]; meta: AttributionMeta };
 export async function fetchSetterAttribution(): Promise<SetterAttributionData> {
-  const { data, error } = await supabase.rpc("get_setter_attribution");
+  const { data, error } = await osClient.rpc("get_setter_attribution");
   if (error) throw error;
   return data as SetterAttributionData;
 }
 export async function refreshAttribution(): Promise<{ ok: boolean; new_bookings: number; matched_this_run: number; meta: AttributionMeta }> {
-  const { data, error } = await supabase.functions.invoke("attribute-bookings", { body: {} });
+  const { data, error } = await osClient.functions.invoke("attribute-bookings", { body: {} });
   if (error) throw error;
   return data as { ok: boolean; new_bookings: number; matched_this_run: number; meta: AttributionMeta };
 }
@@ -449,7 +439,7 @@ export type AgencyAdCampaign = {
   generated_at: string;
 };
 export async function fetchAgencyAdCampaign(): Promise<AgencyAdCampaign> {
-  const { data, error } = await supabase.functions.invoke("cometly-campaign", { body: {} });
+  const { data, error } = await osClient.functions.invoke("cometly-campaign", { body: {} });
   if (error) throw error;
   if (data?.error) throw new Error(data.error);
   return data as AgencyAdCampaign;
@@ -476,7 +466,7 @@ export type AdFunnel = {
 // Reconciled from prod signups + Stripe (ad_campaign_reconciliation table), served by
 // the get_ad_campaign_funnel RPC. Replaces the old tag-based ghl-ad-funnel edge function.
 export async function fetchAdFunnel(): Promise<AdFunnel> {
-  const { data, error } = await supabase.rpc("get_ad_campaign_funnel");
+  const { data, error } = await osClient.rpc("get_ad_campaign_funnel");
   if (error) throw error;
   if (!data) throw new Error("No funnel data");
   return data as AdFunnel;
@@ -497,29 +487,29 @@ export type RecruiterRow = {
 export type RecruiterSummary = { bonus_per_setter: number; next_payout: string; recruiters: RecruiterRow[] };
 
 export async function fetchRecruiterSummary(): Promise<RecruiterSummary> {
-  const { data, error } = await supabase.rpc("get_recruiter_summary");
+  const { data, error } = await osClient.rpc("get_recruiter_summary");
   if (error) throw error;
   return data as RecruiterSummary;
 }
 export async function setSetterRecruiter(accountId: string, recruiter: string) {
-  const { error } = await supabase.rpc("set_setter_recruiter", { p_account_id: accountId, p_recruiter: recruiter });
+  const { error } = await osClient.rpc("set_setter_recruiter", { p_account_id: accountId, p_recruiter: recruiter });
   if (error) throw error;
 }
 export async function markSetterBonus(accountId: string, paid: boolean) {
-  const { error } = await supabase.rpc("mark_setter_bonus", { p_account_id: accountId, p_paid: paid });
+  const { error } = await osClient.rpc("mark_setter_bonus", { p_account_id: accountId, p_paid: paid });
   if (error) throw error;
 }
 export async function markRecruiterDuePaid(recruiter: string) {
-  const { error } = await supabase.rpc("mark_recruiter_due_paid", { p_recruiter: recruiter });
+  const { error } = await osClient.rpc("mark_recruiter_due_paid", { p_recruiter: recruiter });
   if (error) throw error;
 }
 export async function fetchSetterSummary(): Promise<SetterSummary> {
-  const { data, error } = await supabase.rpc("get_setter_summary");
+  const { data, error } = await osClient.rpc("get_setter_summary");
   if (error) throw error;
   return data as SetterSummary;
 }
 export async function fetchMonthlyMetrics(): Promise<MonthlyRow[]> {
-  const { data, error } = await supabase.rpc("get_monthly_metrics");
+  const { data, error } = await osClient.rpc("get_monthly_metrics");
   if (error) throw error;
   return (data ?? []) as MonthlyRow[];
 }
@@ -527,7 +517,7 @@ export async function fetchMonthlyMetrics(): Promise<MonthlyRow[]> {
 // Re-pulls external sources (Stripe/Fathom/Calendly) if their keys are set as function
 // secrets, then callers re-query the RPCs. Best-effort: never throws.
 export async function refreshAll() {
-  try { await supabase.functions.invoke("refresh-all", { body: {} }); } catch { /* still re-query */ }
+  try { await osClient.functions.invoke("refresh-all", { body: {} }); } catch { /* still re-query */ }
 }
 
 // Main-dashboard refresh: the business data. Customer locations/geocoding are excluded
@@ -552,7 +542,7 @@ async function runSteps(steps: readonly { step: string; label: string }[], onPro
   const failed: string[] = [];
   for (let i = 0; i < total; i++) {
     onProgress?.(i, total, steps[i].label);
-    const { error } = await supabase.functions.invoke("refresh-all", { body: { step: steps[i].step } }).catch((e) => ({ error: e as Error }));
+    const { error } = await osClient.functions.invoke("refresh-all", { body: { step: steps[i].step } }).catch((e) => ({ error: e as Error }));
     if (error) failed.push(steps[i].label);
   }
   onProgress?.(total, total, "Done");
@@ -575,7 +565,7 @@ export const refreshAgencies = (onProgress?: (done: number, total: number, label
 // Therapon Daily Call Log so attendance/trials can be pulled on demand between the
 // 15-min cron syncs. Best-effort: throws on failure so the caller can surface it.
 export async function refreshFathom() {
-  const { error } = await supabase.functions.invoke("refresh-all", { body: { step: "fathom" } });
+  const { error } = await osClient.functions.invoke("refresh-all", { body: { step: "fathom" } });
   if (error) throw error;
 }
 
@@ -609,25 +599,25 @@ export const SOURCES = [
 ] as const;
 
 export async function fetchSalesLedger(): Promise<SalesLedgerRow[]> {
-  const { data, error } = await supabase.rpc("get_sales_ledger");
+  const { data, error } = await osClient.rpc("get_sales_ledger");
   if (error) throw error;
   return (data ?? []) as SalesLedgerRow[];
 }
 
 export async function setSaleCloser(customerId: string, closer: string | null) {
-  const { error } = await supabase.rpc("set_sale_closer", { p_customer_id: customerId, p_closer: closer });
+  const { error } = await osClient.rpc("set_sale_closer", { p_customer_id: customerId, p_closer: closer });
   if (error) throw error;
 }
 export async function setSaleAttribution(customerId: string, source: string | null, closer: string | null) {
-  const { error } = await supabase.rpc("set_sale_attribution", { p_customer_id: customerId, p_source: source, p_closer: closer });
+  const { error } = await osClient.rpc("set_sale_attribution", { p_customer_id: customerId, p_source: source, p_closer: closer });
   if (error) throw error;
 }
 export async function excludeSale(customerId: string) {
-  const { error } = await supabase.rpc("exclude_sale", { p_customer_id: customerId });
+  const { error } = await osClient.rpc("exclude_sale", { p_customer_id: customerId });
   if (error) throw error;
 }
 export async function clearSaleOverride(customerId: string) {
-  const { error } = await supabase.rpc("clear_sale_override", { p_customer_id: customerId });
+  const { error } = await osClient.rpc("clear_sale_override", { p_customer_id: customerId });
   if (error) throw error;
 }
 
@@ -642,18 +632,18 @@ export type CommissionSummary = {
 };
 
 export async function fetchCommissionSummary(): Promise<CommissionSummary> {
-  const { data, error } = await supabase.rpc("get_commission_summary");
+  const { data, error } = await osClient.rpc("get_commission_summary");
   if (error) throw error;
   return data as CommissionSummary;
 }
 // Mark the sales commission on a single payment as paid / unpaid.
 export async function markCommissionPaid(paymentId: string, paid: boolean) {
-  const { error } = await supabase.rpc("mark_commission_paid", { p_payment_id: paymentId, p_paid: paid });
+  const { error } = await osClient.rpc("mark_commission_paid", { p_payment_id: paymentId, p_paid: paid });
   if (error) throw error;
 }
 // Mark every outstanding payment's commission for a closer as paid (payout day).
 export async function markCloserCommissionPaid(closer: string) {
-  const { error } = await supabase.rpc("mark_closer_commission_paid", { p_closer: closer });
+  const { error } = await osClient.rpc("mark_closer_commission_paid", { p_closer: closer });
   if (error) throw error;
 }
 
@@ -700,13 +690,13 @@ export type SearchCatalog = {
   };
 };
 export async function fetchSearchCatalog(): Promise<SearchCatalog> {
-  const { data, error } = await supabase.rpc("get_search_catalog");
+  const { data, error } = await osClient.rpc("get_search_catalog");
   if (error) throw error;
   return data as SearchCatalog;
 }
 // Bulk upsert parsed searches (from the paste-CSV importer). Rows come from parseSearchCsv().
 export async function upsertSearchCatalog(rows: unknown[]): Promise<{ upserted: number }> {
-  const { data, error } = await supabase.rpc("upsert_search_catalog", { p_rows: rows });
+  const { data, error } = await osClient.rpc("upsert_search_catalog", { p_rows: rows });
   if (error) throw error;
   return data as { upserted: number };
 }
@@ -714,7 +704,7 @@ export async function upsertSearchCatalog(rows: unknown[]): Promise<{ upserted: 
 // Bulk-match live workspace campaigns to catalog searches (decoded filter signature),
 // stamping status + setter + campaign progress. Runs on demand via the "Refresh matches" button.
 export async function refreshSearchMatches(incremental = false): Promise<{ ok: boolean; live_campaigns: number; matched: number; unmatched: number; skipped_existing: number }> {
-  const { data, error } = await supabase.functions.invoke("match-searches", { body: { incremental } });
+  const { data, error } = await osClient.functions.invoke("match-searches", { body: { incremental } });
   if (error) throw error;
   if (data && data.ok === false) throw new Error(data.error || "match failed");
   return data as { ok: boolean; live_campaigns: number; matched: number; unmatched: number; skipped_existing: number };
@@ -723,7 +713,7 @@ export async function refreshSearchMatches(incremental = false): Promise<{ ok: b
 // ---- Access control & User Management (admin) ----
 export type MyAccess = { email: string | null; role: "admin" | "user"; allowed_pages: string[] };
 export async function fetchMyAccess(): Promise<MyAccess> {
-  const { data, error } = await supabase.rpc("get_my_access");
+  const { data, error } = await osClient.rpc("get_my_access");
   if (error) throw error;
   return data as MyAccess;
 }
@@ -733,7 +723,7 @@ export type ManagedUser = {
   allowed_pages: string[]; created_at: string; last_sign_in_at: string | null;
 };
 async function adminUsers<T = unknown>(payload: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("admin-users", { body: payload });
+  const { data, error } = await osClient.functions.invoke("admin-users", { body: payload });
   if (error) throw error;
   if (data && data.ok === false) throw new Error(data.error || "request failed");
   return data as T;
@@ -769,7 +759,7 @@ export type SetterProfile = {
   };
 };
 export async function fetchSetterProfile(accountId: string): Promise<SetterProfile | null> {
-  const { data, error } = await supabase.rpc("get_setter_profile", { p_account_id: accountId });
+  const { data, error } = await osClient.rpc("get_setter_profile", { p_account_id: accountId });
   if (error) throw error;
   return (data as SetterProfile) ?? null;
 }
@@ -783,7 +773,7 @@ export type Allocation = {
   summary: { idle_count: number; disconnected_count: number; available_count: number; verticals: string[] };
 };
 export async function fetchAllocation(): Promise<Allocation> {
-  const { data, error } = await supabase.rpc("get_allocation");
+  const { data, error } = await osClient.rpc("get_allocation");
   if (error) throw error;
   return data as Allocation;
 }
@@ -799,7 +789,7 @@ export type CampaignAlerts = {
   summary: { under_volume: number; disconnected_holding: number; duplicates: number; exhausting: number; cooldown_soon: number };
 };
 export async function fetchCampaignAlerts(): Promise<CampaignAlerts> {
-  const { data, error } = await supabase.rpc("get_campaign_alerts");
+  const { data, error } = await osClient.rpc("get_campaign_alerts");
   if (error) throw error;
   return data as CampaignAlerts;
 }
@@ -840,7 +830,7 @@ export type RentalPayment = {
   setter_paid: boolean; setter_paid_at: string | null; overdue: boolean;
 };
 export async function fetchAccountRentals(): Promise<RentalsData> {
-  const { data, error } = await supabase.rpc("get_account_rentals");
+  const { data, error } = await osClient.rpc("get_account_rentals");
   if (error) throw error;
   return data as RentalsData;
 }
@@ -853,29 +843,29 @@ export type CareersSetter = {
   payment_method?: string | null; paypal_email?: string | null; bank_details?: string | null;
 };
 export async function lookupCareersSetter(email: string | null, name: string | null): Promise<CareersSetter | null> {
-  const { data, error } = await supabase.functions.invoke("careers-setter-lookup", { body: { email, name } });
+  const { data, error } = await osClient.functions.invoke("careers-setter-lookup", { body: { email, name } });
   if (error) throw error;
   const setter = (data as { setter?: CareersSetter } | null)?.setter;
   return setter && Object.keys(setter).length > 0 ? setter : null;
 }
 export async function fetchRentalPayments(rentalId: number): Promise<RentalPayment[]> {
-  const { data, error } = await supabase.rpc("get_rental_payments", { p_rental_id: rentalId });
+  const { data, error } = await osClient.rpc("get_rental_payments", { p_rental_id: rentalId });
   if (error) throw error;
   return (data as RentalPayment[]) ?? [];
 }
 export async function setRentalPayment(id: number, which: "client" | "setter", paid: boolean): Promise<void> {
-  const { error } = await supabase.rpc("set_rental_payment", { p_id: id, p_which: which, p_paid: paid });
+  const { error } = await osClient.rpc("set_rental_payment", { p_id: id, p_which: which, p_paid: paid });
   if (error) throw error;
 }
 export async function setRental(id: number, patch: { agreement?: boolean; status?: string; cancel_reason?: string; notes?: string }): Promise<void> {
-  const { error } = await supabase.rpc("set_rental", {
+  const { error } = await osClient.rpc("set_rental", {
     p_id: id, p_agreement: patch.agreement ?? null, p_status: patch.status ?? null,
     p_cancel_reason: patch.cancel_reason ?? null, p_notes: patch.notes ?? null,
   });
   if (error) throw error;
 }
 export async function importAccountRentals(rows: unknown[]): Promise<{ imported: number; rentals: number; cycles: number }> {
-  const { data, error } = await supabase.rpc("import_account_rentals", { p_rows: rows });
+  const { data, error } = await osClient.rpc("import_account_rentals", { p_rows: rows });
   if (error) throw error;
   return data as { imported: number; rentals: number; cycles: number };
 }
@@ -883,7 +873,7 @@ export async function importAccountRentals(rows: unknown[]): Promise<{ imported:
 // Re-match rentals to live Unipile accounts inside each client's workspace, refreshing
 // connection status, requests sent, and the real workspace-join date.
 export async function refreshRentalMatches(): Promise<{ ok: boolean; considered: number; matched: number; unmatched: number; unmatched_list: { setter: string; client: string }[] }> {
-  const { data, error } = await supabase.functions.invoke("match-rentals", { body: {} });
+  const { data, error } = await osClient.functions.invoke("match-rentals", { body: {} });
   if (error) throw error;
   if (data && data.ok === false) throw new Error(data.error || "match failed");
   return data as { ok: boolean; considered: number; matched: number; unmatched: number; unmatched_list: { setter: string; client: string }[] };
@@ -891,12 +881,12 @@ export async function refreshRentalMatches(): Promise<{ ok: boolean; considered:
 
 // ---- Rentals: manual overrides / CRUD ----
 export async function upsertRentalClient(id: number | null, name: string, email: string | null): Promise<number> {
-  const { data, error } = await supabase.rpc("upsert_rental_client", { p_id: id, p_name: name, p_email: email });
+  const { data, error } = await osClient.rpc("upsert_rental_client", { p_id: id, p_name: name, p_email: email });
   if (error) throw error;
   return data as number;
 }
 export async function deleteRentalClient(id: number, force = false): Promise<void> {
-  const { error } = await supabase.rpc("delete_rental_client", { p_id: id, p_force: force });
+  const { error } = await osClient.rpc("delete_rental_client", { p_id: id, p_force: force });
   if (error) throw error;
 }
 export async function upsertRental(p: {
@@ -904,7 +894,7 @@ export async function upsertRental(p: {
   placement_date?: string | null; first_due_date?: string | null; client_rate?: number | null;
   setter_rate?: number | null; agreement?: boolean | null; status?: string | null; notes?: string | null;
 }): Promise<number> {
-  const { data, error } = await supabase.rpc("upsert_rental", {
+  const { data, error } = await osClient.rpc("upsert_rental", {
     p_id: p.id, p_setter_name: p.setter_name, p_client_id: p.client_id, p_setter_email: p.setter_email ?? null,
     p_placement_date: p.placement_date || null, p_first_due_date: p.first_due_date || null,
     p_client_rate: p.client_rate ?? null, p_setter_rate: p.setter_rate ?? null,
@@ -914,26 +904,26 @@ export async function upsertRental(p: {
   return data as number;
 }
 export async function deleteRental(id: number): Promise<void> {
-  const { error } = await supabase.rpc("delete_rental", { p_id: id });
+  const { error } = await osClient.rpc("delete_rental", { p_id: id });
   if (error) throw error;
 }
 export async function updateRentalCycle(id: number, dueDate: string): Promise<void> {
-  const { error } = await supabase.rpc("update_rental_cycle", { p_id: id, p_due_date: dueDate });
+  const { error } = await osClient.rpc("update_rental_cycle", { p_id: id, p_due_date: dueDate });
   if (error) throw error;
 }
 export async function addRentalCycle(rentalId: number, dueDate: string): Promise<void> {
-  const { error } = await supabase.rpc("add_rental_cycle", { p_rental_id: rentalId, p_due_date: dueDate });
+  const { error } = await osClient.rpc("add_rental_cycle", { p_rental_id: rentalId, p_due_date: dueDate });
   if (error) throw error;
 }
 export async function deleteRentalCycle(id: number): Promise<void> {
-  const { error } = await supabase.rpc("delete_rental_cycle", { p_id: id });
+  const { error } = await osClient.rpc("delete_rental_cycle", { p_id: id });
   if (error) throw error;
 }
 
 // Purge a person from the webinar funnel entirely — every stage, all time, regardless of the
 // range on screen. For dummy/test leads. Returns how many events were removed.
 export async function deleteWebinarPerson(email: string): Promise<number> {
-  const { data, error } = await supabase.rpc("delete_webinar_person", { p_email: email });
+  const { data, error } = await osClient.rpc("delete_webinar_person", { p_email: email });
   if (error) throw error;
   return (data as number) ?? 0;
 }
@@ -942,15 +932,15 @@ export async function deleteWebinarPerson(email: string): Promise<number> {
 // Treats the customer's subscription as never-ended, so they drop out of every churn count/list.
 export type ChurnExclusion = { customer_id: string; reason: string | null; name: string | null; email: string | null };
 export async function fetchChurnExclusions(): Promise<ChurnExclusion[]> {
-  const { data, error } = await supabase.rpc("get_churn_exclusions");
+  const { data, error } = await osClient.rpc("get_churn_exclusions");
   if (error) throw error;
   return (data as ChurnExclusion[]) ?? [];
 }
 export async function setChurnExclusion(customerId: string, reason: string | null): Promise<void> {
-  const { error } = await supabase.rpc("set_churn_exclusion", { p_customer_id: customerId, p_reason: reason, p_by: null });
+  const { error } = await osClient.rpc("set_churn_exclusion", { p_customer_id: customerId, p_reason: reason, p_by: null });
   if (error) throw error;
 }
 export async function removeChurnExclusion(customerId: string): Promise<void> {
-  const { error } = await supabase.rpc("remove_churn_exclusion", { p_customer_id: customerId });
+  const { error } = await osClient.rpc("remove_churn_exclusion", { p_customer_id: customerId });
   if (error) throw error;
 }

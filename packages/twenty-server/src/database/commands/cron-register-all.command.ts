@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Command, CommandRunner } from 'nest-commander';
 import { isDefined } from 'twenty-shared/utils';
 
+import { OsSyncCronCommand } from 'src/conversifi-os/crons/commands/os-sync.cron.command';
 import { MarketplaceCatalogSyncCronCommand } from 'src/engine/core-modules/application/application-marketplace/crons/commands/marketplace-catalog-sync.cron.command';
 import { StaleRegistrationCleanupCronCommand } from 'src/engine/core-modules/application/application-oauth/stale-registration-cleanup/commands/stale-registration-cleanup.cron.command';
 import { ApplicationVersionCheckCronCommand } from 'src/engine/core-modules/application/application-upgrade/crons/commands/application-version-check.cron.command';
@@ -84,6 +85,7 @@ export class CronRegisterAllCommand extends CommandRunner {
     private readonly billingReminderCronCommand: BillingReminderCronCommand,
     private readonly applicationRecurringChargeCronCommand: ApplicationRecurringChargeCronCommand,
     private readonly userSessionCleanupCronCommand: UserSessionCleanupCronCommand,
+    private readonly osSyncCronCommand: OsSyncCronCommand,
     private readonly twentyConfigService: TwentyConfigService,
   ) {
     super();
@@ -238,6 +240,10 @@ export class CronRegisterAllCommand extends CommandRunner {
       {
         name: 'UserSessionCleanup',
         command: this.userSessionCleanupCronCommand,
+      },
+      {
+        name: 'OsSync',
+        command: this.osSyncCronCommand,
       },
     ];
 

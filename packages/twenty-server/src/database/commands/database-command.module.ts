@@ -44,6 +44,7 @@ import { ObjectMetadataModule } from 'src/engine/metadata-modules/object-metadat
 import { RoleEntity } from 'src/engine/metadata-modules/role/role.entity';
 import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/provide-workspace-scoped-repository';
 import { CodeInterpreterSessionCleanupModule } from 'src/engine/core-modules/code-interpreter/crons/code-interpreter-session-cleanup.module';
+import { ConversifiOsModule } from 'src/conversifi-os/conversifi-os.module';
 import { TrashCleanupModule } from 'src/engine/trash-cleanup/trash-cleanup.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
@@ -88,6 +89,7 @@ import { WorkflowCoreConsistencyModule } from 'src/modules/workflow/workflow-cor
     BillingReminderModule,
     ApplicationRecurringChargeModule,
     CodeInterpreterSessionCleanupModule,
+    ConversifiOsModule,
     PublicDomainModule,
     EventLogCleanupModule,
     EnterpriseModule,

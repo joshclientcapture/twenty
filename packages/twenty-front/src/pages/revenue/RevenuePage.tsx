@@ -92,6 +92,18 @@ const StyledClickable = styled.button`
   &:disabled { cursor: default; text-decoration: none; }
 `;
 
+const StyledTakeaway = styled.p`
+  background: ${t.background.tertiary};
+  border-radius: ${t.border.radius.sm};
+  color: ${t.font.color.secondary};
+  font-size: ${t.font.size.md};
+  line-height: 1.5;
+  margin: ${t.spacing[3]} 0 0;
+  padding: ${t.spacing[3]} ${t.spacing[4]};
+  b { color: ${t.font.color.primary}; font-weight: ${t.font.weight.semiBold}; }
+  span[data-note] { color: ${t.font.color.tertiary}; display: block; font-size: ${t.font.size.sm}; margin-top: ${t.spacing[1]}; }
+`;
+
 const StyledCompact = styled.div`
   max-width: 560px;
   table { width: 100%; }
@@ -141,6 +153,7 @@ export const RevenuePage = () => {
 
   const [rateWindow, setRateWindow] = useState(4);
   const [horizon, setHorizon] = useState<'goal' | 12 | 36>('goal');
+  const [detail, setDetail] = useState<'none' | 'actuals' | 'projection'>('none');
   const [drill, setDrill] = useState<Drill | null>(null);
   const [drillRows, setDrillRows] = useState<ChurnListRow[] | null>(null);
   const [showExclusions, setShowExclusions] = useState(false);
@@ -320,37 +333,40 @@ export const RevenuePage = () => {
                     mutedFrom={projection.series.length}
                     height={260}
                   />
-                  <StyledGrid2 style={{ marginTop: 16 }}>
-                    <div>
-                      <StyledLabel>The climb · monthly actuals</StyledLabel>
-                      <StyledCompact><StyledTable>
-                        <thead><tr><th>Month</th><th>ARR</th><th>Subs</th><th>MoM</th></tr></thead>
+                  <StyledTakeaway>
+                    At the <b>{pct(projection.rate)}</b> average monthly growth of the last {projection.w} months, ARR crosses <b>$1M around {projection.milestone ? mkLong(projection.milestone.month) : 'now'}</b>
+                    {horizon !== 'goal' && projection.horizonEnd && <> and reaches <b>{fmtShort(projection.horizonEnd.arr)}</b> by {mkLong(projection.horizonEnd.month)}</>}.
+                    <span data-note>Projection, not a forecast: it assumes the last {projection.w} months' pace holds. Growth was {projection.latestMom == null ? '—' : pct(projection.latestMom)} last month against a peak of {pct(projection.peakMom)}.</span>
+                  </StyledTakeaway>
+                  <StyledRow style={{ marginTop: 12 }}>
+                    <StyledLabel>Detail</StyledLabel>
+                    <PillButton title="Monthly actuals" active={detail === 'actuals'} onClick={() => setDetail(detail === 'actuals' ? 'none' : 'actuals')} />
+                    <PillButton title="Projected months" active={detail === 'projection'} onClick={() => setDetail(detail === 'projection' ? 'none' : 'projection')} />
+                  </StyledRow>
+                  {detail === 'actuals' && (
+                    <StyledReveal><StyledCompact style={{ marginTop: 12 }}>
+                      <StyledTable>
+                        <thead><tr><th>Month</th><th>ARR</th><th>Subscribers</th><th>Month on month</th></tr></thead>
                         <tbody>
-                          {projection.series.map((p, i) => (
+                          {[...projection.series].reverse().map((p) => { const i = projection.series.indexOf(p); return (
                             <tr key={p.month}><td>{mkLabel(p.month)}</td><td>{fmtUsd(p.arr)}</td><td>{p.subscribers ?? '—'}</td><td style={{ color: projection.mom[i] == null ? undefined : (projection.mom[i] as number) >= 0 ? POSITIVE : CAUTION }}>{projection.mom[i] == null ? '—' : pct(projection.mom[i] as number)}</td></tr>
-                          ))}
+                          ); })}
                         </tbody>
-                      </StyledTable></StyledCompact>
-                    </div>
-                    <div>
-                      <StyledLabel>Projection · same pace</StyledLabel>
-                      <p style={{ margin: '8px 0 12px', fontSize: 13, lineHeight: 1.5 }}>
-                        At the <b>{pct(projection.rate)}</b> average monthly growth of the last {projection.w} months, ARR crosses <b>$1M around {projection.milestone ? mkLong(projection.milestone.month) : 'now'}</b>
-                        {horizon !== 'goal' && projection.horizonEnd && <> and reaches <b>{fmtShort(projection.horizonEnd.arr)}</b> by {mkLong(projection.horizonEnd.month)}</>}.
-                      </p>
-                      <StyledCompact><StyledTable>
+                      </StyledTable>
+                    </StyledCompact></StyledReveal>
+                  )}
+                  {detail === 'projection' && (
+                    <StyledReveal><StyledCompact style={{ marginTop: 12 }}>
+                      <StyledTable>
                         <thead><tr><th>Month</th><th>Projected ARR</th></tr></thead>
                         <tbody>
                           {projection.projected.filter((p, i, arr) => horizon === 'goal' || (i + 1) % 6 === 0 || p.month === projection.milestone?.month || i === arr.length - 1).map((p) => (
                             <tr key={p.month}><td>{mkLabel(p.month)} {p.month === projection.milestone?.month && <StyledChip data-tone="positive">$1M goal</StyledChip>}</td><td>{fmtUsd(p.arr)}</td></tr>
                           ))}
                         </tbody>
-                      </StyledTable></StyledCompact>
-                      <StyledFootnote>
-                        Projection, not a forecast. It assumes the last {projection.w} months' average pace holds. Growth was {projection.latestMom == null ? '—' : pct(projection.latestMom)} last month against a peak of {pct(projection.peakMom)}, so multi-year figures are an optimistic ceiling.
-                      </StyledFootnote>
-                    </div>
-                  </StyledGrid2>
+                      </StyledTable>
+                    </StyledCompact></StyledReveal>
+                  )}
                 </>
               ) : <Skeleton height={200} />}
             </StyledCard>

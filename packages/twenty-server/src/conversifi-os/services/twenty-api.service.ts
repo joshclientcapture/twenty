@@ -6,6 +6,7 @@ type GraphqlError = { message: string; extensions?: Record<string, unknown> };
 
 export type MetadataField = { id: string; name: string; type: string };
 export type MetadataObject = { id: string; nameSingular: string; fieldsList: MetadataField[] };
+type SelectOption = { id?: string; value: string; label: string; color: string; position?: number };
 type PersonEmails = { id: string; emails: { primaryEmail: string | null; additionalEmails: string[] | null } };
 export type WantedField = { name: string; label: string; type: string; icon: string; extra?: Record<string, unknown> };
 
@@ -66,6 +67,24 @@ export class TwentyApiService {
       cursor = result.people.pageInfo.endCursor;
     }
     return people;
+  }
+
+  // Appends any missing options to an existing SELECT field, keeping the current ones untouched.
+  async ensureSelectOptions(objectNameSingular: string, fieldName: string, wanted: SelectOption[]) {
+    const result = await this.metadata<{ objects: { edges: { node: { nameSingular: string; fieldsList: { id: string; name: string; options: SelectOption[] | null }[] } }[] } }>(
+      `query OsFieldOptions { objects(paging: { first: 1000 }) { edges { node { nameSingular fieldsList { id name options } } } } }`,
+    );
+    const object = result.objects.edges.map((edge) => edge.node).find((candidate) => candidate.nameSingular === objectNameSingular);
+    const field = object?.fieldsList.find((candidate) => candidate.name === fieldName);
+    if (!field) return;
+    const current = field.options ?? [];
+    const missing = wanted.filter((option) => !current.some((existing) => existing.value === option.value));
+    if (missing.length === 0) return;
+    const options = [...current, ...missing.map((option, index) => ({ ...option, id: option.id ?? randomUUID(), position: current.length + index }))];
+    await this.metadata(
+      `mutation AppendOsOptions($id: UUID!, $update: UpdateFieldInput!) { updateOneField(input: { id: $id, update: $update }) { id } }`,
+      { id: field.id, update: { options } },
+    );
   }
 
   async listObjects(): Promise<MetadataObject[]> {

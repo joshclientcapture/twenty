@@ -9,7 +9,7 @@ import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service'
 
 type BookingType =
   | 'DEMO' | 'DISCOVERY' | 'AGENCY_DEMO' | 'WEBINAR' | 'SETUP_CALL' | 'ONBOARDING' | 'DIAGNOSTICS' | 'FEEDBACK' | 'NEXT_STEPS' | 'OTHER';
-type BookingStatus = 'UPCOMING' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
+type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'PENDING' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
 
 type BookingSourceRow = {
   uri: string;
@@ -47,6 +47,8 @@ const BOOKING_TYPE_OPTIONS: { value: BookingType; label: string; color: string }
 
 const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string; color: string }[] = [
   { value: 'UPCOMING', label: 'Upcoming', color: 'blue' },
+  { value: 'IN_PROGRESS', label: 'In progress', color: 'purple' },
+  { value: 'PENDING', label: 'Awaiting recording', color: 'yellow' },
   { value: 'SHOWED', label: 'Showed', color: 'green' },
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'gray' },
@@ -69,11 +71,19 @@ const bookingTypeFor = (eventName: string | null): BookingType => {
   return 'OTHER';
 };
 
+// Fathom publishes a recording some time after the call ends, so a call is only judged a
+// no-show once a grace window after its end has passed with nothing matched.
+const RECORDING_GRACE_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_CALL_MS = 30 * 60 * 1000;
 const bookingStatusFor = (row: BookingSourceRow, now: number): BookingStatus => {
   if (row.rescheduled) return 'RESCHEDULED';
   if (row.status === 'canceled') return 'CANCELLED';
-  if (new Date(row.start_time).getTime() >= now) return 'UPCOMING';
-  return row.recording_url ? 'SHOWED' : 'NO_SHOW';
+  const start = new Date(row.start_time).getTime();
+  if (start >= now) return 'UPCOMING';
+  const end = row.end_time ? new Date(row.end_time).getTime() : start + DEFAULT_CALL_MS;
+  if (now < end) return 'IN_PROGRESS';
+  if (row.recording_url) return 'SHOWED';
+  return now < end + RECORDING_GRACE_MS ? 'PENDING' : 'NO_SHOW';
 };
 
 // Mirrors Calendly bookings (with the closer, the Fathom recording and the outcome) into a Booking
@@ -217,6 +227,7 @@ export class OsBookingsService {
     const refreshed = (await this.listObjects()).find((object) => object.nameSingular === 'booking');
     if (!refreshed) throw new Error('booking object vanished after setup');
     const fieldIds = Object.fromEntries(refreshed.fieldsList.map((field) => [field.name, field.id]));
+    await this.twentyApi.ensureSelectOptions('booking', 'status', BOOKING_STATUS_OPTIONS);
     await this.ensureCalendarView(refreshed.id, fieldIds);
     this.fieldIds = fieldIds;
   }

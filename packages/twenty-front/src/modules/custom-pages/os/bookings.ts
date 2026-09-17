@@ -1,4 +1,4 @@
-export type BookingStatus = 'UPCOMING' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
+export type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'PENDING' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
 export type BookingType =
   | 'DEMO' | 'DISCOVERY' | 'AGENCY_DEMO' | 'WEBINAR' | 'SETUP_CALL' | 'ONBOARDING' | 'DIAGNOSTICS' | 'FEEDBACK' | 'NEXT_STEPS' | 'OTHER';
 
@@ -27,6 +27,8 @@ export type BookingRecord = {
 
 export const BOOKING_STATUS_META: Record<BookingStatus, { label: string; color: string }> = {
   UPCOMING: { label: 'Upcoming', color: 'var(--t-tag-text-blue, #2563eb)' },
+  IN_PROGRESS: { label: 'In progress', color: 'var(--t-tag-text-purple, #7c3aed)' },
+  PENDING: { label: 'Awaiting recording', color: 'var(--t-tag-text-yellow, #a16207)' },
   SHOWED: { label: 'Showed', color: 'var(--t-tag-text-green, #15803d)' },
   NO_SHOW: { label: 'No show', color: 'var(--t-tag-text-red, #b91c1c)' },
   CANCELLED: { label: 'Cancelled', color: 'var(--t-font-color-light, #9ca3af)' },

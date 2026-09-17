@@ -508,7 +508,7 @@ export const BookingsCalendar = () => {
     for (const booking of visible) {
       if (booking.status === 'SHOWED') tally.showed++;
       else if (booking.status === 'NO_SHOW') tally.noShow++;
-      else if (booking.status === 'UPCOMING') tally.upcoming++;
+      else if (booking.status === 'UPCOMING' || booking.status === 'IN_PROGRESS' || booking.status === 'PENDING') tally.upcoming++;
       else if (booking.status === 'CANCELLED' || booking.status === 'RESCHEDULED') tally.cancelled++;
     }
     return tally;

@@ -83,12 +83,6 @@ const CustomersPage = lazy(() =>
   })),
 );
 
-const BookingsCalendarPage = lazy(() =>
-  import('~/pages/calendar/BookingsCalendarPage').then((module) => ({
-    default: module.BookingsCalendarPage,
-  })),
-);
-
 const SalesPage = lazy(() =>
   import('~/pages/sales/SalesPage').then((module) => ({
     default: module.SalesPage,
@@ -240,15 +234,6 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <CustomersPage />
-        </LazyRoute>
-      ),
-      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
-    },
-    {
-      path: AppPath.BookingsCalendar,
-      element: (
-        <LazyRoute>
-          <BookingsCalendarPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

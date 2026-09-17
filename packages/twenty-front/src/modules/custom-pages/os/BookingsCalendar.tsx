@@ -1,12 +1,11 @@
 import { styled } from '@linaria/react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IconCalendarEvent, IconChevronLeft, IconChevronRight, IconExternalLink, IconUserCircle, IconVideo, IconX } from 'twenty-ui/icon';
+import { IconChevronLeft, IconChevronRight, IconExternalLink, IconUserCircle, IconVideo, IconX } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
-import { PageHeader } from '@/ui/layout/page/components/PageHeader';
 import { useIsMobile } from '@/ui/utilities/responsive/hooks/useIsMobile';
 import {
   addDays,
@@ -27,21 +26,7 @@ import {
   type PlacedBooking,
 } from '@/custom-pages/os/bookings';
 import { fetchClosers, type Closer } from '@/custom-pages/os/closers';
-import {
-  ACCENT,
-  EASE_OUT,
-  PillButton,
-  PRESS_SCALE,
-  StyledBody,
-  StyledChip,
-  StyledError,
-  StyledField,
-  StyledHeaderActions,
-  StyledHeaderMeta,
-  StyledMuted,
-  StyledPage,
-  StyledReveal,
-} from '@/custom-pages/os/ui';
+import { ACCENT, EASE_OUT, PillButton, PRESS_SCALE, StyledChip, StyledError, StyledField, StyledMuted, StyledReveal } from '@/custom-pages/os/ui';
 
 const HOUR_HEIGHT = 56;
 const GUTTER_WIDTH = 52;
@@ -49,11 +34,29 @@ const DEFAULT_FIRST_HOUR = 7;
 const DEFAULT_LAST_HOUR = 21;
 const DRAWER_WIDTH = 320;
 
+// Fills Twenty's record index body (the view bar above stays Twenty's own).
 const StyledLayout = styled.div`
+  box-sizing: border-box;
+  color: ${t.font.color.primary};
   display: flex;
-  gap: ${t.spacing[4]};
+  font-family: ${t.font.family};
+  font-size: ${t.font.size.md};
+  gap: ${t.spacing[3]};
   height: 100%;
   min-height: 0;
+  padding: ${t.spacing[2]} ${t.spacing[3]} ${t.spacing[3]} 0;
+`;
+
+const StyledRangeLabel = styled.span`
+  color: ${t.font.color.primary};
+  font-size: ${t.font.size.sm};
+  font-weight: ${t.font.weight.medium};
+  padding: 0 ${t.spacing[1]};
+  white-space: nowrap;
+  span {
+    color: ${t.font.color.tertiary};
+    font-weight: ${t.font.weight.regular};
+  }
 `;
 
 const StyledMain = styled.div`
@@ -387,7 +390,7 @@ const RECORD_FIELDS = {
 
 const statusColor = (status: BookingStatus | null) => BOOKING_STATUS_META[status ?? 'UPCOMING'].color;
 
-export const BookingsCalendarPage = () => {
+export const BookingsCalendar = () => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [mode, setMode] = useState<ViewMode>(isMobile ? 'day' : 'week');
@@ -492,23 +495,19 @@ export const BookingsCalendarPage = () => {
   const rangeLabel = mode === 'week' ? formatRange(rangeStart, addDays(rangeEnd, -1)) : formatDayLong(rangeStart);
 
   return (
-    <StyledPage>
-      <PageHeader title="Calendar" Icon={IconCalendarEvent}>
-        <StyledHeaderActions>
-          <StyledHeaderMeta>
-            <span>{rangeLabel}</span>
-            {loading ? ' · loading' : ` · ${visible.length} booking${visible.length === 1 ? '' : 's'}`}
-          </StyledHeaderMeta>
-          <Button size="small" variant="secondary" Icon={IconChevronLeft} onClick={() => setAnchor(addDays(anchor, -days))} ariaLabel="Previous" />
-          <Button size="small" variant="secondary" title="Today" onClick={() => setAnchor(startOfDay(new Date()))} />
-          <Button size="small" variant="secondary" Icon={IconChevronRight} onClick={() => setAnchor(addDays(anchor, days))} ariaLabel="Next" />
-        </StyledHeaderActions>
-      </PageHeader>
-      <StyledBody>
         <StyledLayout>
           <StyledMain>
             {(error || closersError) && <StyledError>{error?.message ?? closersError}</StyledError>}
             <StyledToolbar>
+              <StyledToolbarGroup>
+                <Button size="small" variant="secondary" Icon={IconChevronLeft} onClick={() => setAnchor(addDays(anchor, -days))} ariaLabel="Previous" />
+                <Button size="small" variant="secondary" title="Today" onClick={() => setAnchor(startOfDay(new Date()))} />
+                <Button size="small" variant="secondary" Icon={IconChevronRight} onClick={() => setAnchor(addDays(anchor, days))} ariaLabel="Next" />
+                <StyledRangeLabel>
+                  {rangeLabel}
+                  <span>{loading ? ' · loading' : ` · ${visible.length} booking${visible.length === 1 ? '' : 's'}`}</span>
+                </StyledRangeLabel>
+              </StyledToolbarGroup>
               <StyledToolbarGroup>
                 <PillButton active={mode === 'week'} title="Week" onClick={() => setMode('week')} />
                 <PillButton active={mode === 'day'} title="Day" onClick={() => setMode('day')} />
@@ -663,7 +662,5 @@ export const BookingsCalendarPage = () => {
             </StyledReveal>
           )}
         </StyledLayout>
-      </StyledBody>
-    </StyledPage>
   );
 };

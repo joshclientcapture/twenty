@@ -7,6 +7,7 @@ import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/use
 
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 
+import { BookingsCalendar } from '@/custom-pages/os/BookingsCalendar';
 import { RecordIndexCalendarContainer } from '@/object-record/record-index/components/RecordIndexCalendarContainer';
 import { RecordIndexEmptyStateNotShared } from '@/object-record/record-index/components/RecordIndexEmptyStateNotShared';
 import { RecordIndexFiltersToContextStoreEffect } from '@/object-record/record-index/components/RecordIndexFiltersToContextStoreEffect';
@@ -64,7 +65,12 @@ export const RecordIndexContainer = () => {
           )}
           {recordIndexViewType === ViewType.CALENDAR && (
             <StyledContainerWithPadding>
-              <RecordIndexCalendarContainer />
+              {objectNameSingular === 'booking' ? (
+                // Bookings need a time grid and unlimited cards per day, which the generic view lacks.
+                <BookingsCalendar />
+              ) : (
+                <RecordIndexCalendarContainer />
+              )}
             </StyledContainerWithPadding>
           )}
           {recordIndexViewType === ViewType.LIST && (

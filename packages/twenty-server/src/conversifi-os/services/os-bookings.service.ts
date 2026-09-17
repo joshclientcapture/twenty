@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
+import { randomUUID } from 'crypto';
+
 import { DataSource } from 'typeorm';
 
 import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service';
@@ -204,8 +206,8 @@ export class OsBookingsService {
       { name: 'calendlyUri', label: 'Calendly URI', type: 'TEXT', icon: 'IconLink', extra: { isUnique: true } },
       { name: 'startsAt', label: 'Starts at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
       { name: 'endsAt', label: 'Ends at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
-      { name: 'type', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, position })) } },
-      { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: BOOKING_STATUS_OPTIONS.map((option, position) => ({ ...option, position })) } },
+      { name: 'type', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
+      { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: BOOKING_STATUS_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
       { name: 'closer', label: 'Closer', type: 'TEXT', icon: 'IconUser' },
       { name: 'closerId', label: 'Closer id', type: 'TEXT', icon: 'IconId' },
       { name: 'inviteeName', label: 'Invitee', type: 'TEXT', icon: 'IconUserCircle' },

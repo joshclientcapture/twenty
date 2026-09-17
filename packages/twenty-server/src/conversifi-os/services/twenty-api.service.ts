@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 
+import { randomUUID } from 'crypto';
+
 type GraphqlError = { message: string; extensions?: Record<string, unknown> };
+
+export type MetadataField = { id: string; name: string; type: string };
+export type MetadataObject = { id: string; nameSingular: string; fieldsList: MetadataField[] };
+export type WantedField = { name: string; label: string; type: string; icon: string; extra?: Record<string, unknown> };
+
+export const selectOptions = (options: { value: string; label: string; color: string }[]) =>
+  options.map((option, position) => ({ ...option, id: randomUUID(), position }));
 
 const env = (name: string) => {
   const value = process.env[name];
@@ -25,6 +34,33 @@ export class TwentyApiService {
 
   async metadata<TData>(query: string, variables: Record<string, unknown> = {}): Promise<TData> {
     return this.post<TData>('/metadata', query, variables);
+  }
+
+  async listObjects(): Promise<MetadataObject[]> {
+    const result = await this.metadata<{ objects: { edges: { node: MetadataObject }[] } }>(
+      `query OsObjects { objects(paging: { first: 1000 }) { edges { node { id nameSingular fieldsList { id name type } } } } }`,
+    );
+    return result.objects.edges.map((edge) => edge.node);
+  }
+
+  // Idempotent: creates only the fields the object is missing, then returns every field id by name.
+  async ensureFields(objectNameSingular: string, wanted: WantedField[]): Promise<Record<string, string>> {
+    const objects = await this.listObjects();
+    const object = objects.find((candidate) => candidate.nameSingular === objectNameSingular);
+    if (!object) throw new Error(`object ${objectNameSingular} not found`);
+    const existing = new Set(object.fieldsList.map((field) => field.name));
+    let created = 0;
+    for (const field of wanted) {
+      if (existing.has(field.name)) continue;
+      await this.metadata(
+        `mutation CreateOsField($input: CreateOneFieldMetadataInput!) { createOneField(input: $input) { id name } }`,
+        { input: { field: { objectMetadataId: object.id, name: field.name, label: field.label, type: field.type, icon: field.icon, ...(field.extra ?? {}) } } },
+      );
+      created++;
+    }
+    if (created === 0) return Object.fromEntries(object.fieldsList.map((field) => [field.name, field.id]));
+    const refreshed = (await this.listObjects()).find((candidate) => candidate.nameSingular === objectNameSingular);
+    return Object.fromEntries((refreshed?.fieldsList ?? []).map((field) => [field.name, field.id]));
   }
 
   private async post<TData>(path: string, query: string, variables: Record<string, unknown>): Promise<TData> {

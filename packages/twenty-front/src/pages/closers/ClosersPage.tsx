@@ -209,6 +209,18 @@ const uniqueCloserId = (name: string, taken: Closer[]) => {
   return candidate;
 };
 
+// "Remove" only deactivates, and names are unique in the table, so adding someone back must
+// reuse their old row (keeping their attributed history) instead of creating a second one.
+const sameText = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+const findReusableCloser = (closers: Closer[], name: string, workEmail: string | null) =>
+  closers.find((closer) =>
+    sameText(closer.name, name) ||
+    sameText(closer.email, workEmail) ||
+    sameText(closer.fathomEmail, workEmail) ||
+    sameText(closer.calendlyHostEmail, workEmail),
+  ) ?? null;
+
 export const ClosersPage = () => {
   const navigate = useNavigate();
   const isAdmin = useHasPermissionFlag(PermissionFlagType.WORKSPACE);
@@ -248,8 +260,10 @@ export const ClosersPage = () => {
     try {
       const rate = Number(form.commissionRate);
       const workEmail = form.email.trim() || null;
+      const reusable = editor?.closer ? null : findReusableCloser(closers ?? [], form.name, workEmail);
+      if (reusable?.active) throw new Error(`${reusable.name} is already a closer.`);
       await upsertCloser({
-        id: editor?.closer?.id ?? uniqueCloserId(form.name, closers ?? []),
+        id: editor?.closer?.id ?? reusable?.id ?? uniqueCloserId(form.name, closers ?? []),
         name: form.name.trim(),
         email: (form.differentLogin ? form.loginEmail.trim() : workEmail) || null,
         fathomEmail: workEmail,

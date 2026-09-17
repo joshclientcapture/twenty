@@ -419,7 +419,8 @@ export const BookingsCalendar = () => {
 
   const { records, loading, error, hasNextPage, fetchMoreRecords } = useFindManyRecords<BookingRecord>({
     objectNameSingular: 'booking',
-    filter: { startsAt: { gte: rangeStart.toISOString(), lt: rangeEnd.toISOString() } },
+    // Twenty allows one operator per field filter, so the range is two clauses.
+    filter: { and: [{ startsAt: { gte: rangeStart.toISOString() } }, { startsAt: { lt: rangeEnd.toISOString() } }] },
     orderBy: [{ startsAt: 'AscNullsLast' }],
     limit: 200,
     recordGqlFields: RECORD_FIELDS,

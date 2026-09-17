@@ -130,7 +130,7 @@ export class OsBookingsService {
         calendlyUri: row.uri,
         startsAt: row.start_time,
         endsAt: row.end_time,
-        type,
+        bookingType: type,
         status: bookingStatusFor(row, now),
         closer: row.closer_name ?? row.host_name ?? '',
         closerId: row.closer_id ?? '',
@@ -206,7 +206,8 @@ export class OsBookingsService {
       { name: 'calendlyUri', label: 'Calendly URI', type: 'TEXT', icon: 'IconLink', extra: { isUnique: true } },
       { name: 'startsAt', label: 'Starts at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
       { name: 'endsAt', label: 'Ends at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
-      { name: 'type', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
+      // `type` is a reserved metadata keyword.
+      { name: 'bookingType', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: BOOKING_STATUS_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
       { name: 'closer', label: 'Closer', type: 'TEXT', icon: 'IconUser' },
       { name: 'closerId', label: 'Closer id', type: 'TEXT', icon: 'IconId' },

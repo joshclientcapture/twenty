@@ -37,7 +37,10 @@ export class TwentyApiService {
     });
     if (!response.ok) throw new Error(`twenty ${path} ${response.status}: ${(await response.text()).slice(0, 500)}`);
     const payload = (await response.json()) as { data?: TData; errors?: GraphqlError[] };
-    if (payload.errors?.length) throw new Error(`twenty ${path}: ${payload.errors.map((error) => error.message).join('; ')}`);
+    if (payload.errors?.length) {
+      const details = payload.errors.map((error) => `${error.message}${error.extensions ? ' ' + JSON.stringify(error.extensions).slice(0, 800) : ''}`);
+      throw new Error(`twenty ${path}: ${details.join('; ')}`);
+    }
     if (!payload.data) throw new Error(`twenty ${path}: empty response`);
     return payload.data;
   }

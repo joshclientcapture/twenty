@@ -50,6 +50,8 @@ type CandidateRow = {
   from_ledger: boolean;
   from_stripe: boolean;
   from_calendly: boolean;
+  from_customers: boolean;
+  from_rentals: boolean;
 };
 
 // GHL custom field ids for the intake form answers (Conversifi location).
@@ -313,22 +315,39 @@ export class OsContactsImportService {
         select lower(email) as email, max(name) as name, min(booked_at) as booked_at
         from os.calendly_invitees where email is not null group by lower(email)
       ),
+      payments as (
+        select lower(email) as email, max(payer_name) as name, min(created) as created
+        from os.stripe_payments where email is not null and paid group by lower(email)
+      ),
+      customers as (
+        select lower(coalesce(stripe_email, auth_email)) as email, max(full_name) as name, min(signup_at) as signup_at
+        from os.conversifi_customers where coalesce(stripe_email, auth_email) is not null group by lower(coalesce(stripe_email, auth_email))
+      ),
+      rentals as (
+        select lower(email) as email, max(name) as name, min(created_at) as created_at
+        from os.rental_clients where email is not null group by lower(email)
+      ),
       emails as (
         select email from ghl union select email from ledger union select email from stripe union select email from calendly
+        union select email from payments union select email from customers union select email from rentals
       )
       select e.email,
-             coalesce(g.first_name, split_part(coalesce(l.name, s.name, c.name), ' ', 1)) as first_name,
-             coalesce(g.last_name, nullif(regexp_replace(coalesce(l.name, s.name, c.name), '^\\S+\\s*', ''), '')) as last_name,
+             coalesce(g.first_name, split_part(coalesce(l.name, s.name, c.name, p.name, cu.name, r.name), ' ', 1)) as first_name,
+             coalesce(g.last_name, nullif(regexp_replace(coalesce(l.name, s.name, c.name, p.name, cu.name, r.name), '^\\S+\\s*', ''), '')) as last_name,
              g.phone, g.company_name, g.website, g.country, g.city, g.ghl_contact_id, g.ghl_source, g.ghl_tags,
              g.business_type, g.agency_services, g.monthly_revenue,
-             least(g.lead_since, l.signup_at, s.created, c.booked_at) as lead_since,
+             least(g.lead_since, l.signup_at, s.created, c.booked_at, p.created, cu.signup_at, r.created_at) as lead_since,
              l.ledger_source, l.ledger_closer,
-             g.email is not null as from_ghl, l.email is not null as from_ledger, s.email is not null as from_stripe, c.email is not null as from_calendly
+             g.email is not null as from_ghl, l.email is not null as from_ledger, (s.email is not null or p.email is not null) as from_stripe,
+             c.email is not null as from_calendly, cu.email is not null as from_customers, r.email is not null as from_rentals
       from emails e
       left join ghl g on g.email = e.email
       left join (select distinct on (email) * from ledger order by email, signup_at desc nulls last) l on l.email = e.email
       left join stripe s on s.email = e.email
       left join calendly c on c.email = e.email
+      left join payments p on p.email = e.email
+      left join customers cu on cu.email = e.email
+      left join rentals r on r.email = e.email
       order by e.email`,
       [ACTIVITY_TAGS, ACTIVITY_SOURCES],
     );
@@ -338,7 +357,11 @@ export class OsContactsImportService {
     if (!this.twentyApi.isConfigured()) throw new Error('OS_TWENTY_API_KEY is not set');
     await this.ensureFields();
     const rows = await this.candidates();
-    this.logger.log(`candidates: ${rows.length} (ghl ${rows.filter((r) => r.from_ghl).length}, ledger ${rows.filter((r) => r.from_ledger).length}, stripe ${rows.filter((r) => r.from_stripe).length}, calendly ${rows.filter((r) => r.from_calendly).length})`);
+    const count = (predicate: (row: CandidateRow) => boolean) => rows.filter(predicate).length;
+    this.logger.log(
+      `candidates: ${rows.length} (ghl ${count((r) => r.from_ghl)}, ledger ${count((r) => r.from_ledger)}, stripe ${count((r) => r.from_stripe)}, ` +
+      `calendly ${count((r) => r.from_calendly)}, customers ${count((r) => r.from_customers)}, rentals ${count((r) => r.from_rentals)}; os-only ${count((r) => !r.from_ghl)})`,
+    );
 
     // Companies first, keyed on domain, so people can point at them.
     const companyByDomain = new Map<string, { name: string; domainName: { primaryLinkUrl: string; primaryLinkLabel: string } }>();

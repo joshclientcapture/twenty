@@ -138,7 +138,7 @@ const RECORD_BATCH_SIZE = 100;
 const EXCLUDED_DOMAINS = new Set(['conversifi.io', 'clientcapture.io', 'yopmail.com', 'oastify.com', 'example.com', 'mailinator.com', 'test.com']);
 const isExcluded = (row: { email: string; first_name: string | null; last_name: string | null }) => {
   const [local, domain] = row.email.split('@');
-  if (!domain || EXCLUDED_DOMAINS.has(domain) || domain.endsWith('.oastify.com')) return true;
+  if (!domain || EXCLUDED_DOMAINS.has(domain) || domain.endsWith('.oastify.com') || /yopmail|mailinator/.test(domain)) return true;
   if (/test/i.test(local)) return true;
   return /\btest\b/i.test(`${row.first_name ?? ''} ${row.last_name ?? ''}`);
 };

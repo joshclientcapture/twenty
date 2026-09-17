@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 
 import { DataSource } from 'typeorm';
 
+import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 
 export type OsSyncStep =
@@ -15,7 +16,8 @@ export type OsSyncStep =
   | 'unipile'
   | 'prod'
   | 'ledger'
-  | 'trial-forward';
+  | 'trial-forward'
+  | 'bookings';
 
 export const OS_SYNC_STEPS: OsSyncStep[] = [
   'stripe-payments',
@@ -28,10 +30,11 @@ export const OS_SYNC_STEPS: OsSyncStep[] = [
   'prod',
   'ledger',
   'trial-forward',
+  'bookings',
 ];
 
 // The 15 minute cron in the OS project ran only these three, with a 3 day Calendly window.
-export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly'];
+export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'bookings'];
 
 type StepResult = { step: OsSyncStep; ok: boolean; detail?: unknown; skipped?: string; error?: string };
 
@@ -56,6 +59,7 @@ export class OsSyncService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly upsert: OsUpsertService,
+    private readonly bookings: OsBookingsService,
   ) {}
 
   async runSteps(steps: OsSyncStep[], calendlyWindowDays?: number): Promise<StepResult[]> {
@@ -77,6 +81,8 @@ export class OsSyncService {
         case 'prod': return this.wrap(step, () => this.syncProd());
         case 'ledger': return this.wrap(step, () => this.refreshLedger());
         case 'trial-forward': return this.wrap(step, () => this.trialForward());
+        // Fast runs refresh recent and upcoming calls; full runs re-mirror the whole history.
+        case 'bookings': return this.wrap(step, () => this.bookings.sync(calendlyWindowDays <= 3 ? 45 : 400));
         default: return { step, ok: false, error: `unknown step ${step}` };
       }
     } catch (error) {

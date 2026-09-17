@@ -7,6 +7,10 @@ import { OsSyncCronJob } from 'src/conversifi-os/crons/jobs/os-sync.cron.job';
 import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
 import { OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
+import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
+import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service';
+import { OsApiKeyCommand } from 'src/conversifi-os/commands/os-api-key.command';
+import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 
@@ -14,9 +18,9 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
 // of the core database. Kept outside `engine/` so upstream merges never touch it.
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
-  imports: [TokenModule, WorkspaceCacheStorageModule],
+  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule],
   controllers: [OsController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand],
-  exports: [OsSyncCronCommand, OsSyncCommand],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand],
+  exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand],
 })
 export class ConversifiOsModule {}

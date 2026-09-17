@@ -359,7 +359,8 @@ export class OsContactsImportService {
   }
 
   async candidates(): Promise<CandidateRow[]> {
-    return this.dataSource.query(`
+    // timestamptz columns come back as Date objects; everything downstream compares ISO strings.
+    const rows: (Omit<CandidateRow, 'lead_since'> & { lead_since: Date | string | null })[] = await this.dataSource.query(`
       with ghl as (
         select lower(email) as email, first_name, last_name, phone, company_name, website, country, city, id as ghl_contact_id,
                source as ghl_source, tags as ghl_tags, business_type, agency_services, monthly_revenue, date_added as lead_since
@@ -416,6 +417,7 @@ export class OsContactsImportService {
       order by e.email`,
       [ACTIVITY_TAGS, ACTIVITY_SOURCES],
     );
+    return rows.map((row) => ({ ...row, lead_since: row.lead_since ? new Date(row.lead_since).toISOString() : null }));
   }
 
   async run(options: { dryRun?: boolean; onlyNew?: boolean } = {}) {

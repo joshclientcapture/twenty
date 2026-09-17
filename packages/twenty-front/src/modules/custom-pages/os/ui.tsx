@@ -531,6 +531,10 @@ export const StyledChip = styled.span`
     background: ${t.background.transparent.blue};
     color: ${ACCENT};
   }
+  &[data-tone='negative'] {
+    background: ${t.background.transparent.danger};
+    color: var(--t-tag-text-red);
+  }
   &[data-button] {
     cursor: pointer;
     border: 1px solid transparent;

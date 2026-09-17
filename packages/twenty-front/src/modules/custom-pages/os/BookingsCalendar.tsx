@@ -1,5 +1,5 @@
 import { styled } from '@linaria/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IconChevronLeft, IconChevronRight, IconExternalLink, IconUserCircle, IconVideo, IconX } from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
@@ -26,9 +26,9 @@ import {
   type PlacedBooking,
 } from '@/custom-pages/os/bookings';
 import { fetchClosers, type Closer } from '@/custom-pages/os/closers';
-import { ACCENT, EASE_OUT, PillButton, PRESS_SCALE, StyledChip, StyledError, StyledField, StyledMuted, StyledReveal } from '@/custom-pages/os/ui';
+import { ACCENT, EASE_OUT, isoDate, PillButton, PRESS_SCALE, StyledChip, StyledError, StyledField, StyledMuted, StyledReveal } from '@/custom-pages/os/ui';
 
-const HOUR_HEIGHT = 56;
+const HOUR_HEIGHT = 72;
 const GUTTER_WIDTH = 52;
 const DEFAULT_FIRST_HOUR = 7;
 const DEFAULT_LAST_HOUR = 21;
@@ -188,6 +188,9 @@ const StyledDayColumn = styled.div`
   &[data-today='true'] {
     background: ${t.background.transparent.lighter};
   }
+  &[data-weekend='true'] {
+    background: ${t.background.secondary};
+  }
   div[data-hour-line] {
     border-top: 1px solid ${t.border.color.light};
     left: 0;
@@ -219,8 +222,8 @@ const StyledNowLine = styled.div`
 const StyledEvent = styled.button`
   align-items: flex-start;
   appearance: none;
-  background: color-mix(in srgb, var(--closer-color) 13%, ${t.background.primary});
-  border: 1px solid color-mix(in srgb, var(--closer-color) 28%, transparent);
+  background: color-mix(in srgb, var(--status-color) 9%, ${t.background.primary});
+  border: 1px solid color-mix(in srgb, var(--status-color) 26%, transparent);
   border-left: 3px solid var(--status-color);
   border-radius: ${t.border.radius.sm};
   box-sizing: border-box;
@@ -261,21 +264,42 @@ const StyledEvent = styled.button`
   &[data-status='CANCELLED'] span[data-name] {
     text-decoration: line-through;
   }
+  span[data-line] {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
   span[data-time] {
     color: ${t.font.color.tertiary};
+    flex: none;
     font-size: 10px;
     font-variant-numeric: tabular-nums;
     line-height: 1.2;
     white-space: nowrap;
   }
   span[data-name] {
+    flex: 1;
     font-size: ${t.font.size.xs};
     font-weight: ${t.font.weight.medium};
-    line-height: 1.25;
-    max-width: 100%;
+    line-height: 1.3;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  span[data-closer] {
+    background: var(--closer-color);
+    border-radius: ${t.border.radius.pill};
+    color: #fff;
+    flex: none;
+    font-size: 9px;
+    font-weight: ${t.font.weight.semiBold};
+    letter-spacing: 0.02em;
+    line-height: 14px;
+    padding: 0 4px;
   }
   span[data-kind] {
     color: ${t.font.color.tertiary};
@@ -389,6 +413,7 @@ const RECORD_FIELDS = {
 };
 
 const statusColor = (status: BookingStatus | null) => BOOKING_STATUS_META[status ?? 'UPCOMING'].color;
+const initialsOf = (name: string) => name.split(/s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';
 
 export const BookingsCalendar = () => {
   const navigate = useNavigate();
@@ -491,6 +516,17 @@ export const BookingsCalendar = () => {
 
   const selected = selectedId ? records.find((booking) => booking.id === selectedId) ?? null : null;
   const isToday = (day: Date) => sameDay(day, now);
+
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const pendingScrollRef = useRef(true);
+  useEffect(() => { pendingScrollRef.current = true; }, [rangeStart.getTime(), mode]);
+  useEffect(() => {
+    if (loading || !pendingScrollRef.current || !scrollerRef.current) return;
+    const earliest = Math.min(...placedByDay.flat().map((placed) => placed.startMinutes), Number.POSITIVE_INFINITY);
+    const target = Number.isFinite(earliest) ? earliest - 45 : 9 * 60;
+    scrollerRef.current.scrollTo({ top: Math.max(0, (target - firstHour * 60) * (HOUR_HEIGHT / 60)) });
+    pendingScrollRef.current = false;
+  }, [loading, placedByDay, firstHour]);
   const nowOffset = (minutesIntoDay(now) - firstHour * 60) * (HOUR_HEIGHT / 60);
 
   const rangeLabel = mode === 'week' ? formatRange(rangeStart, addDays(rangeEnd, -1)) : formatDayLong(rangeStart);
@@ -504,6 +540,9 @@ export const BookingsCalendar = () => {
                 <Button size="small" variant="secondary" Icon={IconChevronLeft} onClick={() => setAnchor(addDays(anchor, -days))} ariaLabel="Previous" />
                 <Button size="small" variant="secondary" title="Today" onClick={() => setAnchor(startOfDay(new Date()))} />
                 <Button size="small" variant="secondary" Icon={IconChevronRight} onClick={() => setAnchor(addDays(anchor, days))} ariaLabel="Next" />
+                <StyledField>
+                  <input type="date" value={isoDate(anchor)} onChange={(event) => { const [y, m, d] = event.target.value.split('-').map(Number); if (y && m && d) setAnchor(new Date(y, m - 1, d)); }} />
+                </StyledField>
                 <StyledRangeLabel>
                   {rangeLabel}
                   <span>{loading ? ' · loading' : ` · ${visible.length} booking${visible.length === 1 ? '' : 's'}`}</span>
@@ -567,7 +606,7 @@ export const BookingsCalendar = () => {
                   </StyledDayHeaderCell>
                 ))}
               </StyledDayHeader>
-              <StyledScroller>
+              <StyledScroller ref={scrollerRef}>
                 <StyledGrid days={days} hours={hours}>
                   <StyledGutter>
                     {Array.from({ length: hours + 1 }, (_, index) => firstHour + index).map((hour) => (
@@ -577,7 +616,7 @@ export const BookingsCalendar = () => {
                     ))}
                   </StyledGutter>
                   {dayList.map((day, dayIndex) => (
-                    <StyledDayColumn key={day.toISOString()} data-today={isToday(day)}>
+                    <StyledDayColumn key={day.toISOString()} data-today={isToday(day)} data-weekend={day.getDay() === 0 || day.getDay() === 6}>
                       {Array.from({ length: hours }, (_, index) => (
                         <div key={index} data-hour-line style={{ top: index * HOUR_HEIGHT }} />
                       ))}
@@ -605,9 +644,12 @@ export const BookingsCalendar = () => {
                             }}
                             onClick={() => setSelectedId(selectedId === booking.id ? null : booking.id)}
                           >
-                            <span data-time>{formatTime(start)}</span>
-                            <span data-name>{booking.inviteeName || booking.name}</span>
-                            {height >= 44 && <span data-kind>{BOOKING_TYPE_LABELS[booking.bookingType ?? 'OTHER']}{placed.columns === 1 ? ` · ${booking.closer.split(' ')[0]}` : ''}</span>}
+                            <span data-line>
+                              <span data-time>{formatTime(start)}</span>
+                              <span data-name>{booking.inviteeName || booking.name}</span>
+                              {placed.columns <= 2 && <span data-closer>{initialsOf(booking.closer)}</span>}
+                            </span>
+                            {height >= 46 && <span data-kind>{BOOKING_TYPE_LABELS[booking.bookingType ?? 'OTHER']}{placed.columns === 1 ? ` · ${booking.closer.split(' ')[0]}` : ''}</span>}
                           </StyledEvent>
                         );
                       })}

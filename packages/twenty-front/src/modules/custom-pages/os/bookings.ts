@@ -46,8 +46,8 @@ export const BOOKING_TYPE_LABELS: Record<BookingType, string> = {
   OTHER: 'Other',
 };
 
-// Distinct hues so two closers booked at the same hour stay tellable apart at a glance.
-const CLOSER_PALETTE = ['#1b4498', '#0f9d58', '#b5560f', '#7c3aed', '#0e7490', '#b91c1c', '#4d7c0f', '#a21caf'];
+// Closer badge hues that never collide with the status colours (blue upcoming, green showed, red no show, orange rescheduled).
+const CLOSER_PALETTE = ['#4f46e5', '#0f766e', '#7c3aed', '#be185d', '#0e7490', '#92400e', '#4d7c0f', '#a21caf'];
 export const closerColor = (index: number) => CLOSER_PALETTE[((index % CLOSER_PALETTE.length) + CLOSER_PALETTE.length) % CLOSER_PALETTE.length];
 
 export const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());

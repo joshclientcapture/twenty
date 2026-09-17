@@ -134,6 +134,69 @@ const FREE_MAIL_DOMAINS = new Set([
 
 const RECORD_BATCH_SIZE = 100;
 
+// Internal and throwaway addresses never become People.
+const EXCLUDED_DOMAINS = new Set(['conversifi.io', 'clientcapture.io', 'yopmail.com', 'oastify.com', 'example.com', 'mailinator.com', 'test.com']);
+const isExcluded = (row: { email: string; first_name: string | null; last_name: string | null }) => {
+  const [local, domain] = row.email.split('@');
+  if (!domain || EXCLUDED_DOMAINS.has(domain) || domain.endsWith('.oastify.com')) return true;
+  if (/test/i.test(local)) return true;
+  return /\btest\b/i.test(`${row.first_name ?? ''} ${row.last_name ?? ''}`);
+};
+
+const GENERIC_LOCAL_PARTS = new Set(['info', 'hello', 'contact', 'admin', 'support', 'sales', 'office', 'team', 'hi', 'mail', 'help', 'enquiries', 'inquiries', 'marketing']);
+// "john.smith@" reads as John Smith; role addresses stay nameless and show their email instead.
+const nameFromEmail = (email: string): { firstName: string; lastName: string } => {
+  const local = email.split('@')[0].toLowerCase();
+  if (GENERIC_LOCAL_PARTS.has(local)) return { firstName: '', lastName: '' };
+  const parts = local.replace(/[0-9]+/g, ' ').split(/[._\-+ ]+/).filter((part) => part.length > 1);
+  const capitalise = (part: string) => part[0].toUpperCase() + part.slice(1);
+  if (parts.length === 0) return { firstName: '', lastName: '' };
+  return { firstName: capitalise(parts[0]), lastName: parts.slice(1).map(capitalise).join(' ') };
+};
+
+const normaliseName = (row: CandidateRow) => `${row.first_name ?? ''} ${row.last_name ?? ''}`.toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+const nameTokens = (row: CandidateRow) => normaliseName(row).split(' ').filter((token) => token.length >= 3);
+// Same full name alone is not enough to merge two addresses; something else has to tie them:
+// a shared phone, a shared business domain, or the name showing up in both addresses.
+const corroborated = (a: CandidateRow, b: CandidateRow) => {
+  if (a.phone && b.phone && a.phone === b.phone) return true;
+  const domainA = a.email.split('@')[1];
+  const domainB = b.email.split('@')[1];
+  if (domainA === domainB && !FREE_MAIL_DOMAINS.has(domainA)) return true;
+  const tokens = nameTokens(a);
+  const mentionsName = (email: string) => tokens.some((token) => email.replace(/[^a-z]/g, '').includes(token));
+  return mentionsName(a.email) && mentionsName(b.email);
+};
+const sourceScore = (row: CandidateRow) => (row.from_ghl ? 8 : 0) + (row.from_ledger ? 4 : 0) + (row.from_stripe ? 2 : 0) + (row.from_calendly ? 1 : 0);
+
+type MergedPerson = { primary: CandidateRow; extras: CandidateRow[] };
+
+const mergeDuplicates = (rows: CandidateRow[]): MergedPerson[] => {
+  const byName = new Map<string, CandidateRow[]>();
+  for (const row of rows) {
+    const key = normaliseName(row);
+    if (key.split(' ').length < 2 || key.length < 5) continue;
+    const list = byName.get(key) ?? [];
+    list.push(row);
+    byName.set(key, list);
+  }
+  const mergedInto = new Map<string, string>();
+  const groups = new Map<string, MergedPerson>();
+  for (const list of byName.values()) {
+    if (list.length < 2) continue;
+    const ordered = [...list].sort((a, b) => sourceScore(b) - sourceScore(a) || (a.lead_since ?? '').localeCompare(b.lead_since ?? ''));
+    const primary = ordered[0];
+    for (const candidate of ordered.slice(1)) {
+      if (!corroborated(primary, candidate)) continue;
+      mergedInto.set(candidate.email, primary.email);
+      const group = groups.get(primary.email) ?? { primary, extras: [] };
+      group.extras.push(candidate);
+      groups.set(primary.email, group);
+    }
+  }
+  return rows.filter((row) => !mergedInto.has(row.email)).map((row) => groups.get(row.email) ?? { primary: row, extras: [] });
+};
+
 const cleanText = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 const cleanEmail = (value: unknown) => {
   const email = cleanText(value)?.toLowerCase() ?? null;
@@ -355,22 +418,36 @@ export class OsContactsImportService {
     );
   }
 
-  async run(options: { dryRun?: boolean } = {}) {
+  async run(options: { dryRun?: boolean; onlyNew?: boolean } = {}) {
     if (!this.twentyApi.isConfigured()) throw new Error('OS_TWENTY_API_KEY is not set');
     await this.ensureFields();
-    const rows = await this.candidates();
+    const allRows = await this.candidates();
+    const excludedEmails = allRows.filter(isExcluded).map((row) => row.email);
+    const rows = allRows.filter((row) => !isExcluded(row));
+    const merged = mergeDuplicates(rows);
+    const existing = options.onlyNew ? await this.twentyApi.peopleByEmail() : new Map<string, string>();
+    const toWrite = options.onlyNew
+      ? merged.filter((group) => !existing.has(group.primary.email) && !group.extras.some((extra) => existing.has(extra.email)))
+      : merged;
     const count = (predicate: (row: CandidateRow) => boolean) => rows.filter(predicate).length;
     this.logger.log(
       `candidates: ${rows.length} (ghl ${count((r) => r.from_ghl)}, ledger ${count((r) => r.from_ledger)}, stripe ${count((r) => r.from_stripe)}, ` +
-      `calendly ${count((r) => r.from_calendly)}, customers ${count((r) => r.from_customers)}, rentals ${count((r) => r.from_rentals)}; os-only ${count((r) => !r.from_ghl)})`,
+      `calendly ${count((r) => r.from_calendly)}, customers ${count((r) => r.from_customers)}, rentals ${count((r) => r.from_rentals)}; os-only ${count((r) => !r.from_ghl)}; ` +
+      `excluded ${excludedEmails.length}; merged into ${merged.length} people (${rows.length - merged.length} duplicate addresses folded); to write ${toWrite.length})`,
     );
+    if (options.onlyNew && toWrite.length === 0) return { candidates: rows.length, companies: 0, people: 0, removed: 0, skipped: 0, dryRun: false, onlyNew: true };
 
     // Companies first, keyed on domain, so people can point at them.
-    const companyByDomain = new Map<string, { name: string; domainName: { primaryLinkUrl: string; primaryLinkLabel: string } }>();
-    for (const row of rows) {
+    const companyByDomain = new Map<string, { name: string; domainName: { primaryLinkUrl: string; primaryLinkLabel: string }; createdAt?: string }>();
+    for (const row of toWrite.flatMap((group) => [group.primary, ...group.extras])) {
       const domain = domainOf(row.website, row.email);
-      if (!domain || companyByDomain.has(domain)) continue;
-      companyByDomain.set(domain, { name: companyNameFor(row.company_name, domain), domainName: { primaryLinkUrl: `https://${domain}`, primaryLinkLabel: '' } });
+      if (!domain) continue;
+      const current = companyByDomain.get(domain);
+      if (!current) {
+        companyByDomain.set(domain, { name: companyNameFor(row.company_name, domain), domainName: { primaryLinkUrl: `https://${domain}`, primaryLinkLabel: '' }, createdAt: row.lead_since ?? undefined });
+      } else if (row.lead_since && (!current.createdAt || row.lead_since < current.createdAt)) {
+        current.createdAt = row.lead_since;
+      }
     }
     const companyIdByDomain = new Map<string, string>();
     const companies = [...companyByDomain.values()];
@@ -389,23 +466,30 @@ export class OsContactsImportService {
       }
     }
 
-    const people = rows.map((row) => {
-      const domain = domainOf(row.website, row.email);
-      const tags = (row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value);
+    const people = toWrite.map(({ primary, extras }) => {
+      const all = [primary, ...extras];
+      const first = <TValue>(pick: (row: CandidateRow) => TValue | null | undefined) =>
+        all.map(pick).find((value) => value !== null && value !== undefined && value !== '') ?? null;
+      const domain = first((row) => domainOf(row.website, row.email));
+      const tags = all.flatMap((row) => row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value);
+      const name = primary.first_name || primary.last_name ? { firstName: primary.first_name ?? '', lastName: primary.last_name ?? '' } : nameFromEmail(primary.email);
+      const leadSince = all.map((row) => row.lead_since).filter((value): value is string => !!value).sort()[0] ?? null;
       return {
-        name: { firstName: row.first_name ?? '', lastName: row.last_name ?? '' },
-        emails: { primaryEmail: row.email, additionalEmails: [] },
-        phones: phonesFor(row.phone),
+        name,
+        emails: { primaryEmail: primary.email, additionalEmails: extras.map((extra) => extra.email) },
+        phones: phonesFor(first((row) => row.phone)),
         companyId: domain ? companyIdByDomain.get(domain) ?? null : null,
-        leadSource: leadSourceFor(row),
+        leadSource: leadSourceFor(primary),
         ghlTags: [...new Set(tags)],
-        businessType: row.business_type ?? '',
-        agencyServices: row.agency_services ?? '',
-        monthlyRevenue: row.monthly_revenue ?? '',
-        closer: closerFor(row),
-        countryCode: row.country ?? '',
-        leadSince: row.lead_since,
-        ghlContactId: row.ghl_contact_id ?? '',
+        businessType: first((row) => row.business_type) ?? '',
+        agencyServices: first((row) => row.agency_services) ?? '',
+        monthlyRevenue: first((row) => row.monthly_revenue) ?? '',
+        closer: first((row) => closerFor(row) || null) ?? '',
+        countryCode: first((row) => row.country) ?? '',
+        leadSince,
+        // Twenty lets an import set createdAt, so "created" reflects when they became a lead.
+        createdAt: leadSince ?? undefined,
+        ghlContactId: first((row) => row.ghl_contact_id) ?? '',
       };
     });
 
@@ -422,7 +506,26 @@ export class OsContactsImportService {
         if (written % 500 === 0) this.logger.log(`people upserted: ${written}/${people.length}`);
       }
     }
-    return { candidates: rows.length, companies: companies.length, people: written, skipped: this.skipped, dryRun: !!options.dryRun };
+    let removed = 0;
+    if (!options.dryRun && !options.onlyNew) {
+      // Addresses folded into another person, and excluded accounts, must not linger as separate People.
+      const secondaryEmails = merged.flatMap((group) => group.extras.map((extra) => extra.email));
+      removed = await this.deletePeopleByEmail([...secondaryEmails, ...excludedEmails]);
+    }
+    return { candidates: rows.length, companies: companies.length, people: written, removed, skipped: this.skipped, dryRun: !!options.dryRun };
+  }
+
+  // Deletes only records whose PRIMARY email is in the list; a merged person carries the extras.
+  private async deletePeopleByEmail(emails: string[]): Promise<number> {
+    if (emails.length === 0) return 0;
+    const wanted = new Set(emails);
+    const primaries = await this.twentyApi.peopleByPrimaryEmail();
+    const targets = [...primaries.entries()].filter(([email]) => wanted.has(email)).map(([, id]) => id);
+    for (let offset = 0; offset < targets.length; offset += RECORD_BATCH_SIZE) {
+      const batch = targets.slice(offset, offset + RECORD_BATCH_SIZE);
+      await this.twentyApi.records(`mutation RemovePeople($ids: [UUID!]) { deletePeople(filter: { id: { in: $ids } }) { id } }`, { ids: batch });
+    }
+    return targets.length;
   }
 
   private skipped = 0;

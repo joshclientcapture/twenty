@@ -6,6 +6,7 @@ type GraphqlError = { message: string; extensions?: Record<string, unknown> };
 
 export type MetadataField = { id: string; name: string; type: string };
 export type MetadataObject = { id: string; nameSingular: string; fieldsList: MetadataField[] };
+type PersonEmails = { id: string; emails: { primaryEmail: string | null; additionalEmails: string[] | null } };
 export type WantedField = { name: string; label: string; type: string; icon: string; extra?: Record<string, unknown> };
 
 export const selectOptions = (options: { value: string; label: string; color: string }[]) =>
@@ -34,6 +35,37 @@ export class TwentyApiService {
 
   async metadata<TData>(query: string, variables: Record<string, unknown> = {}): Promise<TData> {
     return this.post<TData>('/metadata', query, variables);
+  }
+
+  // Every person's primary and additional addresses, lowercased, mapped to the person id.
+  async peopleByEmail(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    for (const person of await this.allPeople()) {
+      if (person.emails.primaryEmail) map.set(person.emails.primaryEmail.toLowerCase(), person.id);
+      for (const extra of person.emails.additionalEmails ?? []) if (extra && !map.has(extra.toLowerCase())) map.set(extra.toLowerCase(), person.id);
+    }
+    return map;
+  }
+
+  async peopleByPrimaryEmail(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    for (const person of await this.allPeople()) if (person.emails.primaryEmail) map.set(person.emails.primaryEmail.toLowerCase(), person.id);
+    return map;
+  }
+
+  private async allPeople(): Promise<PersonEmails[]> {
+    const people: PersonEmails[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 500; page++) {
+      const result: { people: { edges: { node: PersonEmails }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.records(
+        `query OsPeople($after: String) { people(first: 200, after: $after) { edges { node { id emails { primaryEmail additionalEmails } } } pageInfo { hasNextPage endCursor } } }`,
+        { after: cursor },
+      );
+      people.push(...result.people.edges.map((edge) => edge.node));
+      if (!result.people.pageInfo.hasNextPage) break;
+      cursor = result.people.pageInfo.endCursor;
+    }
+    return people;
   }
 
   async listObjects(): Promise<MetadataObject[]> {

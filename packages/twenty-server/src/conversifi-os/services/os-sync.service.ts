@@ -4,6 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
+import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 
 export type OsSyncStep =
@@ -17,6 +18,7 @@ export type OsSyncStep =
   | 'prod'
   | 'ledger'
   | 'trial-forward'
+  | 'people'
   | 'bookings';
 
 export const OS_SYNC_STEPS: OsSyncStep[] = [
@@ -30,11 +32,12 @@ export const OS_SYNC_STEPS: OsSyncStep[] = [
   'prod',
   'ledger',
   'trial-forward',
+  'people',
   'bookings',
 ];
 
 // The 15 minute cron in the OS project ran only these three, with a 3 day Calendly window.
-export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'bookings'];
+export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'people', 'bookings'];
 
 type StepResult = { step: OsSyncStep; ok: boolean; detail?: unknown; skipped?: string; error?: string };
 
@@ -60,6 +63,7 @@ export class OsSyncService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly upsert: OsUpsertService,
     private readonly bookings: OsBookingsService,
+    private readonly contacts: OsContactsImportService,
   ) {}
 
   async runSteps(steps: OsSyncStep[], calendlyWindowDays?: number): Promise<StepResult[]> {
@@ -82,6 +86,8 @@ export class OsSyncService {
         case 'ledger': return this.wrap(step, () => this.refreshLedger());
         case 'trial-forward': return this.wrap(step, () => this.trialForward());
         // Fast runs refresh recent and upcoming calls; full runs re-mirror the whole history.
+        // New trials, payers and bookers become People without waiting for a GHL re-export.
+        case 'people': return this.wrap(step, () => this.contacts.run({ onlyNew: true }));
         case 'bookings': return this.wrap(step, () => this.bookings.sync(calendlyWindowDays <= 3 ? 45 : 400));
         default: return { step, ok: false, error: `unknown step ${step}` };
       }

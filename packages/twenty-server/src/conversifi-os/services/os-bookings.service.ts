@@ -119,7 +119,8 @@ export class OsBookingsService {
       [windowDays],
     );
 
-    const personIdByEmail = await this.lookupPeople([...new Set(rows.map((row) => row.invitee_email).filter((email): email is string => !!email))]);
+    // Full map, so a booking made from a merged person's second address still links.
+    const personIdByEmail = await this.twentyApi.peopleByEmail();
     const now = Date.now();
     const records = rows.map((row) => {
       const type = bookingTypeFor(row.event_name);
@@ -153,23 +154,6 @@ export class OsBookingsService {
       written += batch.length;
     }
     return { bookings: written, linkedToPeople: records.filter((record) => record.personId).length, windowDays };
-  }
-
-  private async lookupPeople(emails: string[]): Promise<Map<string, string>> {
-    const found = new Map<string, string>();
-    for (let offset = 0; offset < emails.length; offset += RECORD_BATCH_SIZE) {
-      const batch = emails.slice(offset, offset + RECORD_BATCH_SIZE);
-      const result = await this.twentyApi.records<{ people: { edges: { node: { id: string; emails: { primaryEmail: string | null } } }[] } }>(
-        `query PeopleByEmail($emails: [String!]) {
-           people(filter: { emails: { primaryEmail: { in: $emails } } }, first: ${RECORD_BATCH_SIZE}) { edges { node { id emails { primaryEmail } } } }
-         }`,
-        { emails: batch },
-      );
-      for (const { node } of result.people.edges) {
-        if (node.emails.primaryEmail) found.set(node.emails.primaryEmail.toLowerCase(), node.id);
-      }
-    }
-    return found;
   }
 
   // Creates the Booking object, its fields and the calendar view once; later runs only read.

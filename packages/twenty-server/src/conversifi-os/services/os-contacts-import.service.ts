@@ -63,10 +63,10 @@ const GHL_FIELD = {
 };
 
 // Jamal's rule: contacts count as Conversifi's when they did something with Conversifi, not by origin tag.
+// Exactly the set Jamal approved (~2,528 contacts); anything wider needs his say-so.
 const ACTIVITY_TAGS = [
-  'appointment confirmed', 'signup', 'trial started', 'paying user', 'churned user', 'demo', 'agency demo', 'dfy', 'dfy client',
-  'no show', 'rescheduled', 'user set up call', 'setup call requested', 'web registered', 'agencyfunnel-lead', 'agencyfunnel-partial',
-  'deal closed', 'voucher demo', 'feedback-scheme', 'diagnostic-call', 'interested', 'not interested', '50%offer', 'signup replied', 'trial replied',
+  'appointment confirmed', 'signup', 'trial started', 'paying user', 'demo', 'agency demo', 'web registered', 'agencyfunnel-lead',
+  'deal closed', 'dfy client', 'churned user', 'no show', 'user set up call',
 ];
 const ACTIVITY_SOURCES = ['Calendly', 'Webinar'];
 
@@ -145,7 +145,7 @@ const domainOf = (website: string | null, email: string) => {
   if (website) {
     try {
       const host = new URL(website.startsWith('http') ? website : `https://${website}`).hostname.replace(/^www\./, '').toLowerCase();
-      if (DOMAIN_PATTERN.test(host) && !FREE_MAIL_DOMAINS.has(host)) return host;
+      if (DOMAIN_PATTERN.test(host) && !/^[0-9.]+$/.test(host) && !FREE_MAIL_DOMAINS.has(host)) return host;
     } catch {
       // fall back to the email domain
     }
@@ -377,9 +377,10 @@ export class OsContactsImportService {
     if (!options.dryRun) {
       for (let offset = 0; offset < companies.length; offset += RECORD_BATCH_SIZE) {
         const batch = companies.slice(offset, offset + RECORD_BATCH_SIZE);
-        const result = await this.twentyApi.records<{ createCompanies: { id: string; domainName: { primaryLinkUrl: string } }[] }>(
+        const result = await this.upsertBatch<{ createCompanies: { id: string; domainName: { primaryLinkUrl: string } }[] }>(
           `mutation UpsertCompanies($data: [CompanyCreateInput!]!) { createCompanies(data: $data, upsert: true) { id domainName { primaryLinkUrl } } }`,
-          { data: batch },
+          batch,
+          (results) => ({ createCompanies: results.flatMap((r) => r.createCompanies) }),
         );
         for (const company of result.createCompanies) {
           const domain = company.domainName.primaryLinkUrl.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
@@ -413,14 +414,37 @@ export class OsContactsImportService {
     if (!options.dryRun) {
       for (let offset = 0; offset < people.length; offset += RECORD_BATCH_SIZE) {
         const batch = people.slice(offset, offset + RECORD_BATCH_SIZE);
-        await this.twentyApi.records(
+        const result = await this.upsertBatch<{ createPeople: { id: string }[] }>(
           `mutation UpsertPeople($data: [PersonCreateInput!]!) { createPeople(data: $data, upsert: true) { id } }`,
-          { data: batch },
+          batch,
+          (results) => ({ createPeople: results.flatMap((r) => r.createPeople) }),
         );
-        written += batch.length;
+        written += result.createPeople.length;
         if (written % 500 === 0) this.logger.log(`people upserted: ${written}/${people.length}`);
       }
     }
-    return { candidates: rows.length, companies: companies.length, people: written, dryRun: !!options.dryRun };
+    return { candidates: rows.length, companies: companies.length, people: written, skipped: this.skipped, dryRun: !!options.dryRun };
+  }
+
+  private skipped = 0;
+
+  // Twenty validates every record in a batch and rejects the whole batch on one bad value, so on
+  // failure the batch is replayed one record at a time and the offenders are logged and skipped.
+  private async upsertBatch<TResult>(mutation: string, batch: unknown[], merge: (results: TResult[]) => TResult): Promise<TResult> {
+    try {
+      return await this.twentyApi.records<TResult>(mutation, { data: batch });
+    } catch (batchError) {
+      const results: TResult[] = [];
+      for (const record of batch) {
+        try {
+          results.push(await this.twentyApi.records<TResult>(mutation, { data: [record] }));
+        } catch (error) {
+          this.skipped++;
+          this.logger.warn(`skipped record ${JSON.stringify(record).slice(0, 160)}: ${(error as Error).message.slice(0, 200)}`);
+        }
+      }
+      if (results.length === 0) throw batchError;
+      return merge(results);
+    }
   }
 }

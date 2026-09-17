@@ -396,7 +396,6 @@ export class OsContactsImportService {
         name: { firstName: row.first_name ?? '', lastName: row.last_name ?? '' },
         emails: { primaryEmail: row.email, additionalEmails: [] },
         phones: phonesFor(row.phone),
-        city: row.city ?? '',
         companyId: domain ? companyIdByDomain.get(domain) ?? null : null,
         leadSource: leadSourceFor(row),
         ghlTags: [...new Set(tags)],

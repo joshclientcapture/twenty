@@ -139,17 +139,19 @@ const cleanEmail = (value: unknown) => {
   const email = cleanText(value)?.toLowerCase() ?? null;
   return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null;
 };
+// Form answers range from "." to full URLs, so only a well-formed host with a TLD counts.
+const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 const domainOf = (website: string | null, email: string) => {
   if (website) {
     try {
       const host = new URL(website.startsWith('http') ? website : `https://${website}`).hostname.replace(/^www\./, '').toLowerCase();
-      if (host.includes('.')) return host;
+      if (DOMAIN_PATTERN.test(host) && !FREE_MAIL_DOMAINS.has(host)) return host;
     } catch {
       // fall back to the email domain
     }
   }
   const emailDomain = email.split('@')[1]?.toLowerCase() ?? '';
-  return emailDomain && !FREE_MAIL_DOMAINS.has(emailDomain) ? emailDomain : null;
+  return DOMAIN_PATTERN.test(emailDomain) && !FREE_MAIL_DOMAINS.has(emailDomain) ? emailDomain : null;
 };
 const companyNameFor = (companyName: string | null, domain: string) =>
   companyName ?? domain.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());

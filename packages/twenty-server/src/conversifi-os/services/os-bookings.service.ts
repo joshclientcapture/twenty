@@ -9,7 +9,7 @@ import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service'
 
 type BookingType =
   | 'DEMO' | 'DISCOVERY' | 'AGENCY_DEMO' | 'WEBINAR' | 'SETUP_CALL' | 'ONBOARDING' | 'DIAGNOSTICS' | 'FEEDBACK' | 'NEXT_STEPS' | 'OTHER';
-type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'PENDING' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
+type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
 
 type BookingSourceRow = {
   uri: string;
@@ -48,7 +48,6 @@ const BOOKING_TYPE_OPTIONS: { value: BookingType; label: string; color: string }
 const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string; color: string }[] = [
   { value: 'UPCOMING', label: 'Upcoming', color: 'blue' },
   { value: 'IN_PROGRESS', label: 'In progress', color: 'purple' },
-  { value: 'PENDING', label: 'Awaiting recording', color: 'yellow' },
   { value: 'SHOWED', label: 'Showed', color: 'green' },
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'gray' },
@@ -71,19 +70,25 @@ const bookingTypeFor = (eventName: string | null): BookingType => {
   return 'OTHER';
 };
 
-// Fathom publishes a recording some time after the call ends, so a call is only judged a
-// no-show once a grace window after its end has passed with nothing matched.
-const RECORDING_GRACE_MS = 3 * 60 * 60 * 1000;
+// Same rule as os.closer_call_rows (the closer dashboard) for bookings whose host is not a closer:
+// in progress until 30 minutes after the scheduled end, then no-show unless a recording matched.
+const GRACE_MS = 30 * 60 * 1000;
 const DEFAULT_CALL_MS = 30 * 60 * 1000;
-const bookingStatusFor = (row: BookingSourceRow, now: number): BookingStatus => {
-  if (row.rescheduled) return 'RESCHEDULED';
+const fallbackStatusFor = (row: BookingSourceRow, now: number): BookingStatus => {
   if (row.status === 'canceled') return 'CANCELLED';
-  const start = new Date(row.start_time).getTime();
-  if (start >= now) return 'UPCOMING';
-  const end = row.end_time ? new Date(row.end_time).getTime() : start + DEFAULT_CALL_MS;
-  if (now < end) return 'IN_PROGRESS';
+  if (row.rescheduled) return 'RESCHEDULED';
   if (row.recording_url) return 'SHOWED';
-  return now < end + RECORDING_GRACE_MS ? 'PENDING' : 'NO_SHOW';
+  const start = new Date(row.start_time).getTime();
+  const end = row.end_time ? new Date(row.end_time).getTime() : start + DEFAULT_CALL_MS;
+  if (end + GRACE_MS > now) return start > now ? 'UPCOMING' : 'IN_PROGRESS';
+  return 'NO_SHOW';
+};
+
+// The closer dashboard's verdict per call: recording within 15 minutes, attributed trial, manual
+// overrides from the closer page. Bookings mirror it so a no-show here means a no-show there.
+type CloserCallRow = { call_key: string; status: string; trialed: boolean; recording: string | null; overridden: boolean };
+const DASHBOARD_STATUS: Record<string, BookingStatus> = {
+  showed: 'SHOWED', no_show: 'NO_SHOW', in_progress: 'IN_PROGRESS', upcoming: 'UPCOMING', cancelled: 'CANCELLED', rescheduled: 'RESCHEDULED',
 };
 
 // Mirrors Calendly bookings (with the closer, the Fathom recording and the outcome) into a Booking
@@ -129,10 +134,24 @@ export class OsBookingsService {
       [windowDays],
     );
 
+    const closerIds: { id: string }[] = await this.dataSource.query("select id from os.closers where coalesce(calendly_host_email, '') <> ''");
+    const fromDate = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
+    const verdictByUri = new Map<string, CloserCallRow>();
+    for (const { id } of closerIds) {
+      const verdicts: CloserCallRow[] = await this.dataSource.query(
+        "select call_key, status, trialed, recording, overridden from os.closer_call_rows($1, $2::date, null) where kind = 'appt'",
+        [id, fromDate],
+      );
+      for (const verdict of verdicts) verdictByUri.set(verdict.call_key, verdict);
+    }
+
     // Full map, so a booking made from a merged person's second address still links.
     const personIdByEmail = await this.twentyApi.peopleByEmail();
     const now = Date.now();
     const records = rows.map((row) => {
+      const verdict = verdictByUri.get(row.uri);
+      const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, now);
+      const recordingUrl = verdict?.recording ?? row.recording_url;
       const type = bookingTypeFor(row.event_name);
       const typeLabel = BOOKING_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
       const who = row.invitee_name || row.invitee_email || 'Unknown';
@@ -142,13 +161,15 @@ export class OsBookingsService {
         startsAt: row.start_time,
         endsAt: row.end_time,
         bookingType: type,
-        status: bookingStatusFor(row, now),
+        status,
+        trialed: verdict?.trialed ?? false,
+        overridden: verdict?.overridden ?? false,
         closer: row.closer_name ?? row.host_name ?? '',
         closerId: row.closer_id ?? '',
         inviteeName: row.invitee_name ?? '',
         inviteeEmail: row.invitee_email ?? '',
         eventName: row.event_name ?? '',
-        recording: row.recording_url ? { primaryLinkUrl: row.recording_url, primaryLinkLabel: 'Fathom recording', secondaryLinks: [] } : null,
+        recording: recordingUrl ? { primaryLinkUrl: recordingUrl, primaryLinkLabel: 'Fathom recording', secondaryLinks: [] } : null,
         joinLink: row.join_url ? { primaryLinkUrl: row.join_url, primaryLinkLabel: 'Join', secondaryLinks: [] } : null,
         personId: row.invitee_email ? personIdByEmail.get(row.invitee_email) ?? null : null,
       };
@@ -196,6 +217,7 @@ export class OsBookingsService {
     }
 
     const existing = new Set(booking.fieldsList.map((field) => field.name));
+    this.logger.log(`booking fields present: ${existing.size}`);
     const wanted: { name: string; label: string; type: string; icon: string; extra?: Record<string, unknown> }[] = [
       { name: 'calendlyUri', label: 'Calendly URI', type: 'TEXT', icon: 'IconLink', extra: { isUnique: true } },
       { name: 'startsAt', label: 'Starts at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
@@ -209,6 +231,8 @@ export class OsBookingsService {
       { name: 'inviteeEmail', label: 'Invitee email', type: 'TEXT', icon: 'IconMail' },
       { name: 'eventName', label: 'Calendly event', type: 'TEXT', icon: 'IconCalendar' },
       { name: 'recording', label: 'Recording', type: 'LINKS', icon: 'IconVideo' },
+      { name: 'trialed', label: 'Trialed after call', type: 'BOOLEAN', icon: 'IconRocket', extra: { defaultValue: false } },
+      { name: 'overridden', label: 'Manually overridden', type: 'BOOLEAN', icon: 'IconHandStop', extra: { defaultValue: false } },
       { name: 'joinLink', label: 'Join link', type: 'LINKS', icon: 'IconVideo' },
       {
         name: 'person', label: 'Person', type: 'RELATION', icon: 'IconUser',

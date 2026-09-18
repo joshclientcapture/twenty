@@ -154,7 +154,7 @@ export const fieldsFromTags = (tags: Set<string>) => {
   const stages = [...tags].map((tag) => WEB_STAGE_BY_TAG[tag]).filter(Boolean).sort((a, b) => WEB_STAGE_ORDER.indexOf(b) - WEB_STAGE_ORDER.indexOf(a));
   if (tags.has('AGENCYFUNNEL_PARTIAL')) tags.add('PARTIAL_FORM');
   return {
-    notInterested: tags.has('NOT_INTERESTED') || tags.has('BAD_EGG') || tags.has('BLACKLIST'),
+    notInterested: tags.has('NOT_INTERESTED') || tags.has('BLACKLIST'),
     doNotEmail: tags.has('DND') || tags.has('ENABLE_DND') || tags.has('BAD_EGG') || tags.has('BLACKLIST'),
     ...(tags.has('DFY_CLIENT') || tags.has('DEAL_CLOSED') ? { stage: 'DFY_CLIENT' } : {}),
     ...(stages[0] ? { webinarStage: stages[0] } : {}),

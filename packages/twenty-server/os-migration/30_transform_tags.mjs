@@ -28,7 +28,7 @@ for (const person of people) {
   const tags = new Set(person.ghlTags ?? []);
   const patch = {};
   const since = person.leadSince ?? person.createdAt;
-  if ((tags.has('NOT_INTERESTED') || tags.has('BAD_EGG') || tags.has('BLACKLIST')) && !person.notInterested) { patch.notInterested = true; bump('notInterested'); }
+  if ((tags.has('NOT_INTERESTED') || tags.has('BLACKLIST')) && !person.notInterested) { patch.notInterested = true; bump('notInterested'); }
   if ((tags.has('DND') || tags.has('ENABLE_DND') || tags.has('BAD_EGG') || tags.has('BLACKLIST')) && !person.doNotEmail) { patch.doNotEmail = true; bump('doNotEmail'); }
   if ((tags.has('DFY_CLIENT') || tags.has('DEAL_CLOSED')) && person.stage !== 'DFY_CLIENT') { patch.stage = 'DFY_CLIENT'; bump('stage DFY_CLIENT'); }
   const stages = [...tags].map((t) => WEB_STAGE[t]).filter(Boolean).sort((a, b) => STAGE_ORDER.indexOf(b) - STAGE_ORDER.indexOf(a));

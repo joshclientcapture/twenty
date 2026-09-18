@@ -163,13 +163,16 @@ export class OsLifecycleService {
       const future = own.filter((booking) => booking.startsAt > now && (booking.status === 'UPCOMING' || booking.status === 'IN_PROGRESS')).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
       const lastBooking = past[0] ?? null;
 
+      // An address Stripe only knows from a payment or the customers table carries no subscription
+      // dates, so the end dates it does not have must not wipe what intake or the GHL import set.
+      const stripeKnowsSubscription = facts.some((fact) => fact.trial_started_at !== null || fact.paying_since !== null);
       const desired: Partial<PersonRow> = {
         signedUpAt: earliest((fact) => fact.signed_up_at) ?? person.signedUpAt,
         trialStartedAt: earliest((fact) => fact.trial_started_at) ?? person.trialStartedAt,
         payingSince: earliest((fact) => fact.paying_since) ?? person.payingSince,
         // Stripe is the authority once the address is known to it; a reactivation clears the churn date.
-        churnedAt: facts.length ? (facts.some((fact) => fact.churned_at === null && fact.paying_since) ? null : latest((fact) => fact.churned_at)) : person.churnedAt,
-        trialEndedAt: facts.length ? (facts.some((fact) => fact.paying_since) ? null : latest((fact) => fact.trial_ended_at)) : person.trialEndedAt,
+        churnedAt: stripeKnowsSubscription ? (facts.some((fact) => fact.churned_at === null && fact.paying_since) ? null : latest((fact) => fact.churned_at)) : person.churnedAt,
+        trialEndedAt: stripeKnowsSubscription ? (facts.some((fact) => fact.paying_since) ? null : latest((fact) => fact.trial_ended_at)) : person.trialEndedAt,
         lastBookingAt: lastBooking?.startsAt ?? person.lastBookingAt,
         lastBookingStatus: lastBooking?.status ?? person.lastBookingStatus,
         lastBookingType: lastBooking?.bookingType ?? person.lastBookingType,

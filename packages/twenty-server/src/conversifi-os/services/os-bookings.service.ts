@@ -16,6 +16,7 @@ type BookingSourceRow = {
   event_name: string | null;
   status: string | null;
   start_time: string;
+  booked_at: string | null;
   end_time: string | null;
   join_url: string | null;
   host_email: string | null;
@@ -59,6 +60,8 @@ const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string; color: stri
 ];
 
 const RECORD_BATCH_SIZE = 100;
+const NAME_MATCH_WINDOW_MS = 60 * 60 * 1000;
+const normaliseName = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, '').trim().split(/\s+/).filter(Boolean).join(' ');
 
 const bookingTypeFor = (eventName: string | null): BookingType => {
   const name = (eventName ?? '').toLowerCase();
@@ -121,7 +124,7 @@ export class OsBookingsService {
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
-       select b.uri, b.name as event_name, b.status, b.start_time, b.end_time, b.join_url, b.host_email, b.host_name,
+       select b.uri, b.name as event_name, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled,
               i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
@@ -153,6 +156,7 @@ export class OsBookingsService {
 
     // Full map, so a booking made from a merged person's second address still links.
     const personIdByEmail = await this.twentyApi.peopleByEmail();
+    const personIdByName = await this.matchRecentLeadsByName(rows, personIdByEmail);
     const now = Date.now();
     const records = rows.map((row) => {
       const verdict = verdictByUri.get(row.uri);
@@ -182,7 +186,7 @@ export class OsBookingsService {
         eventName: row.event_name ?? '',
         recording: recordingUrl ? { primaryLinkUrl: recordingUrl, primaryLinkLabel: 'Fathom recording', secondaryLinks: [] } : null,
         joinLink: row.join_url ? { primaryLinkUrl: row.join_url, primaryLinkLabel: 'Join', secondaryLinks: [] } : null,
-        personId: row.invitee_email ? personIdByEmail.get(row.invitee_email) ?? null : null,
+        personId: row.invitee_email ? personIdByEmail.get(row.invitee_email) ?? personIdByName.get(row.uri) ?? null : null,
       };
     });
 
@@ -196,6 +200,42 @@ export class OsBookingsService {
       written += batch.length;
     }
     return { bookings: written, linkedToPeople: records.filter((record) => record.personId).length, windowDays };
+  }
+
+  // A lead who books with a different address than the one they typed in the form minutes earlier
+  // is matched by normalised name when the Person was created within an hour before the booking;
+  // the Calendly address is then added to the Person so later runs match by email.
+  private async matchRecentLeadsByName(rows: BookingSourceRow[], personIdByEmail: Map<string, string>): Promise<Map<string, string>> {
+    const matches = new Map<string, string>();
+    const unmatched = rows.filter((row) => row.invitee_email && row.invitee_name && row.booked_at && !personIdByEmail.has(row.invitee_email));
+    if (unmatched.length === 0) return matches;
+    const since = new Date(Math.min(...unmatched.map((row) => new Date(row.booked_at as string).getTime())) - NAME_MATCH_WINDOW_MS).toISOString();
+    const result = await this.twentyApi.records<{ people: { edges: { node: { id: string; createdAt: string; name: { firstName: string; lastName: string }; emails: { primaryEmail: string | null; additionalEmails: string[] | null } } }[] } }>(
+      `query RecentPeople($since: DateTime!) { people(filter: { createdAt: { gte: $since } }, first: 200) { edges { node { id createdAt name { firstName lastName } emails { primaryEmail additionalEmails } } } } }`,
+      { since },
+    );
+    const recent = result.people.edges.map((edge) => edge.node);
+    for (const row of unmatched) {
+      const bookedAt = new Date(row.booked_at as string).getTime();
+      const wanted = normaliseName(row.invitee_name as string);
+      if (!wanted) continue;
+      const candidates = recent.filter((person) => {
+        const createdAt = new Date(person.createdAt).getTime();
+        return normaliseName(`${person.name.firstName} ${person.name.lastName}`) === wanted && createdAt <= bookedAt + 5 * 60 * 1000 && createdAt >= bookedAt - NAME_MATCH_WINDOW_MS;
+      });
+      if (candidates.length !== 1) continue;
+      const person = candidates[0];
+      const email = (row.invitee_email as string).toLowerCase();
+      const additionalEmails = [...new Set([...(person.emails.additionalEmails ?? []), email])];
+      await this.twentyApi.records(
+        `mutation LinkBookingEmail($id: UUID!, $data: PersonUpdateInput!) { updatePerson(id: $id, data: $data) { id } }`,
+        { id: person.id, data: { emails: { primaryEmail: person.emails.primaryEmail, additionalEmails } } },
+      );
+      personIdByEmail.set(email, person.id);
+      matches.set(row.uri, person.id);
+      this.logger.log(`booking ${row.uri} linked by name to person ${person.id} (${email} added)`);
+    }
+    return matches;
   }
 
   // Creates the Booking object, its fields and the calendar view once; later runs only read.

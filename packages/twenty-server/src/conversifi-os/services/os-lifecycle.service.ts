@@ -16,7 +16,7 @@ export const STAGE_OPTIONS: { value: LifecycleStage; label: string; color: strin
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
   { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' },
   { value: 'TRIAL', label: 'Trial', color: 'orange' },
-  { value: 'TRIAL_ENDED', label: 'Trial ended, never paid', color: 'red' },
+  { value: 'TRIAL_ENDED', label: 'Trial ended (never paid)', color: 'red' },
   { value: 'PAYING', label: 'Paying', color: 'green' },
   { value: 'CHURNED', label: 'Churned', color: 'purple' },
   { value: 'DFY_CLIENT', label: 'DFY client', color: 'turquoise' },

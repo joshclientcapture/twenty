@@ -64,7 +64,7 @@ const WEBINAR_STAGE_OPTIONS = [
 ];
 const STAGE_OPTIONS = [
   { value: 'LEAD', label: 'Lead', color: 'gray' }, { value: 'BOOKED', label: 'Call booked', color: 'blue' }, { value: 'SHOWED', label: 'Showed', color: 'sky' }, { value: 'NO_SHOW', label: 'No show', color: 'red' },
-  { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' }, { value: 'TRIAL', label: 'Trial', color: 'orange' }, { value: 'TRIAL_ENDED', label: 'Trial ended, never paid', color: 'red' }, { value: 'PAYING', label: 'Paying', color: 'green' }, { value: 'CHURNED', label: 'Churned', color: 'purple' },
+  { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' }, { value: 'TRIAL', label: 'Trial', color: 'orange' }, { value: 'TRIAL_ENDED', label: 'Trial ended (never paid)', color: 'red' }, { value: 'PAYING', label: 'Paying', color: 'green' }, { value: 'CHURNED', label: 'Churned', color: 'purple' },
   { value: 'DFY_CLIENT', label: 'DFY client', color: 'turquoise' }, { value: 'NOT_INTERESTED', label: 'Not interested', color: 'gray' },
 ];
 const PERSON_FIELDS = [

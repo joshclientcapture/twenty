@@ -88,7 +88,7 @@ type PersonRow = {
 
 type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null };
 
-type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null };
+type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null };
 
 const PAGE = 200;
 const BATCH = 100;
@@ -182,6 +182,7 @@ export class OsLifecycleService {
       desired.stage = stageFor({ ...person, ...desired });
       desired.lastActivityAt = [
         person.createdAt, person.lastActivityAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
+        latest((fact) => fact.last_event_at),
         ...(bookingsByPerson.get(person.id) ?? []).map((booking) => booking.bookedAt),
       ].filter((value): value is string => !!value).sort().reverse()[0] ?? person.createdAt;
 
@@ -273,7 +274,7 @@ export class OsLifecycleService {
         from os.conversifi_customers group by 1
       ),
       payments as (
-        select lower(email) as email, min(created) as first_paid
+        select lower(email) as email, min(created) as first_paid, max(created) as last_paid
         from os.stripe_payments where paid and coalesce(amount_cents, 0) > 0 and lower(coalesce(status, '')) = 'succeeded' and email is not null group by 1
       )
       select e.email,
@@ -285,7 +286,8 @@ export class OsLifecycleService {
                   else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as churned_at,
              case when exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'trialing', 'past_due')) then null
                   when p.first_paid is not null or exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'past_due')) then null
-                  else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as trial_ended_at
+                  else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as trial_ended_at,
+             greatest((select max(greatest(s.created, s.trial_start, s.canceled_at, s.ended_at)) from subs s where s.email = e.email), p.last_paid) as last_event_at
       from emails e
       left join customers cu on cu.email = e.email
       left join payments p on p.email = e.email
@@ -299,6 +301,7 @@ export class OsLifecycleService {
         paying_since: toIso(row.paying_since),
         churned_at: toIso(row.churned_at),
         trial_ended_at: toIso(row.trial_ended_at),
+        last_event_at: toIso(row.last_event_at),
       });
     }
     return facts;

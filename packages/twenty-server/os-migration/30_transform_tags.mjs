@@ -14,7 +14,7 @@ const STAGE_ORDER = ['REGISTERED', 'ENTERED', 'REACHED_OFFER', 'OFFER_CLICK', 'T
 const people = [];
 let after = null;
 for (;;) {
-  const page = await gql(`query ($after: String) { people(first: 200, after: $after, filter: { ghlTags: { isEmptyArray: false } }) { edges { cursor node { id createdAt leadSince ghlTags leadSource stage notInterested doNotEmail webinarStage signedUpAt trialStartedAt payingSince churnedAt } } pageInfo { hasNextPage endCursor } } }`, { after });
+  const page = await gql(`query ($after: String) { people(first: 200, after: $after, filter: { not: { ghlTags: { isEmptyArray: true } } }) { edges { cursor node { id createdAt leadSince ghlTags leadSource stage notInterested doNotEmail webinarStage signedUpAt trialStartedAt payingSince churnedAt } } pageInfo { hasNextPage endCursor } } }`, { after });
   people.push(...page.people.edges.map((e) => e.node));
   if (!page.people.pageInfo.hasNextPage) break;
   after = page.people.pageInfo.endCursor;

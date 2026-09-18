@@ -7,6 +7,7 @@
 import { readFileSync } from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
+import pg from 'pg';
 
 const envText = readFileSync(new URL('../.env', import.meta.url), 'utf8');
 const env = Object.fromEntries(envText.split('\n').filter((line) => /^[A-Z_]+=/.test(line)).map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]));
@@ -17,7 +18,9 @@ const args = process.argv.slice(2);
 const REBUILD = args.includes('--rebuild');
 const ACTIVATE = args.includes('--activate');
 const TEST = args.includes('--test') ? args[args.indexOf('--test') + 1] : null;
-const TEST_EMAIL = env.OS_TEST_EMAIL ?? 'jamal@conversifi.io';
+// --only <name part>: build/rebuild only workflows whose name contains it.
+const ONLY = args.includes('--only') ? args[args.indexOf('--only') + 1].toLowerCase() : null;
+const TEST_EMAIL = process.env.OS_TEST_EMAIL ?? env.OS_TEST_EMAIL ?? 'jamal@clientcapture.io';
 if (!API_KEY) throw new Error('OS_TWENTY_API_KEY must be set');
 
 const userToken = () => {
@@ -52,7 +55,11 @@ const fieldId = (objectName, fieldName) => {
   if (!field) throw new Error(`${objectName}.${fieldName} field not found (deploy the server first)`);
   return field.id;
 };
-const connected = (await gql('/graphql', `{ connectedAccounts(first: 50) { edges { node { id handle provider } } } }`)).connectedAccounts.edges.map((edge) => edge.node);
+// Connected mailboxes live in the core schema, not the records API.
+const pgClient = new pg.Client({ connectionString: env.PG_DATABASE_URL });
+await pgClient.connect();
+const connected = (await pgClient.query('select id, handle, provider from core."connectedAccount" where "workspaceId" = $1', [WORKSPACE_ID])).rows;
+await pgClient.end();
 const MAILBOXES = {
   'jamal@conversifi.io': { name: 'Jamal', title: 'Jamal Robinson | Founder, Conversifi' },
   'sales@conversifi.io': { name: 'Therapon', title: 'Therapon | Conversifi' },
@@ -113,10 +120,11 @@ const layout = (list) => {
           const first = walk(entry.steps);
           return { id: randomUUID(), filterGroupId: groupId, nextStepIds: first ? [first] : [] };
         });
-        const otherwiseFirst = walk(item._if.otherwise);
-        branchList.push({ id: randomUUID(), nextStepIds: otherwiseFirst ? [otherwiseFirst] : [] });
+        // An unmatched if/else fails the run, so every else branch ends in an explicit Stop step.
+        const otherwiseFirst = walk(item._if.otherwise.length ? item._if.otherwise : [step('EMPTY', 'Stop', {})]);
+        branchList.push({ id: randomUUID(), nextStepIds: [otherwiseFirst] });
         node.settings.input = { stepFilterGroups: groups, stepFilters: filters, branches: branchList };
-        node.nextStepIds = branchList.flatMap((entry) => entry.nextStepIds);
+        node.nextStepIds = [];
       } else {
         node = item;
       }
@@ -139,7 +147,7 @@ const trigger = {
 
 // ---------- shared expressions ----------
 const P = (stepId) => ({ id: `{{${stepId}.first.id}}`, email: `{{${stepId}.first.emails.primaryEmail}}`, firstName: `{{${stepId}.first.name.firstName}}`, field: (name) => `{{${stepId}.first.${name}}}` });
-const T = { id: '{{trigger.id}}', email: '{{trigger.emails.primaryEmail}}', firstName: '{{trigger.name.firstName}}', field: (name) => `{{trigger.${name}}}` };
+const T = { id: '{{trigger.properties.after.id}}', email: '{{trigger.properties.after.emails.primaryEmail}}', firstName: '{{trigger.properties.after.name.firstName}}', field: (name) => `{{trigger.properties.after.${name}}}` };
 // Stop conditions shared by the sales sequences: converted, paying, not interested, rebooked, opted out.
 const stillProspect = (person) => [
   condition(person.field('trialStartedAt'), 'DATE_TIME', 'IS_EMPTY'),
@@ -168,7 +176,7 @@ const guardedChain = (personId, items, guard) => {
 // ---------- booking time helper (code step) ----------
 const BOOKING_TIME_CODE = String.raw`
 export const main = async (params) => {
-  const booking = params.booking ?? {};
+  const booking = params;
   const now = Date.now();
   const start = new Date(booking.startsAt).getTime();
   const timezone = booking.inviteeTimezone || 'UTC';
@@ -183,8 +191,8 @@ export const main = async (params) => {
   return {
     eligible: booking.status === 'UPCOMING' && start > now && params.types.split(',').includes(booking.bookingType) ? 'yes' : '',
     firstName, startDate, startTime, timezone,
-    meetingLocation: booking.joinLink?.primaryLinkUrl || '',
-    rescheduleLink: booking.rescheduleLink?.primaryLinkUrl || '',
+    meetingLocation: booking.joinLink || '',
+    rescheduleLink: booking.rescheduleLink || '',
     send24h: start - now > 24 * hour ? 'yes' : '',
     remind24hAt: floor(start - 24 * hour),
     send2h: start - now > 2 * hour ? 'yes' : '',
@@ -196,6 +204,8 @@ export const main = async (params) => {
     isWebinar: booking.bookingType === 'WEBINAR' ? 'yes' : '',
   };
 };`;
+const A = '{{trigger.properties.after.';
+const BOOKING_INPUT = { startsAt: A + 'startsAt}}', status: A + 'status}}', bookingType: A + 'bookingType}}', inviteeTimezone: A + 'inviteeTimezone}}', inviteeFirstName: A + 'inviteeFirstName}}', inviteeName: A + 'inviteeName}}', joinLink: A + 'joinLink.primaryLinkUrl}}', rescheduleLink: A + 'rescheduleLink.primaryLinkUrl}}' };
 const BOOKING_TIME_SAMPLE = { eligible: 'yes', firstName: 'Sam', startDate: 'Thursday, 18 September 2026', startTime: '2:00 PM', timezone: 'Europe/London', meetingLocation: 'https://zoom.us/j/1', rescheduleLink: 'https://calendly.com/reschedulings/x', send24h: 'yes', remind24hAt: '2026-09-18T10:00:00.000Z', send2h: 'yes', remind2hAt: '2026-09-18T10:00:00.000Z', remind1hAt: '2026-09-18T10:00:00.000Z', after15mAt: '2026-09-18T10:00:00.000Z', after45mAt: '2026-09-18T10:00:00.000Z', after21h30At: '2026-09-18T10:00:00.000Z', isWebinar: '' };
 
 // ---------- 1. appointment confirmed + reminders (per calendar, from the closer's mailbox) ----------
@@ -209,9 +219,9 @@ const APPT_VARIANTS = [
 ];
 const closerMailboxes = [...new Set(Object.keys(senders))];
 const apptWorkflow = (variant) => {
-  const times = code('Call times and eligibility', 'TIMES', BOOKING_TIME_CODE, { booking: '{{trigger}}', types: variant.types }, BOOKING_TIME_SAMPLE);
+  const times = code('Call times and eligibility', 'TIMES', BOOKING_TIME_CODE, { ...BOOKING_INPUT, types: variant.types }, BOOKING_TIME_SAMPLE);
   const C = (name) => `{{TIMES.${name}}}`;
-  const to = '{{trigger.inviteeEmail}}';
+  const to = '{{trigger.properties.after.inviteeEmail}}';
   const chainFor = (sender) => {
     const [noun, confirmLine, reminderLine, reminderLead] = variant.intro;
     const confirm = email(`Email 1: confirmed (${sender.name})`, sender, to, variant.subjects[0], [
@@ -223,7 +233,7 @@ const apptWorkflow = (variant) => {
       'See you soon!',
     ]);
     const twoHourTail = () => {
-      const refresh = findBooking('{{trigger.calendlyUri}}');
+      const refresh = findBooking('{{trigger.properties.after.calendlyUri}}');
       return [
         waitUntil('Wait until 2 hours before', C('remind2hAt')),
         refresh,
@@ -238,7 +248,7 @@ const apptWorkflow = (variant) => {
         ]),
       ];
     };
-    const refresh24 = findBooking('{{trigger.calendlyUri}}');
+    const refresh24 = findBooking('{{trigger.properties.after.calendlyUri}}');
     return [
       confirm,
       branch('More than 24 hours away?', [condition(C('send24h'), 'TEXT', 'IS_NOT_EMPTY')], [
@@ -259,7 +269,7 @@ const apptWorkflow = (variant) => {
     ];
   };
   // One branch per connected closer mailbox, keyed on the booking's host; anything else goes out from the fallback.
-  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
+  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
   const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
   return {
     name: `Sequence: appointment confirmed + reminders (${variant.label})`,
@@ -296,24 +306,24 @@ const noShowWorkflow = () => {
       steps: (person) => [email(`No-show email ${index + 1} (${sender.name})`, sender, person.email, subject, [`Hey ${person.firstName},`, ...paragraphs], { closing: index === 15 ? 'All the best' : 'Best' })],
       wait: delay ? { label: `${delay.days} day${delay.days > 1 ? 's' : ''}`, duration: delay } : null,
     }));
-    return guardedChain('{{trigger.personId}}', items, stillProspect);
+    return guardedChain('{{trigger.properties.after.personId}}', items, stillProspect);
   };
-  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
+  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
   const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
   return {
     name: 'Sequence: no-show follow-up (16 emails)',
     description: 'Ported from GHL "No Show Sequence" + n8n templates. Starts when a Demo / Discovery / Agency demo booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer\'s mailbox. Stops as soon as the person trials, pays, rebooks, shows, becomes a DFY client, opts out or is marked not interested.',
     trigger: trigger.updated('booking', ['status']),
     steps: [branch('No-show on a sales call?', [
-      condition('{{trigger.status}}', 'SELECT', 'IS', 'NO_SHOW'),
-      condition('{{trigger.personId}}', 'UUID', 'IS_NOT_EMPTY'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'WEBINAR'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'SETUP_CALL'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'ONBOARDING'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'DIAGNOSTICS'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'FEEDBACK'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'NEXT_STEPS'),
-      condition('{{trigger.bookingType}}', 'SELECT', 'IS_NOT', 'OTHER'),
+      condition('{{trigger.properties.after.status}}', 'SELECT', 'IS', 'NO_SHOW'),
+      condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'WEBINAR'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'SETUP_CALL'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'ONBOARDING'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'DIAGNOSTICS'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'FEEDBACK'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'NEXT_STEPS'),
+      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'OTHER'),
     ], body)],
     testPayload: (personId) => ({ id: randomUUID(), status: 'NO_SHOW', personId, bookingType: 'DEMO', closerEmail: 'sales@conversifi.io' }),
   };
@@ -430,18 +440,21 @@ const CHURN = personTriggered({
 const team = { ...FALLBACK, name: 'The Conversifi team', title: 'Conversifi' };
 const WEBINAR_LINK = 'conversifi.io/webinar?s=live';
 const webinarReminders = () => {
-  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { booking: '{{trigger}}', types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
+  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { ...BOOKING_INPUT, types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
   const C = (name) => `{{TIMES.${name}}}`;
-  const to = '{{trigger.inviteeEmail}}';
-  const refresh24 = findBooking('{{trigger.calendlyUri}}');
-  const refresh1 = findBooking('{{trigger.calendlyUri}}');
-  const oneHour = [
-    waitUntil('Wait until 1 hour before', C('remind1hAt')),
-    refresh1,
-    branch('Still registered?', [condition(`{{${refresh1.id}.first.status}}`, 'SELECT', 'IS', 'UPCOMING')], [
-      email('Email 3: starting in 1 hour', team, to, 'Starting in 1 hour, here\'s your link', [`Hi ${C('firstName')},`, 'We go live in one hour. Showcasing how our AI assistants book meetings through LinkedIn on complete auto-pilot.', `Join here: ${WEBINAR_LINK}`, 'See you soon'], { noSignature: true }),
-    ]),
-  ];
+  const to = '{{trigger.properties.after.inviteeEmail}}';
+  const refresh24 = findBooking('{{trigger.properties.after.calendlyUri}}');
+  // Fresh steps per branch: a step object can only appear once in a workflow.
+  const oneHour = () => {
+    const refresh1 = findBooking('{{trigger.properties.after.calendlyUri}}');
+    return [
+      waitUntil('Wait until 1 hour before', C('remind1hAt')),
+      refresh1,
+      branch('Still registered?', [condition(`{{${refresh1.id}.first.status}}`, 'SELECT', 'IS', 'UPCOMING')], [
+        email('Email 3: starting in 1 hour', team, to, 'Starting in 1 hour, here\'s your link', [`Hi ${C('firstName')},`, 'We go live in one hour. Showcasing how our AI assistants book meetings through LinkedIn on complete auto-pilot.', `Join here: ${WEBINAR_LINK}`, 'See you soon'], { noSignature: true }),
+      ]),
+    ];
+  };
   return {
     name: 'Sequence: webinar registration + reminders',
     description: 'Ported from GHL "Registration & pre-webinar reminders". On a Conversifi Live Demo booking: spot secured now, reminder the day before, link 1 hour before.',
@@ -462,15 +475,15 @@ const webinarReminders = () => {
         refresh24,
         branch('Still registered?', [condition(`{{${refresh24.id}.first.status}}`, 'SELECT', 'IS', 'UPCOMING')], [
           email('Email 2: tomorrow', team, to, 'Tomorrow: put your LinkedIn outreach on autopilot', [`Hi ${C('firstName')},`, `Quick reminder your Conversifi live demo is tomorrow at ${C('startTime')}, ${C('timezone')}.`, 'On the session you\'ll see how the AI finds leads, sends connection requests, handles entire conversations in your tone of voice, and books them into your calendar on auto pilot.', `Here's your link to the live event: ${WEBINAR_LINK}`], { noSignature: true }),
-          ...oneHour,
+          ...oneHour(),
         ]),
-      ], oneHour),
+      ], oneHour()),
     ])],
     testPayload: () => ({ id: randomUUID(), calendlyUri: 'https://api.calendly.com/scheduled_events/test-webinar', startsAt: new Date(Date.now() + 26 * 3600000).toISOString(), status: 'UPCOMING', bookingType: 'WEBINAR', inviteeEmail: TEST_EMAIL, inviteeFirstName: 'Jamal', inviteeTimezone: 'Europe/London' }),
   };
 };
 const webinarNoShow = () => {
-  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { booking: '{{trigger}}', types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
+  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { ...BOOKING_INPUT, types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
   const C = (name) => `{{TIMES.${name}}}`;
   const notEntered = (person) => [condition(person.field('webinarStage'), 'SELECT', 'IS', 'REGISTERED'), ...mayEmail(person)];
   const items = [
@@ -482,15 +495,15 @@ const webinarNoShow = () => {
     name: 'Sequence: webinar no-show recovery',
     description: 'Ported from GHL "No-show recovery". 45 minutes after a Conversifi Live Demo starts, if the registrant never entered the session (webinar stage still Registered): 3 emails over 4 days.',
     trigger: trigger.created('booking'),
-    steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
+    steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
       waitUntil('Wait until 45 minutes after the start', C('after45mAt')),
-      ...guardedChain('{{trigger.personId}}', items, notEntered),
+      ...guardedChain('{{trigger.properties.after.personId}}', items, notEntered),
     ])],
     testPayload: (personId) => ({ id: randomUUID(), calendlyUri: 'https://api.calendly.com/scheduled_events/test-webinar', startsAt: new Date(Date.now() - 44 * 60000).toISOString(), status: 'UPCOMING', bookingType: 'WEBINAR', personId, inviteeEmail: TEST_EMAIL, inviteeFirstName: 'Jamal', inviteeTimezone: 'Europe/London' }),
   };
 };
 const webinarOffer = () => {
-  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { booking: '{{trigger}}', types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
+  const times = code('Session times', 'TIMES', BOOKING_TIME_CODE, { ...BOOKING_INPUT, types: 'WEBINAR' }, BOOKING_TIME_SAMPLE);
   const C = (name) => `{{TIMES.${name}}}`;
   const notPaid = (person) => [condition(person.field('webinarStage'), 'SELECT', 'IS_NOT', 'PAID'), condition(person.field('payingSince'), 'DATE_TIME', 'IS_EMPTY'), ...mayEmail(person)];
   const link = (person) => person.field('webinarOfferLink');
@@ -506,9 +519,9 @@ const webinarOffer = () => {
     name: 'Sequence: webinar offer ($599)',
     description: 'Ported from GHL "Attended, didn\'t buy, the offer sequence". 15 minutes after a Conversifi Live Demo starts: the $599 offer, FAQ 6 hours later, "expires in 2 hours" at 21h30 after the start, then "expired, start free". Stops when the person pays.',
     trigger: trigger.created('booking'),
-    steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
+    steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
       waitUntil('Wait until 15 minutes after the start', C('after15mAt')),
-      ...guardedChain('{{trigger.personId}}', items, guard),
+      ...guardedChain('{{trigger.properties.after.personId}}', items, guard),
     ])],
     testPayload: (personId) => ({ id: randomUUID(), calendlyUri: 'https://api.calendly.com/scheduled_events/test-webinar', startsAt: new Date(Date.now() - 14 * 60000).toISOString(), status: 'UPCOMING', bookingType: 'WEBINAR', personId, inviteeEmail: TEST_EMAIL, inviteeFirstName: 'Jamal', inviteeTimezone: 'Europe/London' }),
   };
@@ -517,7 +530,7 @@ const webinarOffer = () => {
 // ---------- 5. one-click actions on a person ----------
 const jamal = () => senderFor('jamal@conversifi.io');
 const fiftyOff = () => {
-  const find = findPerson(T.id);
+  const find = findPerson('{{trigger.payload.id}}');
   const person = P(find.id);
   return {
     name: 'Action: send 50% off win-back offer',
@@ -540,7 +553,7 @@ const DFY_PACKAGES = [
   { agents: 3, label: '3 Agent Package (Best Value)', setup: '$1,997', retainer: '$750/month ($250/account)', sign: 'https://sign.zoho.com/zsfl/9E9uItDzwBI4YVXvbwWy?i=6918', pay: 'https://buy.stripe.com/eVq4gz5pf9Ue43ffXKffy04' },
 ];
 const dfyClose = (pack) => {
-  const find = findPerson(T.id);
+  const find = findPerson('{{trigger.payload.id}}');
   const person = P(find.id);
   return {
     name: `Action: DFY closed, send onboarding (${pack.agents} agent${pack.agents > 1 ? 's' : ''})`,
@@ -580,6 +593,7 @@ const destroyWorkflow = async (workflow) => {
 
 const created = [];
 for (const spec of WORKFLOWS) {
+  if (ONLY && !spec.name.toLowerCase().includes(ONLY)) continue;
   const previous = existing.find((workflow) => workflow.name === spec.name);
   if (previous && !REBUILD) { console.log(`exists: ${spec.name} [${previous.statuses.join(',')}]`); created.push({ spec, workflowId: previous.id, versionId: previous.versions.edges.map((edge) => edge.node).find((version) => version.status === 'ACTIVE' || version.status === 'DRAFT')?.id }); continue; }
   if (previous) { await destroyWorkflow(previous); console.log(`rebuilding: ${spec.name}`); }
@@ -603,10 +617,12 @@ for (const spec of WORKFLOWS) {
   const workflowId = result?.result?.workflowId;
   if (!versionId) { console.log('create failed', spec.name, JSON.stringify(result).slice(0, 1200)); continue; }
 
+  const configuredCodeIds = new Set();
   for (const { codeStep, parentId, nextId } of insertions) {
     await mcp('create_workflow_version_step', { workflowVersionId: versionId, stepType: 'CODE', parentStepId: parentId, ...(nextId ? { nextStepId: nextId } : {}) });
     const version = (await gql('/graphql', `query ($id: UUID!) { workflowVersion(filter: { id: { eq: $id } }) { id steps } }`, { id: versionId })).workflowVersion;
-    const inserted = (version.steps ?? []).find((candidate) => candidate.type === 'CODE' && candidate.name === 'A Code Step');
+    const inserted = (version.steps ?? []).find((candidate) => candidate.type === 'CODE' && !configuredCodeIds.has(candidate.id));
+    if (inserted) configuredCodeIds.add(inserted.id);
     const logicFunctionId = inserted?.settings?.input?.logicFunctionId;
     if (!logicFunctionId) { console.log('code step missing for', spec.name); break; }
     await mcp('update_logic_function_source', { logicFunctionId, code: codeStep._code.source });
@@ -629,9 +645,22 @@ if (TEST) {
   const target = created.find((entry) => entry.spec.name.toLowerCase().includes(TEST.toLowerCase()));
   if (!target) throw new Error(`no workflow matches ${TEST}`);
   const people = await gql('/graphql', `query ($email: String!) { people(filter: { emails: { primaryEmail: { eq: $email } } }, first: 1) { edges { node { id } } } }`, { email: TEST_EMAIL });
-  const personId = people.people.edges[0]?.node.id;
-  if (!personId) throw new Error(`no person with ${TEST_EMAIL} to test with`);
-  const payload = target.spec.testPayload(personId);
+  let personId = people.people.edges[0]?.node.id;
+  if (!personId) {
+    // A soft-deleted copy blocks re-creation, so restore it instead.
+    const deleted = await gql('/graphql', `query ($email: String!) { people(filter: { emails: { primaryEmail: { eq: $email } }, deletedAt: { is: NOT_NULL } }, first: 1) { edges { node { id } } } }`, { email: TEST_EMAIL });
+    const deletedId = deleted.people.edges[0]?.node.id;
+    if (deletedId) { await gql('/graphql', `mutation ($id: UUID!) { restorePerson(id: $id) { id } }`, { id: deletedId }); personId = deletedId; console.log('restored test person', personId); }
+  }
+  if (!personId) {
+    // A throwaway test person so the sequence emails land in a real inbox.
+    const created = await gql('/graphql', `mutation ($data: PersonCreateInput!) { createPerson(data: $data) { id } }`, { data: { name: { firstName: 'Jamal', lastName: 'Test' }, emails: { primaryEmail: TEST_EMAIL, additionalEmails: [] }, leadSource: 'OTHER', stage: 'LEAD' } });
+    personId = created.createPerson.id;
+    console.log('created test person', personId);
+  }
+  const raw = target.spec.testPayload(personId);
+  // Database-event triggers receive the event envelope; manual runs the record under payload.
+  const payload = target.spec.trigger.type === 'DATABASE_EVENT' ? { properties: { after: raw } } : raw;
   const run = await gql('/graphql', `mutation ($input: RunWorkflowVersionInput!) { runWorkflowVersion(input: $input) { workflowRunId } }`, { input: { workflowVersionId: target.versionId, payload } }, userToken());
   console.log(`test run of "${target.spec.name}": ${run.runWorkflowVersion.workflowRunId}`);
   await new Promise((resolve) => setTimeout(resolve, 12000));

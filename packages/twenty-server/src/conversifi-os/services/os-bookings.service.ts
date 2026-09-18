@@ -186,6 +186,7 @@ export class OsBookingsService {
         calendlyUri: row.uri,
         startsAt: row.start_time,
         endsAt: row.end_time,
+        bookedAt: row.booked_at,
         bookingType: type,
         status,
         trialed: verdict?.trialed ?? false,
@@ -299,6 +300,7 @@ export class OsBookingsService {
       { name: 'calendlyUri', label: 'Calendly URI', type: 'TEXT', icon: 'IconLink', extra: { isUnique: true } },
       { name: 'startsAt', label: 'Starts at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
       { name: 'endsAt', label: 'Ends at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
+      { name: 'bookedAt', label: 'Booked at', type: 'DATE_TIME', icon: 'IconCalendarPlus' },
       // `type` is a reserved metadata keyword.
       { name: 'bookingType', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: BOOKING_STATUS_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },

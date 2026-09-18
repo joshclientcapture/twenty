@@ -60,10 +60,15 @@ export const LIFECYCLE_FIELDS: WantedField[] = [
   { name: 'lastBookingType', label: 'Last call type', type: 'SELECT', icon: 'IconTag', extra: { options: selectOptions(BOOKING_TYPE_OPTIONS) } },
   { name: 'nextBookingAt', label: 'Next call at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
   { name: 'webinarOfferLink', label: 'Webinar offer link', type: 'TEXT', icon: 'IconLink' },
+  // Latest of: became a lead, form, booking made, signup, trial, payment, churn. The People list sorts on it.
+  { name: 'lastActivityAt', label: 'Last activity', type: 'DATE_TIME', icon: 'IconActivity' },
 ];
 
 type PersonRow = {
   id: string;
+  createdAt: string;
+  latestFormAt: string | null;
+  lastActivityAt: string | null;
   emails: { primaryEmail: string | null; additionalEmails: string[] | null };
   companyId: string | null;
   closer: string | null;
@@ -81,7 +86,7 @@ type PersonRow = {
   nextBookingAt: string | null;
 };
 
-type BookingRow = { personId: string | null; startsAt: string; status: string; bookingType: string; closer: string | null };
+type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null };
 
 type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null };
 
@@ -172,6 +177,10 @@ export class OsLifecycleService {
         closer: person.closer || (lastBooking ?? future[0])?.closer || person.closer,
       };
       desired.stage = stageFor({ ...person, ...desired });
+      desired.lastActivityAt = [
+        person.createdAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
+        ...(bookingsByPerson.get(person.id) ?? []).map((booking) => booking.bookedAt),
+      ].filter((value): value is string => !!value).sort().reverse()[0] ?? person.createdAt;
 
       const patch: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(desired)) {
@@ -211,7 +220,7 @@ export class OsLifecycleService {
       const result: { people: { edges: { node: PersonRow; cursor: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecyclePeople($after: String) {
            people(first: ${PAGE}, after: $after) {
-             edges { cursor node { id emails { primaryEmail additionalEmails } companyId closer ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
+             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
              pageInfo { hasNextPage endCursor }
            }
          }`,
@@ -230,7 +239,7 @@ export class OsLifecycleService {
       const result: { bookings: { edges: { node: BookingRow }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecycleBookings($after: String) {
            bookings(first: ${PAGE}, after: $after, filter: { personId: { is: NOT_NULL } }) {
-             edges { node { personId startsAt status bookingType closer } }
+             edges { node { personId startsAt bookedAt status bookingType closer } }
              pageInfo { hasNextPage endCursor }
            }
          }`,

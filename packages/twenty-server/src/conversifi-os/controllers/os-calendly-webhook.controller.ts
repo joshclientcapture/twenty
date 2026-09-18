@@ -6,6 +6,7 @@ import { type Request } from 'express';
 import { ApiPath } from 'twenty-shared/types';
 
 import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
+import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 
 const env = (name: string) => {
@@ -58,6 +59,7 @@ export class OsCalendlyWebhookController {
   constructor(
     private readonly upsert: OsUpsertService,
     private readonly bookings: OsBookingsService,
+    private readonly contacts: OsContactsImportService,
   ) {}
 
   @Post(':token')
@@ -126,8 +128,10 @@ export class OsCalendlyWebhookController {
       this.syncQueued = true;
       return;
     }
-    this.syncInFlight = this.bookings
-      .sync(45)
+    // The invitee becomes a Person first (same rules as the people step), then the booking is mirrored.
+    this.syncInFlight = this.contacts
+      .run({ onlyNew: true })
+      .then(() => this.bookings.sync(45))
       .catch((error) => this.logger.error(`bookings mirror after calendly webhook failed: ${(error as Error).message}`))
       .finally(() => {
         this.syncInFlight = null;

@@ -484,11 +484,15 @@ export const RevenuePage = () => {
     },
   ];
 
-  const netSeries = months.map((mo) => ({
-    label: mkLabel(mo.month),
-    value: mo.new - mo.churned,
-    sublabel: mkLong(mo.month),
-  }));
+  // get_churn returns `months` newest-first for the table below; the chart
+  // wants oldest on the left like the ARR chart, so sort a copy by month.
+  const netSeries = [...months]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((mo) => ({
+      label: mkLabel(mo.month),
+      value: mo.new - mo.churned,
+      sublabel: mkLong(mo.month),
+    }));
   const arrMini = (growth?.series ?? []).map((p) => ({
     label: mkLabel(p.month),
     value: p.arr,

@@ -24,6 +24,8 @@ type CalendlyWebhook = {
     status?: string;
     timezone?: string | null;
     rescheduled?: boolean;
+    old_invitee?: string | null;
+    new_invitee?: string | null;
     reschedule_url?: string | null;
     cancel_url?: string | null;
     created_at?: string;
@@ -107,6 +109,8 @@ export class OsCalendlyWebhookController {
       canceled: invitee.status === 'canceled' || body.event === 'invitee.canceled',
       cancel_reason: invitee.cancellation?.reason ?? null,
       rescheduled: invitee.rescheduled ?? false,
+      old_invitee_uri: invitee.old_invitee ?? '',
+      new_invitee_uri: invitee.new_invitee ?? '',
       questions_answers: JSON.stringify(invitee.questions_and_answers ?? null),
       tracking: JSON.stringify(invitee.tracking ?? null),
       first_name: invitee.first_name ?? null,

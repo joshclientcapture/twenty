@@ -499,11 +499,13 @@ export class OsSyncService {
     if (bookingUris.length) {
       await this.dataSource.query(`
         alter table os.calendly_invitees add column if not exists first_name text, add column if not exists timezone text,
-          add column if not exists reschedule_url text, add column if not exists cancel_url text`);
+          add column if not exists reschedule_url text, add column if not exists cancel_url text,
+          add column if not exists old_invitee_uri text, add column if not exists new_invitee_uri text`);
       // Upcoming bookings synced before the timezone/reschedule columns existed are fetched again once.
       const existing: { booking_uri: string }[] = await this.dataSource.query(
         `select distinct i.booking_uri from os.calendly_invitees i join os.calendly_bookings b on b.uri = i.booking_uri
-         where i.booking_uri = any($1) and not (b.start_time > now() and i.timezone is null)`,
+         where i.booking_uri = any($1) and not (b.start_time > now() and i.timezone is null)
+           and not (coalesce(i.rescheduled, false) and i.new_invitee_uri is null)`,
         [bookingUris],
       );
       const have = new Set(existing.map((row) => row.booking_uri));
@@ -523,6 +525,9 @@ export class OsSyncService {
             canceled: invitee.status === 'canceled',
             cancel_reason: invitee.cancellation?.reason ?? null,
             rescheduled: invitee.rescheduled ?? false,
+            // Empty string means Calendly was asked and had no link, so the row is not fetched again.
+            old_invitee_uri: invitee.old_invitee ?? '',
+            new_invitee_uri: invitee.new_invitee ?? '',
             questions_answers: JSON.stringify(invitee.questions_and_answers ?? null),
             first_name: invitee.first_name ?? null,
             timezone: invitee.timezone ?? null,

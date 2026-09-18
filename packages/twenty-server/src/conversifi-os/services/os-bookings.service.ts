@@ -32,6 +32,7 @@ type BookingSourceRow = {
   cancel_url: string | null;
   rescheduled: boolean;
   cancel_reason: string | null;
+  rescheduled_to: string | null;
   recording_url: string | null;
 };
 
@@ -121,8 +122,9 @@ const findDuplicateBookings = (rows: BookingSourceRow[]) => {
 const GRACE_MS = 30 * 60 * 1000;
 const DEFAULT_CALL_MS = 30 * 60 * 1000;
 const fallbackStatusFor = (row: BookingSourceRow, type: BookingType, now: number, webinarAttendance: Map<string, number[]>): BookingStatus => {
-  if (row.status === 'canceled') return 'CANCELLED';
+  // Calendly cancels the old event when a call is moved, so the rescheduled flag is checked first.
   if (row.rescheduled) return 'RESCHEDULED';
+  if (row.status === 'canceled') return 'CANCELLED';
   if (row.recording_url) return 'SHOWED';
   const start = new Date(row.start_time).getTime();
   const end = row.end_time ? new Date(row.end_time).getTime() : start + DEFAULT_CALL_MS;
@@ -166,6 +168,7 @@ export class OsBookingsService {
        ),
        invitees as (
          select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled, max(cancel_reason) as cancel_reason,
+                max(uri) as invitee_uri, max(nullif(new_invitee_uri, '')) as new_invitee_uri,
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
@@ -173,6 +176,8 @@ export class OsBookingsService {
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled, i.cancel_reason,
               i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
+              (select b2.start_time from os.calendly_invitees n join os.calendly_bookings b2 on b2.uri = n.booking_uri
+               where n.uri = i.new_invitee_uri or n.old_invitee_uri = i.invitee_uri order by b2.start_time desc limit 1) as rescheduled_to,
               f.recording_url
        from os.calendly_bookings b
        left join closers c on c.host_email = lower(b.host_email)
@@ -240,6 +245,7 @@ export class OsBookingsService {
         startsAt: row.start_time,
         endsAt: row.end_time,
         bookedAt: row.booked_at,
+        rescheduledToAt: row.rescheduled_to ?? null,
         bookingType: type,
         status,
         trialed: verdict?.trialed ?? false,
@@ -357,6 +363,7 @@ export class OsBookingsService {
       // `type` is a reserved metadata keyword.
       { name: 'bookingType', label: 'Type', type: 'SELECT', icon: 'IconTag', extra: { options: BOOKING_TYPE_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: BOOKING_STATUS_OPTIONS.map((option, position) => ({ ...option, id: randomUUID(), position })) } },
+      { name: 'rescheduledToAt', label: 'Rescheduled to', type: 'DATE_TIME', icon: 'IconCalendarRepeat' },
       { name: 'closer', label: 'Closer', type: 'TEXT', icon: 'IconUser' },
       { name: 'closerId', label: 'Closer id', type: 'TEXT', icon: 'IconId' },
       { name: 'inviteeName', label: 'Invitee', type: 'TEXT', icon: 'IconUserCircle' },

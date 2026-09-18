@@ -24,6 +24,10 @@ type BookingSourceRow = {
   closer_name: string | null;
   invitee_name: string | null;
   invitee_email: string | null;
+  invitee_first_name: string | null;
+  invitee_timezone: string | null;
+  reschedule_url: string | null;
+  cancel_url: string | null;
   rescheduled: boolean;
   recording_url: string | null;
 };
@@ -113,12 +117,14 @@ export class OsBookingsService {
          from os.closers where coalesce(calendly_host_email, '') <> ''
        ),
        invitees as (
-         select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled
+         select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled,
+                max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
        select b.uri, b.name as event_name, b.status, b.start_time, b.end_time, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled,
+              i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
               f.recording_url
        from os.calendly_bookings b
        left join closers c on c.host_email = lower(b.host_email)
@@ -168,6 +174,11 @@ export class OsBookingsService {
         closerId: row.closer_id ?? '',
         inviteeName: row.invitee_name ?? '',
         inviteeEmail: row.invitee_email ?? '',
+        inviteeFirstName: row.invitee_first_name ?? (row.invitee_name ?? '').split(/s+/)[0] ?? '',
+        inviteeTimezone: row.invitee_timezone ?? '',
+        closerEmail: (row.host_email ?? '').toLowerCase(),
+        rescheduleLink: row.reschedule_url ? { primaryLinkUrl: row.reschedule_url, primaryLinkLabel: 'Reschedule', secondaryLinks: [] } : null,
+        cancelLink: row.cancel_url ? { primaryLinkUrl: row.cancel_url, primaryLinkLabel: 'Cancel', secondaryLinks: [] } : null,
         eventName: row.event_name ?? '',
         recording: recordingUrl ? { primaryLinkUrl: recordingUrl, primaryLinkLabel: 'Fathom recording', secondaryLinks: [] } : null,
         joinLink: row.join_url ? { primaryLinkUrl: row.join_url, primaryLinkLabel: 'Join', secondaryLinks: [] } : null,
@@ -229,6 +240,11 @@ export class OsBookingsService {
       { name: 'closerId', label: 'Closer id', type: 'TEXT', icon: 'IconId' },
       { name: 'inviteeName', label: 'Invitee', type: 'TEXT', icon: 'IconUserCircle' },
       { name: 'inviteeEmail', label: 'Invitee email', type: 'TEXT', icon: 'IconMail' },
+      { name: 'inviteeFirstName', label: 'Invitee first name', type: 'TEXT', icon: 'IconUserCircle' },
+      { name: 'inviteeTimezone', label: 'Invitee timezone', type: 'TEXT', icon: 'IconWorld' },
+      { name: 'closerEmail', label: 'Closer email', type: 'TEXT', icon: 'IconMail' },
+      { name: 'rescheduleLink', label: 'Reschedule link', type: 'LINKS', icon: 'IconCalendarRepeat' },
+      { name: 'cancelLink', label: 'Cancel link', type: 'LINKS', icon: 'IconCalendarX' },
       { name: 'eventName', label: 'Calendly event', type: 'TEXT', icon: 'IconCalendar' },
       { name: 'recording', label: 'Recording', type: 'LINKS', icon: 'IconVideo' },
       { name: 'trialed', label: 'Trialed after call', type: 'BOOLEAN', icon: 'IconRocket', extra: { defaultValue: false } },

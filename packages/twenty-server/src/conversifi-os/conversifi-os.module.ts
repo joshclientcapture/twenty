@@ -14,6 +14,7 @@ import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service'
 import { OsApiKeyCommand } from 'src/conversifi-os/commands/os-api-key.command';
 import { OsImportContactsCommand } from 'src/conversifi-os/commands/os-import-contacts.command';
 import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
+import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.service';
 import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
@@ -24,7 +25,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule],
   controllers: [OsController, OsIntakeController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
 })
 export class ConversifiOsModule {}

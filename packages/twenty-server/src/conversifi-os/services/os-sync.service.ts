@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
 import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
+import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 
 export type OsSyncStep =
@@ -32,12 +33,13 @@ export const OS_SYNC_STEPS: OsSyncStep[] = [
   'prod',
   'ledger',
   'trial-forward',
-  'people',
   'bookings',
+  'people',
 ];
 
 // The 15 minute cron in the OS project ran only these three, with a 3 day Calendly window.
-export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'people', 'bookings'];
+// Bookings run before people so the lifecycle pass sees the latest call outcomes.
+export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'bookings', 'people'];
 
 type StepResult = { step: OsSyncStep; ok: boolean; detail?: unknown; skipped?: string; error?: string };
 
@@ -64,6 +66,7 @@ export class OsSyncService {
     private readonly upsert: OsUpsertService,
     private readonly bookings: OsBookingsService,
     private readonly contacts: OsContactsImportService,
+    private readonly lifecycle: OsLifecycleService,
   ) {}
 
   async runSteps(steps: OsSyncStep[], calendlyWindowDays?: number): Promise<StepResult[]> {
@@ -87,7 +90,7 @@ export class OsSyncService {
         case 'trial-forward': return this.wrap(step, () => this.trialForward());
         // Fast runs refresh recent and upcoming calls; full runs re-mirror the whole history.
         // New trials, payers and bookers become People without waiting for a GHL re-export.
-        case 'people': return this.wrap(step, () => this.contacts.run({ onlyNew: true }));
+        case 'people': return this.wrap(step, async () => ({ contacts: await this.contacts.run({ onlyNew: true }), lifecycle: await this.lifecycle.sync() }));
         case 'bookings': return this.wrap(step, () => this.bookings.sync(calendlyWindowDays <= 3 ? 45 : 400));
         default: return { step, ok: false, error: `unknown step ${step}` };
       }
@@ -492,8 +495,13 @@ export class OsSyncService {
 
     let inviteesUpserted = 0;
     if (bookingUris.length) {
+      await this.dataSource.query(`
+        alter table os.calendly_invitees add column if not exists first_name text, add column if not exists timezone text,
+          add column if not exists reschedule_url text, add column if not exists cancel_url text`);
+      // Upcoming bookings synced before the timezone/reschedule columns existed are fetched again once.
       const existing: { booking_uri: string }[] = await this.dataSource.query(
-        `select distinct booking_uri from os.calendly_invitees where booking_uri = any($1)`,
+        `select distinct i.booking_uri from os.calendly_invitees i join os.calendly_bookings b on b.uri = i.booking_uri
+         where i.booking_uri = any($1) and not (b.start_time > now() and i.timezone is null)`,
         [bookingUris],
       );
       const have = new Set(existing.map((row) => row.booking_uri));
@@ -514,6 +522,10 @@ export class OsSyncService {
             cancel_reason: invitee.cancellation?.reason ?? null,
             rescheduled: invitee.rescheduled ?? false,
             questions_answers: JSON.stringify(invitee.questions_and_answers ?? null),
+            first_name: invitee.first_name ?? null,
+            timezone: invitee.timezone ?? null,
+            reschedule_url: invitee.reschedule_url ?? null,
+            cancel_url: invitee.cancel_url ?? null,
             tracking: JSON.stringify(invitee.tracking ?? null),
             synced_at: nowIso(),
           }));

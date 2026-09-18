@@ -145,6 +145,26 @@ export const isExcluded = (row: { email: string; first_name: string | null; last
   return /\btest\b/i.test(`${row.first_name ?? ''} ${row.last_name ?? ''}`);
 };
 
+// Markers that stay in Tags after the GHL history is folded into fields.
+export const KEPT_TAGS = new Set(['PARTIAL_FORM', 'HUMAN_INTERVENTION', 'INTERESTED', 'SIGNUP_REPLIED', 'TRIAL_REPLIED', 'FIFTY_PERCENT_OFFER']);
+const WEB_STAGE_BY_TAG: Record<string, string> = { WEB_REGISTERED: 'REGISTERED', WEB_ENTERED: 'ENTERED', WEB_REACHED_OFFER: 'REACHED_OFFER', WEB_OFFER_CLICK: 'OFFER_CLICK', WEB_TRIAL_CLICK: 'TRIAL_CLICK', WEB_PAID: 'PAID' };
+const WEB_STAGE_ORDER = ['REGISTERED', 'ENTERED', 'REACHED_OFFER', 'OFFER_CLICK', 'TRIAL_CLICK', 'PAID'];
+// What a set of GHL tags says about the person, expressed as the fields the CRM uses.
+export const fieldsFromTags = (tags: Set<string>) => {
+  const stages = [...tags].map((tag) => WEB_STAGE_BY_TAG[tag]).filter(Boolean).sort((a, b) => WEB_STAGE_ORDER.indexOf(b) - WEB_STAGE_ORDER.indexOf(a));
+  if (tags.has('AGENCYFUNNEL_PARTIAL')) tags.add('PARTIAL_FORM');
+  return {
+    notInterested: tags.has('NOT_INTERESTED') || tags.has('BAD_EGG') || tags.has('BLACKLIST'),
+    doNotEmail: tags.has('DND') || tags.has('ENABLE_DND') || tags.has('BAD_EGG') || tags.has('BLACKLIST'),
+    ...(tags.has('DFY_CLIENT') || tags.has('DEAL_CLOSED') ? { stage: 'DFY_CLIENT' } : {}),
+    ...(stages[0] ? { webinarStage: stages[0] } : {}),
+    signedUp: tags.has('SIGNUP'),
+    trialStarted: tags.has('TRIAL_STARTED'),
+    paying: tags.has('PAYING_USER'),
+    churned: tags.has('CHURNED_USER'),
+  };
+};
+
 const GENERIC_LOCAL_PARTS = new Set(['info', 'hello', 'contact', 'admin', 'support', 'sales', 'office', 'team', 'hi', 'mail', 'help', 'enquiries', 'inquiries', 'marketing']);
 // "john.smith@" reads as John Smith; role addresses stay nameless and show their email instead.
 export const nameFromEmail = (email: string): { firstName: string; lastName: string } => {
@@ -504,7 +524,9 @@ export class OsContactsImportService {
       const first = <TValue>(pick: (row: CandidateRow) => TValue | null | undefined) =>
         all.map(pick).find((value) => value !== null && value !== undefined && value !== '') ?? null;
       const domain = first((row) => domainOf(row.website, row.email));
-      const tags = all.flatMap((row) => row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value);
+      const tags = new Set(all.flatMap((row) => row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value));
+      // GHL tags become fields; Tags itself keeps only markers that mean something on their own.
+      const fromTags = fieldsFromTags(tags);
       const name = primary.first_name || primary.last_name ? { firstName: primary.first_name ?? '', lastName: primary.last_name ?? '' } : nameFromEmail(primary.email);
       const leadSince = all.map((row) => row.lead_since).filter((value): value is string => !!value).sort()[0] ?? null;
       return {
@@ -513,7 +535,8 @@ export class OsContactsImportService {
         phones: phonesFor(first((row) => row.phone)),
         companyId: domain ? companyIdByDomain.get(domain) ?? null : null,
         leadSource: leadSourceFor(primary),
-        ghlTags: [...new Set(tags)],
+        ghlTags: [...tags].filter((tag) => KEPT_TAGS.has(tag)),
+        ...fromTags,
         businessType: first((row) => row.business_type) ?? '',
         agencyServices: first((row) => row.agency_services) ?? '',
         monthlyRevenue: first((row) => row.monthly_revenue) ?? '',
@@ -523,6 +546,10 @@ export class OsContactsImportService {
         // Twenty lets an import set createdAt, so "created" reflects when they became a lead.
         createdAt: leadSince ?? undefined,
         ghlContactId: first((row) => row.ghl_contact_id) ?? '',
+        ...(fromTags.signedUp ? { signedUpAt: leadSince } : {}),
+        ...(fromTags.trialStarted ? { trialStartedAt: leadSince } : {}),
+        ...(fromTags.paying ? { payingSince: leadSince } : {}),
+        ...(fromTags.churned && !fromTags.paying ? { churnedAt: leadSince } : {}),
       };
     });
 

@@ -155,29 +155,28 @@ export const main = async (params) => {
     const route = text(payload.route_label).toLowerCase();
     source = ROUTE[route] ?? ROUTE[route.replace(/\s+demo$/, '')] ?? ({ calendar: 'DFY', dfy: 'DFY', software: 'DEMO' }[text(payload.source).toLowerCase()] ?? '');
     // A capture without a route is a partial (opt_in / full_contact); the final submit clears the marker.
-    if (route) { if (source && ROUTE_TAG[source]) tags.add(ROUTE_TAG[source]); tags.delete('PARTIAL_FORM'); }
+    if (route) tags.delete('PARTIAL_FORM');
     else if (!existing?.nextBookingAt && !existing?.lastBookingAt) tags.add('PARTIAL_FORM');
     latestFormAt = now;
   } else if (kind === 'stripe') {
     const type = text(payload.event_type);
     source = 'SIGNUP';
-    if (type === 'signup') { tags.add('SIGNUP'); signedUpAt = signedUpAt ?? now; }
-    if (type === 'trial_started') { tags.add('TRIAL_STARTED'); trialStartedAt = trialStartedAt ?? now; signedUpAt = signedUpAt ?? now; }
-    if (type === 'subscription_started') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); payingSince = payingSince ?? now; churnedAt = null; }
+    if (type === 'signup') signedUpAt = signedUpAt ?? now;
+    if (type === 'trial_started') { trialStartedAt = trialStartedAt ?? now; signedUpAt = signedUpAt ?? now; }
+    if (type === 'subscription_started') { payingSince = payingSince ?? now; churnedAt = null; }
   } else if (kind === 'webinar') {
     const tag = text(payload.tag).toLowerCase();
     source = 'WEBINAR';
-    if (WEB_TAG[tag]) tags.add(WEB_TAG[tag]);
     const stage = WEB_STAGE[tag];
     if (stage && (!webinarStage || STAGE_ORDER.indexOf(stage) > STAGE_ORDER.indexOf(webinarStage))) webinarStage = stage;
-    if (stage === 'PAID') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); payingSince = payingSince ?? now; churnedAt = null; }
+    if (stage === 'PAID') { payingSince = payingSince ?? now; churnedAt = null; }
   } else if (kind === 'churn') {
     const action = text(payload.action);
     // has_paid_anything=false means a trial that never paid: not customer churn, its own state.
     const neverPaid = payload.has_paid_anything === false || payload.has_paid_anything === 'false';
     if (action === 'add_churned' && neverPaid) trialEndedAt = now;
-    if (action === 'add_churned' && !neverPaid) { tags.add('CHURNED_USER'); tags.delete('PAYING_USER'); churnedAt = now; }
-    if (action === 'remove_churned') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); churnedAt = null; trialEndedAt = null; payingSince = payingSince ?? now; }
+    if (action === 'add_churned' && !neverPaid) churnedAt = now;
+    if (action === 'remove_churned') { churnedAt = null; trialEndedAt = null; payingSince = payingSince ?? now; }
   }
 
   const pick = (fresh, old) => fresh || old || '';

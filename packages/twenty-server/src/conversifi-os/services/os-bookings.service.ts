@@ -199,7 +199,8 @@ export class OsBookingsService {
     const records = rows.map((row) => {
       const verdict = verdictByUri.get(row.uri);
       const type = bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes);
-      const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, type, now, webinarAttendance);
+      // The closer dashboard's verdict is about sales calls; a closer's own set-up call is still support.
+      const status = (!SUPPORT_TYPES.has(type) && verdict && DASHBOARD_STATUS[verdict.status]) || fallbackStatusFor(row, type, now, webinarAttendance);
       const recordingUrl = verdict?.recording ?? row.recording_url;
       const typeLabel = BOOKING_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
       const who = row.invitee_name || row.invitee_email || 'Unknown';

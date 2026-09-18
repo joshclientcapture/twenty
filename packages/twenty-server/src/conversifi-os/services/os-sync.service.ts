@@ -365,9 +365,9 @@ export class OsSyncService {
     return { upserted: total, pages, done: cursor == null, rate_limited: rateLimited };
   }
 
-  // One Calendly host per active closer, found by their work email in the organisation's
-  // membership list. The resolved user URI is cached on the closer row. OS_CALENDLY_HOST_URIS
-  // (comma separated) adds hosts that are not closers; Therapon's URI is the fallback.
+  // Every member of the Calendly organisation is a host (set-up calls with Melanie, live demos with
+  // Alex, and the closers), so nothing booked on a kept calendar is missed. Closers get their user
+  // URI cached on the closer row; OS_CALENDLY_HOST_URIS adds hosts outside the organisation.
   private async calendlyHosts(token: string, organization: string): Promise<string[]> {
     const CAL = 'https://api.calendly.com';
     const headers = { Authorization: `Bearer ${token}` };
@@ -377,8 +377,8 @@ export class OsSyncService {
     );
     const hosts = new Set<string>();
     const unresolved = closers.filter((closer) => !closer.calendly_user_uri);
-    if (unresolved.length) {
-      const byEmail = new Map<string, string>();
+    const byEmail = new Map<string, string>();
+    {
       let url: string | null = `${CAL}/organization_memberships?organization=${encodeURIComponent(organization)}&count=100`;
       while (url) {
         const response: Response = await fetch(url, { headers });
@@ -389,6 +389,7 @@ export class OsSyncService {
         }
         url = data.pagination?.next_page ?? null;
       }
+      for (const uri of byEmail.values()) hosts.add(uri);
       for (const closer of unresolved) {
         const uri = byEmail.get(closer.calendly_host_email);
         if (!uri) {

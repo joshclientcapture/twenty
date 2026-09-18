@@ -17,6 +17,7 @@ import {
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { useCreateOneRecord } from '@/object-record/hooks/useCreateOneRecord';
+import { useDeleteManyRecords } from '@/object-record/hooks/useDeleteManyRecords';
 import { useDeleteOneRecord } from '@/object-record/hooks/useDeleteOneRecord';
 import { useFindManyRecords } from '@/object-record/hooks/useFindManyRecords';
 import { useUpdateOneRecord } from '@/object-record/hooks/useUpdateOneRecord';
@@ -110,7 +111,14 @@ export const WorkflowExplorer = () => {
   const { deleteOneRecord: deleteFolderRecord } = useDeleteOneRecord({
     objectNameSingular: 'workflowFolder',
   });
-  const { records: workflows, loading } = useFindManyRecords<WorkflowRow>({
+  const { deleteManyRecords: deleteWorkflows } = useDeleteManyRecords({
+    objectNameSingular: 'workflow',
+  });
+  const {
+    records: workflows,
+    loading,
+    refetch: refetchWorkflows,
+  } = useFindManyRecords<WorkflowRow>({
     objectNameSingular: 'workflow',
     recordGqlFields: {
       id: true,
@@ -122,11 +130,12 @@ export const WorkflowExplorer = () => {
     orderBy: [{ name: 'AscNullsLast' }],
     limit: 500,
   });
-  const { records: folderRecords } = useFindManyRecords<FolderRow>({
-    objectNameSingular: 'workflowFolder',
-    recordGqlFields: { id: true, name: true },
-    limit: 500,
-  });
+  const { records: folderRecords, refetch: refetchFolders } =
+    useFindManyRecords<FolderRow>({
+      objectNameSingular: 'workflowFolder',
+      recordGqlFields: { id: true, name: true },
+      limit: 500,
+    });
 
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
@@ -204,9 +213,16 @@ export const WorkflowExplorer = () => {
     try {
       await work();
     } finally {
+      await Promise.all([refetchWorkflows(), refetchFolders()]);
       setBusy(false);
     }
   };
+
+  const removeWorkflows = (ids: string[]) =>
+    run(async () => {
+      await deleteWorkflows({ recordIdsToDelete: ids });
+      setSelected([]);
+    });
 
   const moveWorkflows = (ids: string[], folder: string) =>
     run(async () => {
@@ -734,6 +750,16 @@ export const WorkflowExplorer = () => {
                 }}
               >
                 <IconFolderPlus size={14} /> New folder
+              </StyledMenuItem>
+              <StyledMenuItem
+                data-danger="true"
+                onClick={() => {
+                  setMenu(null);
+                  void removeWorkflows(menu.ids);
+                }}
+              >
+                <IconTrash size={14} /> Delete
+                {menu.ids.length > 1 ? ` ${menu.ids.length} workflows` : ''}
               </StyledMenuItem>
             </>
           )}

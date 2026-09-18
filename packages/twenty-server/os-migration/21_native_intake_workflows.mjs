@@ -203,13 +203,13 @@ const CODE_OUTPUT_SAMPLE = {
 
 // ---------- 3. One workflow per app event ----------
 const SPECS = [
-  { kind: 'form', name: 'Intake: booking form (calendar + demo)', description: 'The /calendar and /demo forms post here at each step (opt_in, full_contact, final with route_label). Replaces the GHL Calendar Submissions and Agency Funnel workflows.',
+  { kind: 'form', name: 'Form: calendar + demo', description: 'The /calendar and /demo forms post here at each step (opt_in, full_contact, final with route_label). Replaces the GHL Calendar Submissions and Agency Funnel workflows.',
     sample: { capture_stage: 'opt_in', source: 'demo', first_name: 'Sam', last_name: 'Carter', email: 'sam@example.com', phone: '+44 7700900000', website: 'https://example.com', business_type: 'Agency', agency_services: 'Outreach', team_size: '2-4', revenue: '0-2k', route_label: 'demo_call' } },
-  { kind: 'stripe', name: 'Intake: Stripe signup, trial and paid', description: 'stripe-webhook posts signup, trial_started and subscription_started. Replaces GHL New Sign up & Trial Started.',
+  { kind: 'stripe', name: 'Stripe: signup, trial, paid', description: 'stripe-webhook posts signup, trial_started and subscription_started. Replaces GHL New Sign up & Trial Started.',
     sample: { event_type: 'trial_started', email: 'sam@example.com', name: 'Sam Carter', timestamp: '2026-09-18T10:00:00.000Z', source: 'conversifi', account_limit: 3, trial_end_date: '2026-09-28', billing_interval: 'month', plan_type: 'growth' } },
-  { kind: 'webinar', name: 'Intake: webinar stage', description: 'webinar-track posts each funnel stage with the tag name (web registered, entered, reached offer, offer click, trial click, paid).',
+  { kind: 'webinar', name: 'Webinar: stage events', description: 'webinar-track posts each funnel stage with the tag name (web registered, entered, reached offer, offer click, trial click, paid).',
     sample: { source: 'webinar', event: 'registered', tag: 'web registered', email: 'sam@example.com', first_name: 'Sam', last_name: 'Carter', session_id: 'abc', offer_link: 'https://conversifi.io/e/lv2xk9' } },
-  { kind: 'churn', name: 'Intake: churned or reactivated', description: 'cancel-subscription posts add_churned; stripe-webhook posts remove_churned on reactivation. Replaces the n8n Churned Tag Manager.',
+  { kind: 'churn', name: 'Churn: cancelled or reactivated', description: 'cancel-subscription posts add_churned; stripe-webhook posts remove_churned on reactivation. Replaces the n8n Churned Tag Manager.',
     sample: { email: 'sam@example.com', action: 'add_churned' } },
 ];
 
@@ -326,6 +326,7 @@ for (const spec of SPECS) {
     const repointed = JSON.parse(JSON.stringify(step).split(codeId).join(actualCodeId));
     await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: repointed });
   }
+  await gql('/graphql', `mutation ($id: UUID!, $data: WorkflowUpdateInput!) { updateWorkflow(id: $id, data: $data) { id } }`, { id: created.result.workflowId, data: { folder: 'Intake' } });
   const validation = await mcp('validate_workflow', { workflowVersionId: versionId });
   console.log(`draft: ${spec.name} → workflow ${created.result.workflowId} version ${versionId}`);
   console.log('  validation:', JSON.stringify(validation?.result ?? validation).slice(0, 700));

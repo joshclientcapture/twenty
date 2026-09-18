@@ -8,6 +8,7 @@ import { useAtomComponentStateValue } from '@/ui/utilities/state/jotai/hooks/use
 import { useRecordIndexContextOrThrow } from '@/object-record/record-index/contexts/RecordIndexContext';
 
 import { BookingsCalendar } from '@/custom-pages/os/BookingsCalendar';
+import { WorkflowFolderTree } from '@/custom-pages/workflows/WorkflowFolderTree';
 import { RecordIndexCalendarContainer } from '@/object-record/record-index/components/RecordIndexCalendarContainer';
 import { RecordIndexEmptyStateNotShared } from '@/object-record/record-index/components/RecordIndexEmptyStateNotShared';
 import { RecordIndexFiltersToContextStoreEffect } from '@/object-record/record-index/components/RecordIndexFiltersToContextStoreEffect';
@@ -31,6 +32,21 @@ const StyledContainerWithPadding = styled.div`
   min-height: 0;
 `;
 
+const StyledSplit = styled.div`
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+`;
+
+const StyledSplitMain = styled.div`
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+`;
+
 export const RecordIndexContainer = () => {
   const recordIndexViewType = useAtomComponentStateValue(
     recordIndexViewTypeState,
@@ -51,9 +67,18 @@ export const RecordIndexContainer = () => {
       ) : (
         <>
           <RecordIndexFiltersToContextStoreEffect />
-          {recordIndexViewType === ViewType.TABLE && (
-            <RecordIndexTableContainer recordTableId={recordIndexId} />
-          )}
+          {recordIndexViewType === ViewType.TABLE &&
+            (objectNameSingular === 'workflow' ? (
+              // Workflows get a folder tree beside the table; the tree filters through the view bar.
+              <StyledSplit>
+                <WorkflowFolderTree />
+                <StyledSplitMain>
+                  <RecordIndexTableContainer recordTableId={recordIndexId} />
+                </StyledSplitMain>
+              </StyledSplit>
+            ) : (
+              <RecordIndexTableContainer recordTableId={recordIndexId} />
+            ))}
           {recordIndexViewType === ViewType.KANBAN && (
             <StyledContainerWithPadding>
               <RecordBoardContainer

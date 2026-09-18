@@ -272,7 +272,7 @@ const apptWorkflow = (variant) => {
   const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
   const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
   return {
-    name: `Sequence: appointment confirmed + reminders (${variant.label})`,
+    name: `Appointment confirmed + reminders · ${variant.label}`,
     description: `Ported from GHL "APPT CONFIRMED WORKFLOW" + n8n templates. Fires when a ${variant.label} booking is created; sends the closer's confirmation, then a 24h and a 2h reminder while the booking is still upcoming. Webinar bookings are excluded. Sender = the closer's connected mailbox, otherwise ${FALLBACK.email}.`,
     trigger: trigger.created('booking'),
     steps: [times, branch('Eligible booking?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY')], body)],
@@ -311,7 +311,7 @@ const noShowWorkflow = () => {
   const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
   const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
   return {
-    name: 'Sequence: no-show follow-up (16 emails)',
+    name: 'No-show follow-up (16 emails)',
     description: 'Ported from GHL "No Show Sequence" + n8n templates. Starts when a Demo / Discovery / Agency demo booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer\'s mailbox. Stops as soon as the person trials, pays, rebooks, shows, becomes a DFY client, opts out or is marked not interested.',
     trigger: trigger.updated('booking', ['status']),
     steps: [branch('No-show on a sales call?', [
@@ -333,7 +333,7 @@ const noShowWorkflow = () => {
 const melanie = () => senderFor('melanie@conversifi.io');
 const personTriggered = ({ key, name, description, field, firstCheck, items, guard, wantValue = true }) =>
   ['created', 'updated'].map((event) => ({
-    name: `${name} (on ${event})`,
+    name: `${name} · on ${event}`,
     description,
     trigger: event === 'created' ? trigger.created('person') : trigger.updated('person', [field]),
     steps: [branch(firstCheck.name, firstCheck.conditions, guardedChain(T.id, items, guard))],
@@ -343,7 +343,7 @@ const personTriggered = ({ key, name, description, field, firstCheck, items, gua
 
 const SIGNUP = personTriggered({
   key: 'signup',
-  name: 'Sequence: signed up, no trial yet',
+  name: 'Signed up, no trial yet',
   description: 'Ported from GHL "New Sign up & Trial Started" (signup branch). 10 minutes after a signup with no trial: Welcome, +1 day nudge, +2 days final nudge. Stops when the trial starts or the person pays.',
   field: 'signedUpAt',
   firstCheck: { name: 'Fresh signup without a trial?', conditions: [condition(T.field('signedUpAt'), 'DATE_TIME', 'IS_NOT_EMPTY'), condition(T.field('trialStartedAt'), 'DATE_TIME', 'IS_EMPTY'), condition(T.field('payingSince'), 'DATE_TIME', 'IS_EMPTY')] },
@@ -377,7 +377,7 @@ const SIGNUP = personTriggered({
 const SETUP_LINK = 'https://calendly.com/d/cyh4-vkq-gv4/conversifi-campaign-setup-call';
 const TRIAL = personTriggered({
   key: 'trial',
-  name: 'Sequence: trial started, book the setup call',
+  name: 'Trial started, book the setup call',
   description: 'Ported from GHL "New Sign up & Trial Started" (trial branch). 10 minutes after a trial starts with no setup call booked: trial live, +24h setup reminder, +4 days final nudge. Stops when a call is booked or the person pays.',
   field: 'trialStartedAt',
   firstCheck: { name: 'Fresh trial?', conditions: [condition(T.field('trialStartedAt'), 'DATE_TIME', 'IS_NOT_EMPTY'), condition(T.field('payingSince'), 'DATE_TIME', 'IS_EMPTY')] },
@@ -421,7 +421,7 @@ const CHURN_EMAILS = [
 ];
 const CHURN = personTriggered({
   key: 'churn',
-  name: 'Sequence: churned, win-back',
+  name: 'Churned, win-back (6 emails)',
   description: 'Ported from GHL "Churned user > Revival attempt" + n8n Churned Tag Manager. 5 minutes after a cancellation: 6 emails over 5 weeks. Continues only while the person is still churned (a reactivation clears churnedAt).',
   field: 'churnedAt',
   firstCheck: { name: 'Just churned?', conditions: [condition(T.field('churnedAt'), 'DATE_TIME', 'IS_NOT_EMPTY')] },
@@ -456,7 +456,7 @@ const webinarReminders = () => {
     ];
   };
   return {
-    name: 'Sequence: webinar registration + reminders',
+    name: 'Registration + reminders',
     description: 'Ported from GHL "Registration & pre-webinar reminders". On a Conversifi Live Demo booking: spot secured now, reminder the day before, link 1 hour before.',
     trigger: trigger.created('booking'),
     steps: [times, branch('Webinar registration?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY')], [
@@ -492,7 +492,7 @@ const webinarNoShow = () => {
     { check: 'Still not entered?', steps: (person) => [email('Recovery 3: start free instead', team, person.email, 'Don\'t want to sit through a session? Start free instead', [`Hi ${person.firstName},`, 'If a live session isn\'t your thing, you can just try Conversifi for free.', 'There\'s a 10-day free trial, no call required.', 'Start here: https://conversifi.io', 'You can have your first campaign running in about 15 minutes.'], { noSignature: true })] },
   ];
   return {
-    name: 'Sequence: webinar no-show recovery',
+    name: 'No-show recovery',
     description: 'Ported from GHL "No-show recovery". 45 minutes after a Conversifi Live Demo starts, if the registrant never entered the session (webinar stage still Registered): 3 emails over 4 days.',
     trigger: trigger.created('booking'),
     steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
@@ -516,7 +516,7 @@ const webinarOffer = () => {
   items[3].also = (person) => [condition(person.field('trialStartedAt'), 'DATE_TIME', 'IS_EMPTY')];
   const guard = (person) => notPaid(person);
   return {
-    name: 'Sequence: webinar offer ($599)',
+    name: 'Offer: 1 year for $599',
     description: 'Ported from GHL "Attended, didn\'t buy, the offer sequence". 15 minutes after a Conversifi Live Demo starts: the $599 offer, FAQ 6 hours later, "expires in 2 hours" at 21h30 after the start, then "expired, start free". Stops when the person pays.',
     trigger: trigger.created('booking'),
     steps: [times, branch('Webinar registration with a person?', [condition(C('eligible'), 'TEXT', 'IS_NOT_EMPTY'), condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY')], [
@@ -533,7 +533,7 @@ const fiftyOff = () => {
   const find = findPerson('{{trigger.payload.id}}');
   const person = P(find.id);
   return {
-    name: 'Action: send 50% off win-back offer',
+    name: 'Send 50% off win-back offer',
     description: 'Ported from GHL tag "50%offer" → n8n. Run from a person record: sends Jamal\'s 50% off first month back email.',
     trigger: trigger.manual('person', 'Send 50% off offer', 'IconDiscount'),
     steps: [find, email('50% off offer', jamal(), person.email, `${person.firstName}, what happened?`, [
@@ -556,7 +556,7 @@ const dfyClose = (pack) => {
   const find = findPerson('{{trigger.payload.id}}');
   const person = P(find.id);
   return {
-    name: `Action: DFY closed, send onboarding (${pack.agents} agent${pack.agents > 1 ? 's' : ''})`,
+    name: `DFY closed: send onboarding (${pack.agents} agent${pack.agents > 1 ? 's' : ''})`,
     description: 'Ported from GHL "Deal closed DFY - send payment link and agreement" + n8n Package templates. Run from a person record: marks them a DFY client and sends the agreement, payment and onboarding links.',
     trigger: trigger.manual('person', `DFY closed: ${pack.agents} agent${pack.agents > 1 ? 's' : ''}`, 'IconContract'),
     steps: [find, updatePerson('Mark as DFY client', person.id, { stage: 'DFY_CLIENT' }), email('Onboarding email', jamal(), person.email, 'Client Onboarding with Conversifi', [
@@ -634,6 +634,9 @@ for (const spec of WORKFLOWS) {
       await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: repointed });
     }
   }
+  // File the workflow on the Workflows page (folder tree); names decide the folder.
+  const folder = /^(Appointment confirmed|No-show follow-up)/.test(spec.name) ? 'Sequences / Sales calls' : /^(Registration + reminders|No-show recovery|Offer:)/.test(spec.name) ? 'Sequences / Webinar' : /^(Send 50% off|DFY closed:)/.test(spec.name) ? 'Actions' : 'Sequences / Product';
+  await gql('/graphql', `mutation ($id: UUID!, $data: WorkflowUpdateInput!) { updateWorkflow(id: $id, data: $data) { id } }`, { id: workflowId, data: { folder } });
   const validation = await mcp('validate_workflow', { workflowVersionId: versionId });
   const verdict = validation?.result ?? validation;
   console.log(`built: ${spec.name} (${plainSteps.length + codeSteps.length} steps) valid=${verdict?.valid} ${verdict?.valid ? '' : JSON.stringify(verdict).slice(0, 600)}`);

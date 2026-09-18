@@ -14,7 +14,7 @@ services:
     volumes:
       - dev-db-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -29,8 +29,9 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
-    command: ["--maxmemory-policy", "noeviction"]
+      - "127.0.0.1:6379:6379"
+    # The password lives in packages/twenty-docker/.env (untracked), never in this file.
+    command: ["--maxmemory-policy", "noeviction", "--requirepass", "${REDIS_PASSWORD}", "--protected-mode", "yes", "--appendonly", "yes"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

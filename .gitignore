@@ -71,3 +71,7 @@ screenshots/
 /.diag*.mjs
 /.compare*.mjs
 /.narrow*.mjs
+
+# Operator copies of the server .env made on the VPS
+**/.env.bak*
+**/.env.save

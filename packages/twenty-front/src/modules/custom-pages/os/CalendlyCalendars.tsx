@@ -4,6 +4,7 @@ import { IconExternalLink, IconX } from 'twenty-ui/icon';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { osRpc } from '@/custom-pages/os/transport';
+import { OsSelect } from '@/custom-pages/os/OsSelect';
 import { StyledMuted } from '@/custom-pages/os/ui';
 
 type CalendlyEventType = {
@@ -127,26 +128,28 @@ export const CalendlyCalendars = () => {
                 {attached.length === 0 && (
                   <StyledMuted>No calendar attached</StyledMuted>
                 )}
-                <StyledSelect
+                <OsSelect
+                  id={`calendar-${slot.value}`}
                   value=""
                   disabled={saving !== null || unattached.length === 0}
-                  onChange={(event) => {
-                    if (event.target.value)
-                      void assign(event.target.value, slot.value);
+                  withSearch
+                  fullWidth
+                  options={[
+                    {
+                      value: '',
+                      label: attached.length
+                        ? 'Attach another calendar…'
+                        : 'Attach a calendar…',
+                    },
+                    ...unattached.map((row) => ({
+                      value: row.uri,
+                      label: `${row.name} · ${shortUrl(row)}${row.recent ? ` · ${row.recent} recent` : ''}`,
+                    })),
+                  ]}
+                  onChange={(value) => {
+                    if (value) void assign(value, slot.value);
                   }}
-                >
-                  <option value="">
-                    {attached.length
-                      ? 'Attach another calendar…'
-                      : 'Attach a calendar…'}
-                  </option>
-                  {unattached.map((row) => (
-                    <option key={row.uri} value={row.uri}>
-                      {row.name} · {shortUrl(row)}
-                      {row.recent ? ` · ${row.recent} recent` : ''}
-                    </option>
-                  ))}
-                </StyledSelect>
+                />
               </StyledSlot>
             );
           })}
@@ -254,19 +257,5 @@ const StyledRemove = styled.button`
   &:disabled {
     cursor: default;
     opacity: 0.5;
-  }
-`;
-
-const StyledSelect = styled.select`
-  background: ${t.background.primary};
-  border: 1px solid ${t.border.color.medium};
-  border-radius: ${t.border.radius.sm};
-  color: ${t.font.color.secondary};
-  font-size: ${t.font.size.sm};
-  height: 28px;
-  padding: 0 ${t.spacing[2]};
-
-  &:disabled {
-    opacity: 0.6;
   }
 `;

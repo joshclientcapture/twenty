@@ -30,6 +30,7 @@ import {
   StyledReveal,
   StyledRow,
 } from '@/custom-pages/os/ui';
+import { useConfirm } from '@/custom-pages/os/useConfirm';
 import {
   type Closer,
   type CloserCommission,
@@ -285,6 +286,7 @@ const findReusableCloser = (
   ) ?? null;
 
 export const ClosersPage = () => {
+  const { confirm, ConfirmHost } = useConfirm('closers');
   const navigate = useNavigate();
   const isAdmin = useHasPermissionFlag(PermissionFlagType.WORKSPACE);
   const currentUser = useAtomStateValue(currentUserState);
@@ -369,9 +371,12 @@ export const ClosersPage = () => {
   // Removing deactivates rather than deletes, so past sales and commission stay attributed.
   const remove = async (closer: Closer) => {
     if (
-      !window.confirm(
-        `Remove ${closer.name} from Closers? Their history is kept; they just stop appearing here.`,
-      )
+      !(await confirm({
+        title: `Remove ${closer.name} from Closers?`,
+        message: 'Their history is kept; they just stop appearing here.',
+        confirmText: 'Remove',
+        danger: true,
+      }))
     )
       return;
     setErr(null);
@@ -389,6 +394,7 @@ export const ClosersPage = () => {
 
   return (
     <StyledPage>
+      <ConfirmHost />
       <PageHeader title="Closers" Icon={IconUsers}>
         <StyledHeaderActions>
           <StyledMuted>{closers ? `${active.length} active` : ''}</StyledMuted>

@@ -103,7 +103,7 @@ const phoneParts = (raw) => {
   const code = [3, 2, 1].map((length) => digits.slice(0, length)).find((candidate) => DIAL_CODES.includes(candidate)) ?? '';
   return { number: digits.slice(code.length), code: code ? '+' + code : '', country: COUNTRY[code] ?? '' };
 };
-const ROUTE = { demo: 'DEMO', demo_call: 'DEMO', 'agency demo': 'AGENCY', agency: 'AGENCY_FUNNEL', dfy: 'DFY', webinar: 'WEBINAR' };
+const ROUTE = { demo: 'DEMO', demo_call: 'DEMO', 'agency demo': 'AGENCY', agency: 'AGENCY', dfy: 'DFY', webinar: 'WEBINAR' };
 const ROUTE_TAG = { DEMO: 'DEMO', AGENCY: 'AGENCY_DEMO', AGENCY_FUNNEL: 'AGENCYFUNNEL_LEAD', DFY: 'DFY', WEBINAR: 'WEB_REGISTERED' };
 const WEB_TAG = { 'web registered': 'WEB_REGISTERED', 'web entered': 'WEB_ENTERED', 'web reached offer': 'WEB_REACHED_OFFER', 'web offer click': 'WEB_OFFER_CLICK', 'web trial click': 'WEB_TRIAL_CLICK', 'web paid': 'WEB_PAID' };
 const WEB_STAGE = { 'web registered': 'REGISTERED', 'web entered': 'ENTERED', 'web reached offer': 'REACHED_OFFER', 'web offer click': 'OFFER_CLICK', 'web trial click': 'TRIAL_CLICK', 'web paid': 'PAID' };

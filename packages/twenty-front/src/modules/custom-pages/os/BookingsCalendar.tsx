@@ -1,7 +1,14 @@
 import { styled } from '@linaria/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IconChevronLeft, IconChevronRight, IconExternalLink, IconUserCircle, IconVideo, IconX } from 'twenty-ui/icon';
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconExternalLink,
+  IconUserCircle,
+  IconVideo,
+  IconX,
+} from 'twenty-ui/icon';
 import { Button } from 'twenty-ui/input';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
@@ -26,7 +33,19 @@ import {
   type PlacedBooking,
 } from '@/custom-pages/os/bookings';
 import { fetchClosers, type Closer } from '@/custom-pages/os/closers';
-import { ACCENT, EASE_OUT, isoDate, PillButton, PRESS_SCALE, StyledChip, StyledError, StyledField, StyledMuted, StyledReveal } from '@/custom-pages/os/ui';
+import {
+  ACCENT,
+  EASE_OUT,
+  isoDate,
+  PillButton,
+  PRESS_SCALE,
+  StyledChip,
+  StyledError,
+  StyledField,
+  StyledMuted,
+  StyledReveal,
+} from '@/custom-pages/os/ui';
+import { OsSelect } from '@/custom-pages/os/OsSelect';
 
 const HOUR_HEIGHT = 72;
 const GUTTER_WIDTH = 52;
@@ -118,7 +137,10 @@ const StyledDayHeader = styled.div<{ days: number }>`
   border-bottom: 1px solid ${t.border.color.medium};
   display: grid;
   flex: none;
-  grid-template-columns: ${GUTTER_WIDTH}px repeat(${({ days }) => days}, minmax(0, 1fr));
+  grid-template-columns: ${GUTTER_WIDTH}px repeat(
+      ${({ days }) => days},
+      minmax(0, 1fr)
+    );
 `;
 
 const StyledDayHeaderCell = styled.div`
@@ -163,7 +185,10 @@ const StyledScroller = styled.div`
 
 const StyledGrid = styled.div<{ days: number; hours: number }>`
   display: grid;
-  grid-template-columns: ${GUTTER_WIDTH}px repeat(${({ days }) => days}, minmax(0, 1fr));
+  grid-template-columns: ${GUTTER_WIDTH}px repeat(
+      ${({ days }) => days},
+      minmax(0, 1fr)
+    );
   height: ${({ hours }) => hours * HOUR_HEIGHT}px;
   min-width: 100%;
   position: relative;
@@ -222,7 +247,11 @@ const StyledNowLine = styled.div`
 const StyledEvent = styled.button`
   align-items: flex-start;
   appearance: none;
-  background: color-mix(in srgb, var(--status-color) 9%, ${t.background.primary});
+  background: color-mix(
+    in srgb,
+    var(--status-color) 9%,
+    ${t.background.primary}
+  );
   border: 1px solid color-mix(in srgb, var(--status-color) 26%, transparent);
   border-left: 3px solid var(--status-color);
   border-radius: ${t.border.radius.sm};
@@ -412,8 +441,15 @@ const RECORD_FIELDS = {
   personId: true,
 };
 
-const statusColor = (status: BookingStatus | null) => BOOKING_STATUS_META[status ?? 'UPCOMING'].color;
-const initialsOf = (name: string) => name.split(/s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';
+const statusColor = (status: BookingStatus | null) =>
+  BOOKING_STATUS_META[status ?? 'UPCOMING'].color;
+const initialsOf = (name: string) =>
+  name
+    .split(/s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || '?';
 
 export const BookingsCalendar = () => {
   const navigate = useNavigate();
@@ -422,14 +458,18 @@ export const BookingsCalendar = () => {
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [closerFilter, setCloserFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<BookingType | 'all'>('all');
-  const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>(
+    'all',
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [closers, setClosers] = useState<Closer[]>([]);
   const [closersError, setClosersError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    fetchClosers().then(setClosers).catch((error: Error) => setClosersError(error.message));
+    fetchClosers()
+      .then(setClosers)
+      .catch((error: Error) => setClosersError(error.message));
   }, []);
 
   useEffect(() => {
@@ -440,16 +480,26 @@ export const BookingsCalendar = () => {
   const days = mode === 'week' ? 7 : 1;
   const rangeStart = mode === 'week' ? startOfWeek(anchor) : startOfDay(anchor);
   const rangeEnd = addDays(rangeStart, days);
-  const dayList = useMemo(() => Array.from({ length: days }, (_, index) => addDays(rangeStart, index)), [rangeStart.getTime(), days]);
+  const dayList = useMemo(
+    () =>
+      Array.from({ length: days }, (_, index) => addDays(rangeStart, index)),
+    [rangeStart.getTime(), days],
+  );
 
-  const { records, loading, error, hasNextPage, fetchMoreRecords } = useFindManyRecords<BookingRecord>({
-    objectNameSingular: 'booking',
-    // Twenty allows one operator per field filter, so the range is two clauses.
-    filter: { and: [{ startsAt: { gte: rangeStart.toISOString() } }, { startsAt: { lt: rangeEnd.toISOString() } }] },
-    orderBy: [{ startsAt: 'AscNullsLast' }],
-    limit: 200,
-    recordGqlFields: RECORD_FIELDS,
-  });
+  const { records, loading, error, hasNextPage, fetchMoreRecords } =
+    useFindManyRecords<BookingRecord>({
+      objectNameSingular: 'booking',
+      // Twenty allows one operator per field filter, so the range is two clauses.
+      filter: {
+        and: [
+          { startsAt: { gte: rangeStart.toISOString() } },
+          { startsAt: { lt: rangeEnd.toISOString() } },
+        ],
+      },
+      orderBy: [{ startsAt: 'AscNullsLast' }],
+      limit: 200,
+      recordGqlFields: RECORD_FIELDS,
+    });
 
   useEffect(() => {
     if (hasNextPage && !loading) fetchMoreRecords();
@@ -459,21 +509,30 @@ export const BookingsCalendar = () => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
-      if (event.key === 'ArrowLeft') setAnchor((current) => addDays(current, -days));
-      if (event.key === 'ArrowRight') setAnchor((current) => addDays(current, days));
+      if (event.key === 'ArrowLeft')
+        setAnchor((current) => addDays(current, -days));
+      if (event.key === 'ArrowRight')
+        setAnchor((current) => addDays(current, days));
       if (event.key === 'Escape') setSelectedId(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [days]);
 
-  const activeClosers = useMemo(() => closers.filter((closer) => closer.active), [closers]);
+  const activeClosers = useMemo(
+    () => closers.filter((closer) => closer.active),
+    [closers],
+  );
   const colorByCloserId = useMemo(() => {
     const map = new Map<string, string>();
-    activeClosers.forEach((closer, index) => map.set(closer.id, closerColor(index)));
+    activeClosers.forEach((closer, index) =>
+      map.set(closer.id, closerColor(index)),
+    );
     return map;
   }, [activeClosers]);
-  const colorFor = (booking: BookingRecord) => colorByCloserId.get(booking.closerId) ?? 'var(--t-font-color-light, #9ca3af)';
+  const colorFor = (booking: BookingRecord) =>
+    colorByCloserId.get(booking.closerId) ??
+    'var(--t-font-color-light, #9ca3af)';
 
   const visible = useMemo(
     () =>
@@ -487,7 +546,12 @@ export const BookingsCalendar = () => {
   );
 
   const placedByDay = useMemo(
-    () => dayList.map((day) => placeBookings(visible.filter((booking) => sameDay(new Date(booking.startsAt), day)))),
+    () =>
+      dayList.map((day) =>
+        placeBookings(
+          visible.filter((booking) => sameDay(new Date(booking.startsAt), day)),
+        ),
+      ),
     [dayList, visible],
   );
 
@@ -504,206 +568,426 @@ export const BookingsCalendar = () => {
   const hours = lastHour - firstHour;
 
   const counts = useMemo(() => {
-    const tally = { booked: visible.length, showed: 0, noShow: 0, upcoming: 0, cancelled: 0 };
+    const tally = {
+      booked: visible.length,
+      showed: 0,
+      noShow: 0,
+      upcoming: 0,
+      cancelled: 0,
+    };
     for (const booking of visible) {
       if (booking.status === 'SHOWED') tally.showed++;
       else if (booking.status === 'NO_SHOW') tally.noShow++;
-      else if (booking.status === 'UPCOMING' || booking.status === 'IN_PROGRESS' || booking.status === 'PENDING') tally.upcoming++;
-      else if (booking.status === 'CANCELLED' || booking.status === 'RESCHEDULED') tally.cancelled++;
+      else if (
+        booking.status === 'UPCOMING' ||
+        booking.status === 'IN_PROGRESS' ||
+        booking.status === 'PENDING'
+      )
+        tally.upcoming++;
+      else if (
+        booking.status === 'CANCELLED' ||
+        booking.status === 'RESCHEDULED'
+      )
+        tally.cancelled++;
     }
     return tally;
   }, [visible]);
 
-  const selected = selectedId ? records.find((booking) => booking.id === selectedId) ?? null : null;
+  const selected = selectedId
+    ? (records.find((booking) => booking.id === selectedId) ?? null)
+    : null;
   const isToday = (day: Date) => sameDay(day, now);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const pendingScrollRef = useRef(true);
-  useEffect(() => { pendingScrollRef.current = true; }, [rangeStart.getTime(), mode]);
+  useEffect(() => {
+    pendingScrollRef.current = true;
+  }, [rangeStart.getTime(), mode]);
   useEffect(() => {
     if (loading || !pendingScrollRef.current || !scrollerRef.current) return;
-    const earliest = Math.min(...placedByDay.flat().map((placed) => placed.startMinutes), Number.POSITIVE_INFINITY);
+    const earliest = Math.min(
+      ...placedByDay.flat().map((placed) => placed.startMinutes),
+      Number.POSITIVE_INFINITY,
+    );
     const target = Number.isFinite(earliest) ? earliest - 45 : 9 * 60;
-    scrollerRef.current.scrollTo({ top: Math.max(0, (target - firstHour * 60) * (HOUR_HEIGHT / 60)) });
+    scrollerRef.current.scrollTo({
+      top: Math.max(0, (target - firstHour * 60) * (HOUR_HEIGHT / 60)),
+    });
     pendingScrollRef.current = false;
   }, [loading, placedByDay, firstHour]);
   const nowOffset = (minutesIntoDay(now) - firstHour * 60) * (HOUR_HEIGHT / 60);
 
-  const rangeLabel = mode === 'week' ? formatRange(rangeStart, addDays(rangeEnd, -1)) : formatDayLong(rangeStart);
+  const rangeLabel =
+    mode === 'week'
+      ? formatRange(rangeStart, addDays(rangeEnd, -1))
+      : formatDayLong(rangeStart);
 
   return (
-        <StyledLayout>
-          <StyledMain>
-            {(error || closersError) && <StyledError>{error?.message ?? closersError}</StyledError>}
-            <StyledToolbar>
-              <StyledToolbarGroup>
-                <Button size="small" variant="secondary" Icon={IconChevronLeft} onClick={() => setAnchor(addDays(anchor, -days))} ariaLabel="Previous" />
-                <Button size="small" variant="secondary" title="Today" onClick={() => setAnchor(startOfDay(new Date()))} />
-                <Button size="small" variant="secondary" Icon={IconChevronRight} onClick={() => setAnchor(addDays(anchor, days))} ariaLabel="Next" />
-                <StyledField>
-                  <input type="date" value={isoDate(anchor)} onChange={(event) => { const [y, m, d] = event.target.value.split('-').map(Number); if (y && m && d) setAnchor(new Date(y, m - 1, d)); }} />
-                </StyledField>
-                <StyledRangeLabel>
-                  {rangeLabel}
-                  <span>{loading ? ' · loading' : ` · ${visible.length} booking${visible.length === 1 ? '' : 's'}`}</span>
-                </StyledRangeLabel>
-              </StyledToolbarGroup>
-              <StyledToolbarGroup>
-                <PillButton active={mode === 'week'} title="Week" onClick={() => setMode('week')} />
-                <PillButton active={mode === 'day'} title="Day" onClick={() => setMode('day')} />
-              </StyledToolbarGroup>
-              <StyledToolbarGroup>
-                <PillButton active={closerFilter === 'all'} title="All closers" onClick={() => setCloserFilter('all')} />
-                {activeClosers.map((closer) => (
-                  <Button
-                    key={closer.id}
-                    size="small"
-                    variant={closerFilter === closer.id ? 'primary' : 'secondary'}
-                    accent={closerFilter === closer.id ? 'blue' : 'default'}
-                    title={closer.name.split(' ')[0]}
-                    Icon={() => <StyledCloserDot style={{ ['--closer-color' as string]: colorByCloserId.get(closer.id) }} />}
-                    onClick={() => setCloserFilter(closerFilter === closer.id ? 'all' : closer.id)}
+    <StyledLayout>
+      <StyledMain>
+        {(error || closersError) && (
+          <StyledError>{error?.message ?? closersError}</StyledError>
+        )}
+        <StyledToolbar>
+          <StyledToolbarGroup>
+            <Button
+              size="small"
+              variant="secondary"
+              Icon={IconChevronLeft}
+              onClick={() => setAnchor(addDays(anchor, -days))}
+              ariaLabel="Previous"
+            />
+            <Button
+              size="small"
+              variant="secondary"
+              title="Today"
+              onClick={() => setAnchor(startOfDay(new Date()))}
+            />
+            <Button
+              size="small"
+              variant="secondary"
+              Icon={IconChevronRight}
+              onClick={() => setAnchor(addDays(anchor, days))}
+              ariaLabel="Next"
+            />
+            <StyledField>
+              <input
+                type="date"
+                value={isoDate(anchor)}
+                onChange={(event) => {
+                  const [y, m, d] = event.target.value.split('-').map(Number);
+                  if (y && m && d) setAnchor(new Date(y, m - 1, d));
+                }}
+              />
+            </StyledField>
+            <StyledRangeLabel>
+              {rangeLabel}
+              <span>
+                {loading
+                  ? ' · loading'
+                  : ` · ${visible.length} booking${visible.length === 1 ? '' : 's'}`}
+              </span>
+            </StyledRangeLabel>
+          </StyledToolbarGroup>
+          <StyledToolbarGroup>
+            <PillButton
+              active={mode === 'week'}
+              title="Week"
+              onClick={() => setMode('week')}
+            />
+            <PillButton
+              active={mode === 'day'}
+              title="Day"
+              onClick={() => setMode('day')}
+            />
+          </StyledToolbarGroup>
+          <StyledToolbarGroup>
+            <PillButton
+              active={closerFilter === 'all'}
+              title="All closers"
+              onClick={() => setCloserFilter('all')}
+            />
+            {activeClosers.map((closer) => (
+              <Button
+                key={closer.id}
+                size="small"
+                variant={closerFilter === closer.id ? 'primary' : 'secondary'}
+                accent={closerFilter === closer.id ? 'blue' : 'default'}
+                title={closer.name.split(' ')[0]}
+                Icon={() => (
+                  <StyledCloserDot
+                    style={{
+                      ['--closer-color' as string]: colorByCloserId.get(
+                        closer.id,
+                      ),
+                    }}
                   />
-                ))}
-              </StyledToolbarGroup>
-              <StyledToolbarSpacer />
-              <StyledField>
-                Type
-                <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as BookingType | 'all')}>
-                  <option value="all">All</option>
-                  {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map((type) => (
-                    <option key={type} value={type}>{BOOKING_TYPE_LABELS[type]}</option>
-                  ))}
-                </select>
-              </StyledField>
-              <StyledField>
-                Status
-                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as BookingStatus | 'all')}>
-                  <option value="all">All</option>
-                  {(Object.keys(BOOKING_STATUS_META) as BookingStatus[]).map((status) => (
-                    <option key={status} value={status}>{BOOKING_STATUS_META[status].label}</option>
-                  ))}
-                </select>
-              </StyledField>
-            </StyledToolbar>
+                )}
+                onClick={() =>
+                  setCloserFilter(
+                    closerFilter === closer.id ? 'all' : closer.id,
+                  )
+                }
+              />
+            ))}
+          </StyledToolbarGroup>
+          <StyledToolbarSpacer />
+          <StyledField>
+            Type
+            <OsSelect<BookingType | 'all'>
+              id="calendar-type"
+              value={typeFilter}
+              onChange={setTypeFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                ...(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(
+                  (type) => ({ value: type, label: BOOKING_TYPE_LABELS[type] }),
+                ),
+              ]}
+            />
+          </StyledField>
+          <StyledField>
+            Status
+            <OsSelect<BookingStatus | 'all'>
+              id="calendar-status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                ...(Object.keys(BOOKING_STATUS_META) as BookingStatus[]).map(
+                  (status) => ({
+                    value: status,
+                    label: BOOKING_STATUS_META[status].label,
+                  }),
+                ),
+              ]}
+            />
+          </StyledField>
+        </StyledToolbar>
 
-            <StyledSummary>
-              <StyledChip>{counts.booked} booked</StyledChip>
-              <StyledChip data-tone="positive">{counts.showed} showed</StyledChip>
-              <StyledChip data-tone="negative">{counts.noShow} no show</StyledChip>
-              <StyledChip>{counts.upcoming} upcoming</StyledChip>
-              <StyledMuted>{counts.cancelled} cancelled or rescheduled</StyledMuted>
-            </StyledSummary>
+        <StyledSummary>
+          <StyledChip>{counts.booked} booked</StyledChip>
+          <StyledChip data-tone="positive">{counts.showed} showed</StyledChip>
+          <StyledChip data-tone="negative">{counts.noShow} no show</StyledChip>
+          <StyledChip>{counts.upcoming} upcoming</StyledChip>
+          <StyledMuted>{counts.cancelled} cancelled or rescheduled</StyledMuted>
+        </StyledSummary>
 
-            <StyledGridFrame>
-              <StyledDayHeader days={days}>
-                <div />
-                {dayList.map((day, index) => (
-                  <StyledDayHeaderCell key={day.toISOString()} data-today={isToday(day)}>
-                    {day.toLocaleDateString([], { weekday: 'short' })}
-                    <span data-date>{day.getDate()}</span>
-                    {placedByDay[index].length > 0 && <span data-count>{placedByDay[index].length}</span>}
-                  </StyledDayHeaderCell>
+        <StyledGridFrame>
+          <StyledDayHeader days={days}>
+            <div />
+            {dayList.map((day, index) => (
+              <StyledDayHeaderCell
+                key={day.toISOString()}
+                data-today={isToday(day)}
+              >
+                {day.toLocaleDateString([], { weekday: 'short' })}
+                <span data-date>{day.getDate()}</span>
+                {placedByDay[index].length > 0 && (
+                  <span data-count>{placedByDay[index].length}</span>
+                )}
+              </StyledDayHeaderCell>
+            ))}
+          </StyledDayHeader>
+          <StyledScroller ref={scrollerRef}>
+            <StyledGrid days={days} hours={hours}>
+              <StyledGutter>
+                {Array.from(
+                  { length: hours + 1 },
+                  (_, index) => firstHour + index,
+                ).map((hour) => (
+                  <span
+                    key={hour}
+                    style={{ top: (hour - firstHour) * HOUR_HEIGHT }}
+                  >
+                    {hour === firstHour || hour === lastHour
+                      ? ''
+                      : formatTime(new Date(2000, 0, 1, hour))}
+                  </span>
                 ))}
-              </StyledDayHeader>
-              <StyledScroller ref={scrollerRef}>
-                <StyledGrid days={days} hours={hours}>
-                  <StyledGutter>
-                    {Array.from({ length: hours + 1 }, (_, index) => firstHour + index).map((hour) => (
-                      <span key={hour} style={{ top: (hour - firstHour) * HOUR_HEIGHT }}>
-                        {hour === firstHour || hour === lastHour ? '' : formatTime(new Date(2000, 0, 1, hour))}
-                      </span>
-                    ))}
-                  </StyledGutter>
-                  {dayList.map((day, dayIndex) => (
-                    <StyledDayColumn key={day.toISOString()} data-today={isToday(day)} data-weekend={day.getDay() === 0 || day.getDay() === 6}>
-                      {Array.from({ length: hours }, (_, index) => (
-                        <div key={index} data-hour-line style={{ top: index * HOUR_HEIGHT }} />
-                      ))}
-                      {isToday(day) && nowOffset >= 0 && nowOffset <= hours * HOUR_HEIGHT && <StyledNowLine style={{ top: nowOffset }} />}
-                      {placedByDay[dayIndex].map((placed: PlacedBooking) => {
-                        const { booking } = placed;
-                        const top = (placed.startMinutes - firstHour * 60) * (HOUR_HEIGHT / 60);
-                        const height = Math.max(26, (placed.endMinutes - placed.startMinutes) * (HOUR_HEIGHT / 60) - 2);
-                        const width = 100 / placed.columns;
-                        const start = new Date(booking.startsAt);
-                        return (
-                          <StyledEvent
-                            key={booking.id}
-                            type="button"
-                            data-selected={selectedId === booking.id}
-                            data-status={booking.status ?? 'UPCOMING'}
-                            title={`${booking.inviteeName || booking.name} · ${BOOKING_TYPE_LABELS[booking.bookingType ?? 'OTHER']} · ${booking.closer}`}
-                            style={{
-                              top,
-                              height,
-                              left: `calc(${placed.column * width}% + 2px)`,
-                              width: `calc(${width}% - 4px)`,
-                              ['--closer-color' as string]: colorFor(booking),
-                              ['--status-color' as string]: statusColor(booking.status),
-                            }}
-                            onClick={() => setSelectedId(selectedId === booking.id ? null : booking.id)}
-                          >
-                            <span data-line>
-                              <span data-time>{formatTime(start)}</span>
-                              <span data-name>{booking.inviteeName || booking.name}</span>
-                              {placed.columns <= 2 && <span data-closer>{initialsOf(booking.closer)}</span>}
+              </StyledGutter>
+              {dayList.map((day, dayIndex) => (
+                <StyledDayColumn
+                  key={day.toISOString()}
+                  data-today={isToday(day)}
+                  data-weekend={day.getDay() === 0 || day.getDay() === 6}
+                >
+                  {Array.from({ length: hours }, (_, index) => (
+                    <div
+                      key={index}
+                      data-hour-line
+                      style={{ top: index * HOUR_HEIGHT }}
+                    />
+                  ))}
+                  {isToday(day) &&
+                    nowOffset >= 0 &&
+                    nowOffset <= hours * HOUR_HEIGHT && (
+                      <StyledNowLine style={{ top: nowOffset }} />
+                    )}
+                  {placedByDay[dayIndex].map((placed: PlacedBooking) => {
+                    const { booking } = placed;
+                    const top =
+                      (placed.startMinutes - firstHour * 60) *
+                      (HOUR_HEIGHT / 60);
+                    const height = Math.max(
+                      26,
+                      (placed.endMinutes - placed.startMinutes) *
+                        (HOUR_HEIGHT / 60) -
+                        2,
+                    );
+                    const width = 100 / placed.columns;
+                    const start = new Date(booking.startsAt);
+                    return (
+                      <StyledEvent
+                        key={booking.id}
+                        type="button"
+                        data-selected={selectedId === booking.id}
+                        data-status={booking.status ?? 'UPCOMING'}
+                        title={`${booking.inviteeName || booking.name} · ${BOOKING_TYPE_LABELS[booking.bookingType ?? 'OTHER']} · ${booking.closer}`}
+                        style={{
+                          top,
+                          height,
+                          left: `calc(${placed.column * width}% + 2px)`,
+                          width: `calc(${width}% - 4px)`,
+                          ['--closer-color' as string]: colorFor(booking),
+                          ['--status-color' as string]: statusColor(
+                            booking.status,
+                          ),
+                        }}
+                        onClick={() =>
+                          setSelectedId(
+                            selectedId === booking.id ? null : booking.id,
+                          )
+                        }
+                      >
+                        <span data-line>
+                          <span data-time>{formatTime(start)}</span>
+                          <span data-name>
+                            {booking.inviteeName || booking.name}
+                          </span>
+                          {placed.columns <= 2 && (
+                            <span data-closer>
+                              {initialsOf(booking.closer)}
                             </span>
-                            {height >= 46 && <span data-kind>{BOOKING_TYPE_LABELS[booking.bookingType ?? 'OTHER']}{placed.columns === 1 ? ` · ${booking.closer.split(' ')[0]}` : ''}</span>}
-                          </StyledEvent>
-                        );
-                      })}
-                    </StyledDayColumn>
-                  ))}
-                </StyledGrid>
-                {!loading && visible.length === 0 && <StyledEmpty>No bookings {mode === 'week' ? 'this week' : 'on this day'}.</StyledEmpty>}
-              </StyledScroller>
-            </StyledGridFrame>
-          </StyledMain>
+                          )}
+                        </span>
+                        {height >= 46 && (
+                          <span data-kind>
+                            {
+                              BOOKING_TYPE_LABELS[
+                                booking.bookingType ?? 'OTHER'
+                              ]
+                            }
+                            {placed.columns === 1
+                              ? ` · ${booking.closer.split(' ')[0]}`
+                              : ''}
+                          </span>
+                        )}
+                      </StyledEvent>
+                    );
+                  })}
+                </StyledDayColumn>
+              ))}
+            </StyledGrid>
+            {!loading && visible.length === 0 && (
+              <StyledEmpty>
+                No bookings {mode === 'week' ? 'this week' : 'on this day'}.
+              </StyledEmpty>
+            )}
+          </StyledScroller>
+        </StyledGridFrame>
+      </StyledMain>
 
-          {selected && (
-            <StyledReveal>
-              <StyledDrawer data-overlay={isMobile}>
-                <StyledDrawerHead>
-                  <div>
-                    <StyledChip style={{ color: statusColor(selected.status) }}>{BOOKING_STATUS_META[selected.status ?? 'UPCOMING'].label}</StyledChip>
-                    <h3 style={{ marginTop: 6 }}>{selected.inviteeName || selected.name}</h3>
-                  </div>
-                  <Button size="small" variant="tertiary" Icon={IconX} onClick={() => setSelectedId(null)} ariaLabel="Close" />
-                </StyledDrawerHead>
-                <StyledDrawerRows>
-                  <dt>When</dt>
-                  <dd>
-                    {formatDayLong(new Date(selected.startsAt))}
-                    <br />
-                    {formatTime(new Date(selected.startsAt))}
-                    {selected.endsAt ? ` – ${formatTime(new Date(selected.endsAt))}` : ''}
-                  </dd>
-                  <dt>Type</dt>
-                  <dd>{BOOKING_TYPE_LABELS[selected.bookingType ?? 'OTHER']}{selected.eventName ? <StyledMuted> · {selected.eventName}</StyledMuted> : null}</dd>
-                  <dt>Closer</dt>
-                  <dd>
-                    <StyledCloserDot style={{ ['--closer-color' as string]: colorFor(selected) }} />
-                    {selected.closer || 'Unassigned'}
-                  </dd>
-                  <dt>Email</dt>
-                  <dd>{selected.inviteeEmail ? <a href={`mailto:${selected.inviteeEmail}`}>{selected.inviteeEmail}</a> : <StyledMuted>Unknown</StyledMuted>}</dd>
-                </StyledDrawerRows>
-                <StyledDrawerActions>
-                  {selected.status === 'UPCOMING' && selected.joinLink?.primaryLinkUrl && (
-                    <Button size="small" variant="primary" accent="blue" Icon={IconVideo} title="Join call" onClick={() => window.open(selected.joinLink?.primaryLinkUrl ?? '', '_blank', 'noopener')} />
-                  )}
-                  {selected.recording?.primaryLinkUrl && (
-                    <Button size="small" variant="secondary" Icon={IconVideo} title="Recording" onClick={() => window.open(selected.recording?.primaryLinkUrl ?? '', '_blank', 'noopener')} />
-                  )}
-                  {selected.personId && (
-                    <Button size="small" variant="secondary" Icon={IconUserCircle} title="Open person" onClick={() => navigate(`/object/person/${selected.personId}`)} />
-                  )}
-                  <Button size="small" variant="secondary" Icon={IconExternalLink} title="Booking record" onClick={() => navigate(`/object/booking/${selected.id}`)} />
-                </StyledDrawerActions>
-              </StyledDrawer>
-            </StyledReveal>
-          )}
-        </StyledLayout>
+      {selected && (
+        <StyledReveal>
+          <StyledDrawer data-overlay={isMobile}>
+            <StyledDrawerHead>
+              <div>
+                <StyledChip style={{ color: statusColor(selected.status) }}>
+                  {BOOKING_STATUS_META[selected.status ?? 'UPCOMING'].label}
+                </StyledChip>
+                <h3 style={{ marginTop: 6 }}>
+                  {selected.inviteeName || selected.name}
+                </h3>
+              </div>
+              <Button
+                size="small"
+                variant="tertiary"
+                Icon={IconX}
+                onClick={() => setSelectedId(null)}
+                ariaLabel="Close"
+              />
+            </StyledDrawerHead>
+            <StyledDrawerRows>
+              <dt>When</dt>
+              <dd>
+                {formatDayLong(new Date(selected.startsAt))}
+                <br />
+                {formatTime(new Date(selected.startsAt))}
+                {selected.endsAt
+                  ? ` – ${formatTime(new Date(selected.endsAt))}`
+                  : ''}
+              </dd>
+              <dt>Type</dt>
+              <dd>
+                {BOOKING_TYPE_LABELS[selected.bookingType ?? 'OTHER']}
+                {selected.eventName ? (
+                  <StyledMuted> · {selected.eventName}</StyledMuted>
+                ) : null}
+              </dd>
+              <dt>Closer</dt>
+              <dd>
+                <StyledCloserDot
+                  style={{ ['--closer-color' as string]: colorFor(selected) }}
+                />
+                {selected.closer || 'Unassigned'}
+              </dd>
+              <dt>Email</dt>
+              <dd>
+                {selected.inviteeEmail ? (
+                  <a href={`mailto:${selected.inviteeEmail}`}>
+                    {selected.inviteeEmail}
+                  </a>
+                ) : (
+                  <StyledMuted>Unknown</StyledMuted>
+                )}
+              </dd>
+            </StyledDrawerRows>
+            <StyledDrawerActions>
+              {selected.status === 'UPCOMING' &&
+                selected.joinLink?.primaryLinkUrl && (
+                  <Button
+                    size="small"
+                    variant="primary"
+                    accent="blue"
+                    Icon={IconVideo}
+                    title="Join call"
+                    onClick={() =>
+                      window.open(
+                        selected.joinLink?.primaryLinkUrl ?? '',
+                        '_blank',
+                        'noopener',
+                      )
+                    }
+                  />
+                )}
+              {selected.recording?.primaryLinkUrl && (
+                <Button
+                  size="small"
+                  variant="secondary"
+                  Icon={IconVideo}
+                  title="Recording"
+                  onClick={() =>
+                    window.open(
+                      selected.recording?.primaryLinkUrl ?? '',
+                      '_blank',
+                      'noopener',
+                    )
+                  }
+                />
+              )}
+              {selected.personId && (
+                <Button
+                  size="small"
+                  variant="secondary"
+                  Icon={IconUserCircle}
+                  title="Open person"
+                  onClick={() =>
+                    navigate(`/object/person/${selected.personId}`)
+                  }
+                />
+              )}
+              <Button
+                size="small"
+                variant="secondary"
+                Icon={IconExternalLink}
+                title="Booking record"
+                onClick={() => navigate(`/object/booking/${selected.id}`)}
+              />
+            </StyledDrawerActions>
+          </StyledDrawer>
+        </StyledReveal>
+      )}
+    </StyledLayout>
   );
 };

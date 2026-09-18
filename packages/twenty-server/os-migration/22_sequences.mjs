@@ -575,7 +575,42 @@ const dfyClose = (pack) => {
   };
 };
 
+// ---------- 6. Discord ping per closer (ported from n8n "Calendly Assign") ----------
+// Webhook URLs live in the server .env as OS_DISCORD_WEBHOOKS = {"host@email": "https://discord.com/api/webhooks/..."}.
+const DISCORD_WEBHOOKS = JSON.parse(env.OS_DISCORD_WEBHOOKS ?? '{}');
+const DISCORD_CODE = String.raw`
+const WEBHOOKS = ${JSON.stringify(DISCORD_WEBHOOKS)};
+const NAMES = { 'jamal@conversifi.io': 'Jamal', 'sales@conversifi.io': 'Therapon', 'melanie@conversifi.io': 'Melanie', 'demo@conversifi.io': 'Alexandra' };
+export const main = async (params) => {
+  const host = String(params.closerEmail || '').toLowerCase();
+  const url = WEBHOOKS[host] || '';
+  const go = url && params.status === 'UPCOMING' && new Date(params.startsAt).getTime() > Date.now() ? 'yes' : '';
+  const when = new Date(params.startsAt).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ' (UK)';
+  return {
+    go, url,
+    body: { embeds: [{ title: '📅 New Call Booked', color: 3066993, fields: [
+      { name: 'Booked With', value: NAMES[host] || host || 'Unknown', inline: true },
+      { name: 'Prospect', value: params.inviteeName || 'Unknown', inline: true },
+      { name: 'Email', value: params.inviteeEmail || 'N/A', inline: false },
+      { name: 'When', value: when, inline: true },
+      { name: 'Event', value: params.eventName || 'N/A', inline: true },
+    ], timestamp: new Date().toISOString() }] },
+  };
+};`;
+const discordPing = () => {
+  const message = code('Discord message', 'DISCORD', DISCORD_CODE, { closerEmail: A + 'closerEmail}}', inviteeName: A + 'inviteeName}}', inviteeEmail: A + 'inviteeEmail}}', startsAt: A + 'startsAt}}', eventName: A + 'eventName}}', status: A + 'status}}' }, { go: 'yes', url: 'https://discord.com/api/webhooks/x', body: { embeds: [] } });
+  const post = step('HTTP_REQUEST', 'Post to the closer\'s Discord', { url: '{{DISCORD.url}}', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' });
+  return {
+    name: 'Discord: new call booked',
+    description: 'Ported from n8n "Calendly Assign". When a booking is created, posts the New Call Booked card to the closer\'s Discord channel (webhook chosen by the booking host).',
+    trigger: trigger.created('booking'),
+    steps: [message, branch('Upcoming booking with a Discord channel?', [condition('{{DISCORD.go}}', 'TEXT', 'IS_NOT_EMPTY')], [post])],
+    testPayload: () => ({ id: randomUUID(), status: 'UPCOMING', startsAt: new Date(Date.now() + 3600000).toISOString(), closerEmail: 'jamal@conversifi.io', inviteeName: 'Jamal Test', inviteeEmail: TEST_EMAIL, eventName: 'Conversifi.io Demo', bookingType: 'DEMO' }),
+  };
+};
+
 const WORKFLOWS = [
+  discordPing(),
   ...APPT_VARIANTS.map(apptWorkflow),
   noShowWorkflow(),
   ...SIGNUP, ...TRIAL, ...CHURN,
@@ -635,7 +670,7 @@ for (const spec of WORKFLOWS) {
     }
   }
   // File the workflow on the Workflows page (folder tree); names decide the folder.
-  const folder = /^(Appointment confirmed|No-show follow-up)/.test(spec.name) ? 'Sequences / Sales calls' : /^(Registration + reminders|No-show recovery|Offer:)/.test(spec.name) ? 'Sequences / Webinar' : /^(Send 50% off|DFY closed:)/.test(spec.name) ? 'Actions' : 'Sequences / Product';
+  const folder = /^Discord:/.test(spec.name) ? 'Actions' : /^(Appointment confirmed|No-show follow-up)/.test(spec.name) ? 'Sequences / Sales calls' : /^(Registration + reminders|No-show recovery|Offer:)/.test(spec.name) ? 'Sequences / Webinar' : /^(Send 50% off|DFY closed:)/.test(spec.name) ? 'Actions' : 'Sequences / Product';
   await gql('/graphql', `mutation ($id: UUID!, $data: WorkflowUpdateInput!) { updateWorkflow(id: $id, data: $data) { id } }`, { id: workflowId, data: { folder } });
   const validation = await mcp('validate_workflow', { workflowVersionId: versionId });
   const verdict = validation?.result ?? validation;

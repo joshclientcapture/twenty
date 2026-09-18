@@ -15,6 +15,8 @@ const TEST_ONLY = process.argv.includes('--test-only');
 // --refresh: new draft version of each live intake workflow with the current merge code and record
 // mapping, then activated; the workflow ids (and so the webhook URLs the app posts to) do not change.
 const REFRESH = process.argv.includes('--refresh');
+// --only form,churn limits the run to those event kinds.
+const ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1].split(',') : null;
 if (!API_KEY) throw new Error('OS_TWENTY_API_KEY must be set');
 
 // Running a draft version is a user-only mutation, so tests use a short-lived legacy-format access
@@ -60,7 +62,13 @@ const WEBINAR_STAGE_OPTIONS = [
   { value: 'REGISTERED', label: 'Registered', color: 'gray' }, { value: 'ENTERED', label: 'Entered', color: 'sky' }, { value: 'REACHED_OFFER', label: 'Reached offer', color: 'blue' },
   { value: 'OFFER_CLICK', label: 'Clicked offer', color: 'purple' }, { value: 'TRIAL_CLICK', label: 'Clicked trial', color: 'orange' }, { value: 'PAID', label: 'Paid', color: 'green' },
 ];
+const STAGE_OPTIONS = [
+  { value: 'LEAD', label: 'Lead', color: 'gray' }, { value: 'BOOKED', label: 'Call booked', color: 'blue' }, { value: 'SHOWED', label: 'Showed', color: 'sky' }, { value: 'NO_SHOW', label: 'No show', color: 'red' },
+  { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' }, { value: 'TRIAL', label: 'Trial', color: 'orange' }, { value: 'PAYING', label: 'Paying', color: 'green' }, { value: 'CHURNED', label: 'Churned', color: 'purple' },
+  { value: 'DFY_CLIENT', label: 'DFY client', color: 'turquoise' }, { value: 'NOT_INTERESTED', label: 'Not interested', color: 'gray' },
+];
 const PERSON_FIELDS = [
+  { name: 'stage', label: 'Stage', type: 'SELECT', icon: 'IconProgress', options: options(STAGE_OPTIONS) },
   { name: 'latestSource', label: 'Latest source', type: 'SELECT', icon: 'IconTargetArrow', options: options(SOURCE_OPTIONS) },
   { name: 'latestFormAt', label: 'Latest form at', type: 'DATE_TIME', icon: 'IconForms' },
   { name: 'signedUpAt', label: 'Signed up at', type: 'DATE_TIME', icon: 'IconUserPlus' },
@@ -241,6 +249,7 @@ const destroyWorkflow = async (id) => {
 };
 
 for (const spec of SPECS) {
+  if (ONLY && !ONLY.includes(spec.kind)) continue;
   const previous = existingWorkflows.find((workflow) => workflow.name === spec.name);
   if (previous && isComplete(previous) && REFRESH) {
     const live = previous.versions.edges.map((edge) => edge.node).find((version) => version.status === 'ACTIVE') ?? previous.versions.edges.map((edge) => edge.node).find((version) => version.status === 'DRAFT');

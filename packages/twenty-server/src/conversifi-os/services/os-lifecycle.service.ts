@@ -83,6 +83,7 @@ type BookingRow = { personId: string | null; startsAt: string; status: string; b
 type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null };
 
 const PAGE = 200;
+const BATCH = 100;
 
 export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus'>): LifecycleStage => {
   if (person.notInterested) return 'NOT_INTERESTED';
@@ -130,7 +131,15 @@ export class OsLifecycleService {
       bookingsByPerson.set(booking.personId, list);
     }
 
-    const updates = new Map<string, string[]>();
+    const wantedDomains = new Set<string>();
+    for (const person of people) {
+      if (person.companyId) continue;
+      const domain = [person.emails.primaryEmail, ...(person.emails.additionalEmails ?? [])].filter((email): email is string => !!email).map((email) => domainOf(null, email.toLowerCase())).find((value) => !!value);
+      if (domain) wantedDomains.add(domain);
+    }
+    const companyIdByDomain = await this.upsertCompanies([...wantedDomains]);
+
+    const patches: Record<string, unknown>[] = [];
     let companiesLinked = 0;
     for (const person of people) {
       const emails = [person.emails.primaryEmail, ...(person.emails.additionalEmails ?? [])].filter((email): email is string => !!email).map((email) => email.toLowerCase());
@@ -165,27 +174,24 @@ export class OsLifecycleService {
       }
       if (!person.companyId) {
         const domain = emails.map((email) => domainOf(null, email)).find((value) => !!value) ?? null;
-        if (domain) {
-          patch.companyId = await this.upsertCompany(domain);
+        const companyId = domain ? companyIdByDomain.get(domain) : null;
+        if (companyId) {
+          patch.companyId = companyId;
           companiesLinked++;
         }
       }
       if (Object.keys(patch).length === 0) continue;
-      const key = JSON.stringify(patch);
-      updates.set(key, [...(updates.get(key) ?? []), person.id]);
+      patches.push({ id: person.id, ...patch });
     }
 
     let written = 0;
-    for (const [key, ids] of updates) {
-      const data = JSON.parse(key);
-      for (let offset = 0; offset < ids.length; offset += PAGE) {
-        const batch = ids.slice(offset, offset + PAGE);
-        await this.twentyApi.records(
-          `mutation LifecycleUpdate($ids: [UUID!], $data: PersonUpdateInput!) { updatePeople(filter: { id: { in: $ids } }, data: $data) { id } }`,
-          { ids: batch, data },
-        );
-        written += batch.length;
-      }
+    for (let offset = 0; offset < patches.length; offset += BATCH) {
+      const batch = patches.slice(offset, offset + BATCH);
+      await this.twentyApi.records(
+        `mutation LifecycleUpsert($data: [PersonCreateInput!]!) { createPeople(data: $data, upsert: true) { id } }`,
+        { data: batch },
+      );
+      written += batch.length;
     }
     this.logger.log(`lifecycle: ${people.length} people, ${written} updated, ${companiesLinked} companies linked`);
     return { people: people.length, updated: written, companiesLinked };
@@ -274,18 +280,17 @@ export class OsLifecycleService {
     return facts;
   }
 
-  private companyIdByDomain = new Map<string, string>();
-
-  private async upsertCompany(domain: string): Promise<string | null> {
-    const cached = this.companyIdByDomain.get(domain);
-    if (cached) return cached;
-    const result = await this.twentyApi.records<{ createCompanies: { id: string }[] }>(
-      `mutation LifecycleUpsertCompany($data: [CompanyCreateInput!]!) { createCompanies(data: $data, upsert: true) { id } }`,
-      { data: [{ name: companyNameFor(null, domain), domainName: { primaryLinkUrl: `https://${domain}`, primaryLinkLabel: '' } }] },
-    );
-    const id = result.createCompanies[0]?.id ?? null;
-    if (id) this.companyIdByDomain.set(domain, id);
-    return id;
+  private async upsertCompanies(domains: string[]): Promise<Map<string, string>> {
+    const ids = new Map<string, string>();
+    for (let offset = 0; offset < domains.length; offset += BATCH) {
+      const batch = domains.slice(offset, offset + BATCH);
+      const result = await this.twentyApi.records<{ createCompanies: { id: string; domainName: { primaryLinkUrl: string } }[] }>(
+        `mutation LifecycleUpsertCompanies($data: [CompanyCreateInput!]!) { createCompanies(data: $data, upsert: true) { id domainName { primaryLinkUrl } } }`,
+        { data: batch.map((domain) => ({ name: companyNameFor(null, domain), domainName: { primaryLinkUrl: `https://${domain}`, primaryLinkLabel: '' } })) },
+      );
+      for (const company of result.createCompanies) ids.set(company.domainName.primaryLinkUrl.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase(), company.id);
+    }
+    return ids;
   }
 }
 

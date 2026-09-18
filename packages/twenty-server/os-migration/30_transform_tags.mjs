@@ -40,6 +40,8 @@ for (const person of people) {
   // Dated fields: Stripe fills these where the address is known; the tag date is the fallback.
   if (tags.has('SIGNUP') && !person.signedUpAt) { patch.signedUpAt = since; bump('signedUpAt from tag'); }
   if (tags.has('TRIAL_STARTED') && !person.trialStartedAt) { patch.trialStartedAt = since; bump('trialStartedAt from tag'); }
+  // A trial Stripe never saw is long over: mark it ended so the person is not shown as an active trial.
+  if (tags.has('TRIAL_STARTED') && !person.trialStartedAt && !person.payingSince && !person.churnedAt && !person.trialEndedAt && !tags.has('PAYING_USER') && !tags.has('CHURNED_USER')) { patch.trialEndedAt = since; bump('trialEndedAt from tag'); }
   if (tags.has('PAYING_USER') && !person.payingSince) { patch.payingSince = since; bump('payingSince from tag'); }
   if (tags.has('CHURNED_USER') && !person.churnedAt && !person.payingSince) { patch.churnedAt = since; bump('churnedAt from tag'); }
   if (tags.has('AGENCYFUNNEL_PARTIAL')) tags.add('PARTIAL_FORM');

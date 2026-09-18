@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { OsSyncCommand } from 'src/conversifi-os/commands/os-sync.command';
 import { OsController } from 'src/conversifi-os/controllers/os.controller';
+import { OsCalendlyWebhookController } from 'src/conversifi-os/controllers/os-calendly-webhook.controller';
 import { OsIntakeController } from 'src/conversifi-os/controllers/os-intake.controller';
 import { OsIntakeService } from 'src/conversifi-os/services/os-intake.service';
 import { OsSyncCronCommand } from 'src/conversifi-os/crons/commands/os-sync.cron.command';
@@ -24,7 +25,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule],
-  controllers: [OsController, OsIntakeController],
+  controllers: [OsController, OsIntakeController, OsCalendlyWebhookController],
   providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
 })

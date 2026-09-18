@@ -153,7 +153,9 @@ export const main = async (params) => {
   if (kind === 'form') {
     const route = text(payload.route_label).toLowerCase();
     source = ROUTE[route] ?? ROUTE[route.replace(/\s+demo$/, '')] ?? ({ calendar: 'DFY', dfy: 'DFY', software: 'DEMO' }[text(payload.source).toLowerCase()] ?? '');
-    if (source && ROUTE_TAG[source]) tags.add(ROUTE_TAG[source]);
+    // A capture without a route is a partial (opt_in / full_contact); the final submit clears the marker.
+    if (route) { if (source && ROUTE_TAG[source]) tags.add(ROUTE_TAG[source]); tags.delete('PARTIAL_FORM'); }
+    else if (!existing?.nextBookingAt && !existing?.lastBookingAt) tags.add('PARTIAL_FORM');
     latestFormAt = now;
   } else if (kind === 'stripe') {
     const type = text(payload.event_type);

@@ -73,6 +73,8 @@ const ACTIVITY_SOURCES = ['Calendly', 'Webinar'];
 // The GHL tags that still carry meaning once the flows move into Twenty; the rest stay in os.ghl_contacts.
 const TAG_OPTIONS: { tag: string; value: string; label: string; color: string }[] = [
   { tag: 'appointment confirmed', value: 'APPOINTMENT_CONFIRMED', label: 'Appointment confirmed', color: 'blue' },
+  // Not a GHL tag: set by the form intake on opt_in and removed on the final submit.
+  { tag: 'partial form', value: 'PARTIAL_FORM', label: 'Partial form', color: 'orange' },
   { tag: 'demo', value: 'DEMO', label: 'Demo', color: 'blue' },
   { tag: 'agency demo', value: 'AGENCY_DEMO', label: 'Agency demo', color: 'turquoise' },
   { tag: 'dfy', value: 'DFY', label: 'DFY', color: 'purple' },

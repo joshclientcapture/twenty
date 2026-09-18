@@ -110,7 +110,7 @@ const TAG_OPTIONS: { tag: string; value: string; label: string; color: string }[
   { tag: 'bad egg', value: 'BAD_EGG', label: 'Bad egg', color: 'red' },
   { tag: 'blacklist', value: 'BLACKLIST', label: 'Blacklist', color: 'red' },
 ];
-const TAG_VALUE_BY_TAG = new Map(TAG_OPTIONS.map((option) => [option.tag, option.value]));
+export const TAG_VALUE_BY_TAG = new Map(TAG_OPTIONS.map((option) => [option.tag, option.value]));
 
 const LEAD_SOURCE_OPTIONS = [
   { value: 'DEMO', label: 'Demo booking', color: 'blue' },
@@ -126,7 +126,7 @@ const LEAD_SOURCE_OPTIONS = [
   { value: 'OTHER', label: 'Other', color: 'gray' },
 ];
 
-const FREE_MAIL_DOMAINS = new Set([
+export const FREE_MAIL_DOMAINS = new Set([
   'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com', 'live.co.uk',
   'icloud.com', 'me.com', 'mac.com', 'aol.com', 'msn.com', 'proton.me', 'protonmail.com', 'pm.me', 'yandex.com', 'mail.com', 'gmx.com',
   'gmx.de', 'ymail.com', 'hey.com', 'zoho.com', 'outlook.co.uk', 'btinternet.com', 'sky.com', 'web.de', 'qq.com', '163.com',
@@ -136,7 +136,7 @@ const RECORD_BATCH_SIZE = 100;
 
 // Internal and throwaway addresses never become People.
 const EXCLUDED_DOMAINS = new Set(['conversifi.io', 'clientcapture.io', 'yopmail.com', 'oastify.com', 'example.com', 'mailinator.com', 'test.com']);
-const isExcluded = (row: { email: string; first_name: string | null; last_name: string | null }) => {
+export const isExcluded = (row: { email: string; first_name: string | null; last_name: string | null }) => {
   const [local, domain] = row.email.split('@');
   if (!domain || EXCLUDED_DOMAINS.has(domain) || domain.endsWith('.oastify.com') || /yopmail|mailinator/.test(domain)) return true;
   if (/test/i.test(local)) return true;
@@ -145,7 +145,7 @@ const isExcluded = (row: { email: string; first_name: string | null; last_name: 
 
 const GENERIC_LOCAL_PARTS = new Set(['info', 'hello', 'contact', 'admin', 'support', 'sales', 'office', 'team', 'hi', 'mail', 'help', 'enquiries', 'inquiries', 'marketing']);
 // "john.smith@" reads as John Smith; role addresses stay nameless and show their email instead.
-const nameFromEmail = (email: string): { firstName: string; lastName: string } => {
+export const nameFromEmail = (email: string): { firstName: string; lastName: string } => {
   const local = email.split('@')[0].toLowerCase();
   if (GENERIC_LOCAL_PARTS.has(local)) return { firstName: '', lastName: '' };
   const parts = local.replace(/[0-9]+/g, ' ').split(/[._\-+ ]+/).filter((part) => part.length > 1);
@@ -204,7 +204,7 @@ const cleanEmail = (value: unknown) => {
 };
 // Form answers range from "." to full URLs, so only a well-formed host with a TLD counts.
 const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
-const domainOf = (website: string | null, email: string) => {
+export const domainOf = (website: string | null, email: string) => {
   if (website) {
     try {
       const host = new URL(website.startsWith('http') ? website : `https://${website}`).hostname.replace(/^www\./, '').toLowerCase();
@@ -216,7 +216,7 @@ const domainOf = (website: string | null, email: string) => {
   const emailDomain = email.split('@')[1]?.toLowerCase() ?? '';
   return DOMAIN_PATTERN.test(emailDomain) && !FREE_MAIL_DOMAINS.has(emailDomain) ? emailDomain : null;
 };
-const companyNameFor = (companyName: string | null, domain: string) =>
+export const companyNameFor = (companyName: string | null, domain: string) =>
   companyName ?? domain.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const leadSourceFor = (row: CandidateRow): string => {
@@ -247,7 +247,7 @@ const closerFor = (row: CandidateRow) => {
   return '';
 };
 
-const phonesFor = (phone: string | null) => {
+export const phonesFor = (phone: string | null) => {
   if (!phone) return null;
   const parsed = parsePhoneNumberFromString(phone);
   if (!parsed) return null;

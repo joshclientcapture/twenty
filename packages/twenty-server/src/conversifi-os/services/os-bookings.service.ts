@@ -14,6 +14,7 @@ type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'SHOWED' | 'NO_SHOW' | 'CANCEL
 type BookingSourceRow = {
   uri: string;
   event_name: string | null;
+  event_type_uri: string | null;
   status: string | null;
   start_time: string;
   booked_at: string | null;
@@ -63,7 +64,16 @@ const RECORD_BATCH_SIZE = 100;
 const NAME_MATCH_WINDOW_MS = 60 * 60 * 1000;
 const normaliseName = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, '').trim().split(/\s+/).filter(Boolean).join(' ');
 
-const bookingTypeFor = (eventName: string | null): BookingType => {
+// The three funnel calendars are pinned by event type id: names change when hosts are pooled or
+// renamed, the id does not. Everything else (30 Minute Meeting variants, Live Demo clones) goes by name.
+const BOOKING_TYPE_BY_EVENT_TYPE: Record<string, BookingType> = {
+  'https://api.calendly.com/event_types/751b1b74-e879-424e-9d87-b57af1bcf827': 'DEMO',
+  'https://api.calendly.com/event_types/126eb02a-2279-4f02-9574-14adf11e0fa1': 'AGENCY_DEMO',
+  'https://api.calendly.com/event_types/fa14fa02-2853-4ffd-a314-773c664fecd1': 'DISCOVERY',
+};
+const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null = null): BookingType => {
+  const pinned = eventTypeUri ? BOOKING_TYPE_BY_EVENT_TYPE[eventTypeUri] : undefined;
+  if (pinned) return pinned;
   const name = (eventName ?? '').toLowerCase();
   if (name.includes('next steps')) return 'NEXT_STEPS';
   if (name.includes('agency demo')) return 'AGENCY_DEMO';
@@ -124,7 +134,7 @@ export class OsBookingsService {
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
-       select b.uri, b.name as event_name, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
+       select b.uri, b.name as event_name, b.event_type_uri, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled,
               i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
@@ -162,7 +172,7 @@ export class OsBookingsService {
       const verdict = verdictByUri.get(row.uri);
       const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, now);
       const recordingUrl = verdict?.recording ?? row.recording_url;
-      const type = bookingTypeFor(row.event_name);
+      const type = bookingTypeFor(row.event_name, row.event_type_uri);
       const typeLabel = BOOKING_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
       const who = row.invitee_name || row.invitee_email || 'Unknown';
       return {

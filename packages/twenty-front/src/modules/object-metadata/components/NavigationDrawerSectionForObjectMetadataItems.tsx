@@ -78,7 +78,9 @@ export const NavigationDrawerSectionForObjectMetadataItems = ({
     .filter(
       (item) =>
         !ORDERED_FIRST_STANDARD_OBJECTS.includes(item.nameSingular) &&
-        !ORDERED_LAST_STANDARD_OBJECTS.includes(item.nameSingular),
+        !ORDERED_LAST_STANDARD_OBJECTS.includes(item.nameSingular) &&
+        // Backing store for the Workflows page folder tree; it lives inside that tab.
+        item.nameSingular !== 'workflowFolder',
     )
     .sort((objectMetadataItemA, objectMetadataItemB) => {
       return new Date(objectMetadataItemA.createdAt) <

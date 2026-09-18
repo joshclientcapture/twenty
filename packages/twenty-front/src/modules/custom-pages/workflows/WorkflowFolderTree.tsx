@@ -89,14 +89,21 @@ const parentOf = (path: string) => {
 };
 
 const isWithin = (folder: string | null, path: string) =>
-  isDefined(folder) && (folder === path || folder.startsWith(path + FOLDER_SEPARATOR));
+  isDefined(folder) &&
+  (folder === path || folder.startsWith(path + FOLDER_SEPARATOR));
 
 const buildTree = (paths: string[], workflows: WorkflowRow[]): FolderNode[] => {
   const byPath = new Map<string, FolderNode>();
   const ensure = (path: string): FolderNode => {
     const existing = byPath.get(path);
     if (existing) return existing;
-    const node: FolderNode = { path, name: path.split(FOLDER_SEPARATOR).pop() ?? path, children: [], ownCount: 0, totalCount: 0 };
+    const node: FolderNode = {
+      path,
+      name: path.split(FOLDER_SEPARATOR).pop() ?? path,
+      children: [],
+      ownCount: 0,
+      totalCount: 0,
+    };
     byPath.set(path, node);
     const parent = parentOf(path);
     if (parent) ensure(parent).children.push(node);
@@ -127,19 +134,28 @@ const buildTree = (paths: string[], workflows: WorkflowRow[]): FolderNode[] => {
 // selection filters the table through the normal view filters, and selected rows can be moved.
 export const WorkflowFolderTree = () => {
   const { recordIndexId, objectMetadataItem } = useRecordIndexContextOrThrow();
-  const folderField = objectMetadataItem.fields.find((field) => field.name === 'folder');
+  const folderField = objectMetadataItem.fields.find(
+    (field) => field.name === 'folder',
+  );
   const { upsertRecordFilter } = useUpsertRecordFilter(recordIndexId);
   const { removeRecordFilter } = useRemoveRecordFilter(recordIndexId);
   const { updateOneRecord } = useUpdateOneRecord();
-  const { createOneRecord: createFolderRecord } = useCreateOneRecord<FolderRow>({ objectNameSingular: 'workflowFolder' });
-  const { deleteOneRecord: deleteFolderRecord } = useDeleteOneRecord({ objectNameSingular: 'workflowFolder' });
+  const { createOneRecord: createFolderRecord } = useCreateOneRecord<FolderRow>(
+    { objectNameSingular: 'workflowFolder' },
+  );
+  const { deleteOneRecord: deleteFolderRecord } = useDeleteOneRecord({
+    objectNameSingular: 'workflowFolder',
+  });
   // Folders are records, so an empty folder is visible to everyone until it is deleted.
   const { records: folderRecords } = useFindManyRecords<FolderRow>({
     objectNameSingular: 'workflowFolder',
     recordGqlFields: { id: true, name: true },
     limit: 500,
   });
-  const selectedRowIds = useAtomComponentSelectorValue(selectedRowIdsComponentSelector, recordIndexId);
+  const selectedRowIds = useAtomComponentSelectorValue(
+    selectedRowIdsComponentSelector,
+    recordIndexId,
+  );
 
   const { records: workflows } = useFindManyRecords<WorkflowRow>({
     objectNameSingular: 'workflow',
@@ -147,14 +163,33 @@ export const WorkflowFolderTree = () => {
     limit: 500,
   });
 
-  const [selected, setSelected] = useState<string>(() => readStorage(SELECTED_KEY, ''));
-  const [collapsed, setCollapsed] = useState<string[]>(() => readStorage(COLLAPSED_KEY, []));
-  const [editing, setEditing] = useState<{ mode: 'new' | 'rename'; path: string; draft: string } | null>(null);
+  const [selected, setSelected] = useState<string>(() =>
+    readStorage(SELECTED_KEY, ''),
+  );
+  const [collapsed, setCollapsed] = useState<string[]>(() =>
+    readStorage(COLLAPSED_KEY, []),
+  );
+  const [editing, setEditing] = useState<{
+    mode: 'new' | 'rename';
+    path: string;
+    draft: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const folderPaths = useMemo(() => folderRecords.map((record) => normalizeFolderPath(record.name)).filter(Boolean), [folderRecords]);
-  const roots = useMemo(() => buildTree(folderPaths, workflows), [folderPaths, workflows]);
-  const unfiledCount = workflows.filter((workflow) => !workflow.folder || !normalizeFolderPath(workflow.folder)).length;
+  const folderPaths = useMemo(
+    () =>
+      folderRecords
+        .map((record) => normalizeFolderPath(record.name))
+        .filter(Boolean),
+    [folderRecords],
+  );
+  const roots = useMemo(
+    () => buildTree(folderPaths, workflows),
+    [folderPaths, workflows],
+  );
+  const unfiledCount = workflows.filter(
+    (workflow) => !workflow.folder || !normalizeFolderPath(workflow.folder),
+  ).length;
 
   // The filter lives in the view bar state, so the table, search and other filters keep working.
   useEffect(() => {
@@ -168,7 +203,10 @@ export const WorkflowFolderTree = () => {
       fieldMetadataId: folderField.id,
       type: 'TEXT',
       label: 'Folder',
-      operand: selected === UNFILED ? ViewFilterOperand.IS_EMPTY : ViewFilterOperand.CONTAINS,
+      operand:
+        selected === UNFILED
+          ? ViewFilterOperand.IS_EMPTY
+          : ViewFilterOperand.CONTAINS,
       value: selected === UNFILED ? '' : selected,
       displayValue: selected === UNFILED ? 'No folder' : selected,
     });
@@ -180,24 +218,34 @@ export const WorkflowFolderTree = () => {
     writeStorage(SELECTED_KEY, path);
   };
   const toggleCollapsed = (path: string) => {
-    const next = collapsed.includes(path) ? collapsed.filter((item) => item !== path) : [...collapsed, path];
+    const next = collapsed.includes(path)
+      ? collapsed.filter((item) => item !== path)
+      : [...collapsed, path];
     setCollapsed(next);
     writeStorage(COLLAPSED_KEY, next);
   };
   const ensureFolderRecord = async (path: string) => {
-    if (folderRecords.some((record) => normalizeFolderPath(record.name) === path)) return;
+    if (
+      folderRecords.some((record) => normalizeFolderPath(record.name) === path)
+    )
+      return;
     await createFolderRecord({ name: path });
   };
   const renameFolderRecords = async (oldPath: string, newPath: string) => {
     for (const record of folderRecords) {
       const current = normalizeFolderPath(record.name);
       if (!isWithin(current, oldPath)) continue;
-      await updateOneRecord({ objectNameSingular: 'workflowFolder', idToUpdate: record.id, updateOneRecordInput: { name: newPath + current.slice(oldPath.length) } });
+      await updateOneRecord({
+        objectNameSingular: 'workflowFolder',
+        idToUpdate: record.id,
+        updateOneRecordInput: { name: newPath + current.slice(oldPath.length) },
+      });
     }
   };
   const deleteFolderRecords = async (path: string) => {
     for (const record of folderRecords) {
-      if (isWithin(normalizeFolderPath(record.name), path)) await deleteFolderRecord(record.id);
+      if (isWithin(normalizeFolderPath(record.name), path))
+        await deleteFolderRecord(record.id);
     }
   };
 
@@ -205,7 +253,11 @@ export const WorkflowFolderTree = () => {
     setBusy(true);
     try {
       for (const id of ids) {
-        await updateOneRecord({ objectNameSingular: 'workflow', idToUpdate: id, updateOneRecordInput: { folder: folder || null } });
+        await updateOneRecord({
+          objectNameSingular: 'workflow',
+          idToUpdate: id,
+          updateOneRecordInput: { folder: folder || null },
+        });
       }
     } finally {
       setBusy(false);
@@ -220,7 +272,9 @@ export const WorkflowFolderTree = () => {
       return;
     }
     if (editing.mode === 'new') {
-      const path = editing.path ? `${editing.path}${FOLDER_SEPARATOR}${draft}` : draft;
+      const path = editing.path
+        ? `${editing.path}${FOLDER_SEPARATOR}${draft}`
+        : draft;
       setBusy(true);
       try {
         await ensureFolderRecord(path);
@@ -230,14 +284,27 @@ export const WorkflowFolderTree = () => {
       select(path);
     } else {
       const oldPath = editing.path;
-      const newPath = parentOf(oldPath) ? `${parentOf(oldPath)}${FOLDER_SEPARATOR}${draft}` : draft;
+      const newPath = parentOf(oldPath)
+        ? `${parentOf(oldPath)}${FOLDER_SEPARATOR}${draft}`
+        : draft;
       if (newPath !== oldPath) {
-        const affected = workflows.filter((workflow) => isWithin(workflow.folder ? normalizeFolderPath(workflow.folder) : null, oldPath));
+        const affected = workflows.filter((workflow) =>
+          isWithin(
+            workflow.folder ? normalizeFolderPath(workflow.folder) : null,
+            oldPath,
+          ),
+        );
         setBusy(true);
         try {
           for (const workflow of affected) {
             const current = normalizeFolderPath(workflow.folder ?? '');
-            await updateOneRecord({ objectNameSingular: 'workflow', idToUpdate: workflow.id, updateOneRecordInput: { folder: newPath + current.slice(oldPath.length) } });
+            await updateOneRecord({
+              objectNameSingular: 'workflow',
+              idToUpdate: workflow.id,
+              updateOneRecordInput: {
+                folder: newPath + current.slice(oldPath.length),
+              },
+            });
           }
         } finally {
           setBusy(false);
@@ -249,7 +316,8 @@ export const WorkflowFolderTree = () => {
         } finally {
           setBusy(false);
         }
-        if (isWithin(selected, oldPath)) select(newPath + selected.slice(oldPath.length));
+        if (isWithin(selected, oldPath))
+          select(newPath + selected.slice(oldPath.length));
       }
     }
     setEditing(null);
@@ -258,14 +326,27 @@ export const WorkflowFolderTree = () => {
   const deleteFolder = async (path: string) => {
     // Workflows inside move up one level; nothing is ever deleted but the folder name.
     const parent = parentOf(path);
-    const affected = workflows.filter((workflow) => isWithin(workflow.folder ? normalizeFolderPath(workflow.folder) : null, path));
+    const affected = workflows.filter((workflow) =>
+      isWithin(
+        workflow.folder ? normalizeFolderPath(workflow.folder) : null,
+        path,
+      ),
+    );
     setBusy(true);
     try {
       for (const workflow of affected) {
         const current = normalizeFolderPath(workflow.folder ?? '');
-        const rest = current.slice(path.length).replace(new RegExp(`^${FOLDER_SEPARATOR.trim()}\\s*`), '');
-        const target = [parent, rest.trim()].filter(Boolean).join(FOLDER_SEPARATOR);
-        await updateOneRecord({ objectNameSingular: 'workflow', idToUpdate: workflow.id, updateOneRecordInput: { folder: target || null } });
+        const rest = current
+          .slice(path.length)
+          .replace(new RegExp(`^${FOLDER_SEPARATOR.trim()}\\s*`), '');
+        const target = [parent, rest.trim()]
+          .filter(Boolean)
+          .join(FOLDER_SEPARATOR);
+        await updateOneRecord({
+          objectNameSingular: 'workflow',
+          idToUpdate: workflow.id,
+          updateOneRecordInput: { folder: target || null },
+        });
       }
     } finally {
       setBusy(false);
@@ -284,7 +365,12 @@ export const WorkflowFolderTree = () => {
     const isSelected = selected === node.path;
     return (
       <div key={node.path}>
-        <StyledRow data-selected={isSelected} data-depth={depth} onClick={() => select(node.path)} title={node.path}>
+        <StyledRow
+          data-selected={isSelected}
+          data-depth={depth}
+          onClick={() => select(node.path)}
+          title={node.path}
+        >
           <StyledCaret
             data-visible={node.children.length > 0}
             onClick={(event) => {
@@ -292,7 +378,11 @@ export const WorkflowFolderTree = () => {
               toggleCollapsed(node.path);
             }}
           >
-            {isCollapsed ? <IconChevronRight size={12} /> : <IconChevronDown size={12} />}
+            {isCollapsed ? (
+              <IconChevronRight size={12} />
+            ) : (
+              <IconChevronDown size={12} />
+            )}
           </StyledCaret>
           {isSelected ? <IconFolderOpen size={14} /> : <IconFolder size={14} />}
           {editing?.mode === 'rename' && editing.path === node.path ? (
@@ -300,7 +390,9 @@ export const WorkflowFolderTree = () => {
               autoFocus
               value={editing.draft}
               onClick={(event) => event.stopPropagation()}
-              onChange={(event) => setEditing({ ...editing, draft: event.target.value })}
+              onChange={(event) =>
+                setEditing({ ...editing, draft: event.target.value })
+              }
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void commitEdit();
                 if (event.key === 'Escape') setEditing(null);
@@ -313,17 +405,39 @@ export const WorkflowFolderTree = () => {
           <StyledCount>{node.totalCount}</StyledCount>
           <StyledActions onClick={(event) => event.stopPropagation()}>
             {selectedRowIds.length > 0 && (
-              <StyledIconButton title={`Move ${selectedRowIds.length} selected here`} disabled={busy} onClick={() => void moveWorkflows(selectedRowIds, node.path)}>
+              <StyledIconButton
+                title={`Move ${selectedRowIds.length} selected here`}
+                disabled={busy}
+                onClick={() => void moveWorkflows(selectedRowIds, node.path)}
+              >
                 <IconFolderSymlink size={13} />
               </StyledIconButton>
             )}
-            <StyledIconButton title="New subfolder" onClick={() => setEditing({ mode: 'new', path: node.path, draft: '' })}>
+            <StyledIconButton
+              title="New subfolder"
+              onClick={() =>
+                setEditing({ mode: 'new', path: node.path, draft: '' })
+              }
+            >
               <IconFolderPlus size={13} />
             </StyledIconButton>
-            <StyledIconButton title="Rename" onClick={() => setEditing({ mode: 'rename', path: node.path, draft: node.name })}>
+            <StyledIconButton
+              title="Rename"
+              onClick={() =>
+                setEditing({
+                  mode: 'rename',
+                  path: node.path,
+                  draft: node.name,
+                })
+              }
+            >
               <IconPencil size={13} />
             </StyledIconButton>
-            <StyledIconButton title="Delete folder (workflows move up a level)" disabled={busy} onClick={() => void deleteFolder(node.path)}>
+            <StyledIconButton
+              title="Delete folder (workflows move up a level)"
+              disabled={busy}
+              onClick={() => void deleteFolder(node.path)}
+            >
               <IconTrash size={13} />
             </StyledIconButton>
           </StyledActions>
@@ -336,7 +450,9 @@ export const WorkflowFolderTree = () => {
               autoFocus
               placeholder="Folder name"
               value={editing.draft}
-              onChange={(event) => setEditing({ ...editing, draft: event.target.value })}
+              onChange={(event) =>
+                setEditing({ ...editing, draft: event.target.value })
+              }
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void commitEdit();
                 if (event.key === 'Escape') setEditing(null);
@@ -345,7 +461,8 @@ export const WorkflowFolderTree = () => {
             />
           </StyledRow>
         )}
-        {!isCollapsed && node.children.map((child) => renderNode(child, depth + 1))}
+        {!isCollapsed &&
+          node.children.map((child) => renderNode(child, depth + 1))}
       </div>
     );
   };
@@ -356,12 +473,19 @@ export const WorkflowFolderTree = () => {
     <StyledPanel>
       <StyledHeader>
         <span>Folders</span>
-        <StyledIconButton title="New folder" onClick={() => setEditing({ mode: 'new', path: '', draft: '' })}>
+        <StyledIconButton
+          title="New folder"
+          onClick={() => setEditing({ mode: 'new', path: '', draft: '' })}
+        >
           <IconFolderPlus size={14} />
         </StyledIconButton>
       </StyledHeader>
       <StyledScroll>
-        <StyledRow data-selected={selected === ''} data-depth={0} onClick={() => select('')}>
+        <StyledRow
+          data-selected={selected === ''}
+          data-depth={0}
+          onClick={() => select('')}
+        >
           <StyledCaret data-visible={false} />
           <IconFolderOpen size={14} />
           <StyledName>All workflows</StyledName>
@@ -375,7 +499,9 @@ export const WorkflowFolderTree = () => {
               autoFocus
               placeholder="Folder name"
               value={editing.draft}
-              onChange={(event) => setEditing({ ...editing, draft: event.target.value })}
+              onChange={(event) =>
+                setEditing({ ...editing, draft: event.target.value })
+              }
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void commitEdit();
                 if (event.key === 'Escape') setEditing(null);
@@ -385,14 +511,22 @@ export const WorkflowFolderTree = () => {
           </StyledRow>
         )}
         {roots.map((node) => renderNode(node, 0))}
-        <StyledRow data-selected={selected === UNFILED} data-depth={0} onClick={() => select(UNFILED)}>
+        <StyledRow
+          data-selected={selected === UNFILED}
+          data-depth={0}
+          onClick={() => select(UNFILED)}
+        >
           <StyledCaret data-visible={false} />
           <IconFolder size={14} />
           <StyledName>No folder</StyledName>
           <StyledCount>{unfiledCount}</StyledCount>
           <StyledActions onClick={(event) => event.stopPropagation()}>
             {selectedRowIds.length > 0 && (
-              <StyledIconButton title={`Remove ${selectedRowIds.length} selected from their folder`} disabled={busy} onClick={() => void moveWorkflows(selectedRowIds, '')}>
+              <StyledIconButton
+                title={`Remove ${selectedRowIds.length} selected from their folder`}
+                disabled={busy}
+                onClick={() => void moveWorkflows(selectedRowIds, '')}
+              >
                 <IconFolderSymlink size={13} />
               </StyledIconButton>
             )}
@@ -452,10 +586,18 @@ const StyledRow = styled.div`
   transition: background-color 120ms ease-out;
   user-select: none;
 
-  &[data-depth='1'] { --depth: 1; }
-  &[data-depth='2'] { --depth: 2; }
-  &[data-depth='3'] { --depth: 3; }
-  &[data-depth='4'] { --depth: 4; }
+  &[data-depth='1'] {
+    --depth: 1;
+  }
+  &[data-depth='2'] {
+    --depth: 2;
+  }
+  &[data-depth='3'] {
+    --depth: 3;
+  }
+  &[data-depth='4'] {
+    --depth: 4;
+  }
 
   @media (hover: hover) {
     &:hover {

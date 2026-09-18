@@ -31,6 +31,7 @@ type BookingSourceRow = {
   reschedule_url: string | null;
   cancel_url: string | null;
   rescheduled: boolean;
+  cancel_reason: string | null;
   recording_url: string | null;
 };
 
@@ -91,6 +92,30 @@ const WEBINAR_ATTENDANCE_EVENTS = ['entered', 'reached_offer', 'offer_click', 't
 const WEBINAR_ATTENDANCE_BEFORE_MS = 60 * 60 * 1000;
 const WEBINAR_ATTENDANCE_AFTER_MS = 4 * 60 * 60 * 1000;
 
+// A person who books the same calendar with the same host several times in a burst blocks the
+// host's day with copies. Only the slot they booked last is mirrored; the rest are logged, and a
+// host cancelling them on Calendly with this reason keeps them out for good.
+const DUPLICATE_WINDOW_MS = 15 * 60 * 1000;
+const DUPLICATE_CANCEL_REASON = 'Duplicate booking';
+const findDuplicateBookings = (rows: BookingSourceRow[]) => {
+  const duplicates = new Set<string>();
+  const groups = new Map<string, BookingSourceRow[]>();
+  for (const row of rows) {
+    if (row.status === 'canceled' || !row.invitee_email || !row.booked_at) continue;
+    const key = `${row.invitee_email}|${row.event_type_uri ?? row.event_name}|${(row.host_email ?? '').toLowerCase()}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const byBooked = [...group].sort((a, b) => new Date(a.booked_at!).getTime() - new Date(b.booked_at!).getTime());
+    for (let index = 0; index < byBooked.length - 1; index += 1) {
+      const gap = new Date(byBooked[index + 1].booked_at!).getTime() - new Date(byBooked[index].booked_at!).getTime();
+      if (gap <= DUPLICATE_WINDOW_MS) duplicates.add(byBooked[index].uri);
+    }
+  }
+  return duplicates;
+};
+
 // Same rule as os.closer_call_rows (the closer dashboard) for bookings whose host is not a closer:
 // in progress until 30 minutes after the scheduled end, then the outcome by booking type.
 const GRACE_MS = 30 * 60 * 1000;
@@ -140,13 +165,13 @@ export class OsBookingsService {
          from os.closers where coalesce(calendly_host_email, '') <> ''
        ),
        invitees as (
-         select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled,
+         select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled, max(cancel_reason) as cancel_reason,
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
        select b.uri, b.name as event_name, b.event_type_uri, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,
-              i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled,
+              i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled, i.cancel_reason,
               i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
               f.recording_url
        from os.calendly_bookings b
@@ -169,7 +194,12 @@ export class OsBookingsService {
     );
     // Sales calendars come from the Closers page mapping; support calendars are recognised by name.
     // Everything else (30-minute meetings, recruitment, one-offs) stays out of the CRM.
-    const isKept = (row: BookingSourceRow) => bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER';
+    const duplicateUris = findDuplicateBookings(allRows);
+    if (duplicateUris.size) this.logger.warn(`${duplicateUris.size} duplicate bookings (same invitee, calendar and host within ${DUPLICATE_WINDOW_MS / 60000} minutes) left out of the CRM`);
+    const isKept = (row: BookingSourceRow) =>
+      bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER'
+      && !(row.status === 'canceled' && (row.cancel_reason ?? '').startsWith(DUPLICATE_CANCEL_REASON))
+      && !duplicateUris.has(row.uri);
     const keptRows = allRows.filter(isKept);
     const staleUris = allRows.filter((row) => !isKept(row)).map((row) => row.uri);
     const closerIds: { id: string }[] = await this.dataSource.query("select id from os.closers where coalesce(calendly_host_email, '') <> ''");

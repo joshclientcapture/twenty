@@ -127,6 +127,7 @@ export class OsLifecycleService {
     if (this.fieldsReady) return;
     await this.twentyApi.ensureFields('person', LIFECYCLE_FIELDS);
     await this.twentyApi.ensureSelectOptions('person', 'stage', selectOptions(STAGE_OPTIONS));
+    await this.twentyApi.ensureSelectOptions('person', 'lastBookingStatus', selectOptions(BOOKING_STATUS_OPTIONS));
     this.fieldsReady = true;
   }
 

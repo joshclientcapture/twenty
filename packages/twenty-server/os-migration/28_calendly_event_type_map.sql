@@ -10,7 +10,6 @@ create table if not exists os.calendly_event_type_map (
 insert into os.calendly_event_type_map (event_type_uri, booking_type) values
   ('https://api.calendly.com/event_types/751b1b74-e879-424e-9d87-b57af1bcf827', 'DEMO'),
   ('https://api.calendly.com/event_types/126eb02a-2279-4f02-9574-14adf11e0fa1', 'AGENCY_DEMO'),
-  ('https://api.calendly.com/event_types/fa14fa02-2853-4ffd-a314-773c664fecd1', 'DISCOVERY'),
   ('https://api.calendly.com/event_types/3dfa83c1-2699-4533-9a7d-759708e35ac7', 'DISCOVERY')
 on conflict (event_type_uri) do nothing;
 

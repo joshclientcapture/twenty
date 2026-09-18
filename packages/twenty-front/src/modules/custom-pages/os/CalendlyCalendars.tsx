@@ -222,7 +222,7 @@ const StyledName = styled.div`
 const StyledUrl = styled.a`
   align-items: center;
   color: ${t.font.color.tertiary};
-  display: inline-flex;
+  display: flex;
   font-size: ${t.font.size.xs};
   gap: 4px;
   margin-top: 2px;

@@ -152,7 +152,7 @@ export const main = async (params) => {
 
   if (kind === 'form') {
     const route = text(payload.route_label).toLowerCase();
-    source = ROUTE[route] ?? ROUTE[route.replace(/\s+demo$/, '')] ?? (text(payload.source) === 'calendar' ? 'DFY' : '');
+    source = ROUTE[route] ?? ROUTE[route.replace(/\s+demo$/, '')] ?? ({ calendar: 'DFY', dfy: 'DFY', software: 'DEMO' }[text(payload.source).toLowerCase()] ?? '');
     if (source && ROUTE_TAG[source]) tags.add(ROUTE_TAG[source]);
     latestFormAt = now;
   } else if (kind === 'stripe') {

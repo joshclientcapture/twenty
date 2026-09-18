@@ -599,7 +599,7 @@ export const main = async (params) => {
 };`;
 const discordPing = () => {
   const message = code('Discord message', 'DISCORD', DISCORD_CODE, { closerEmail: A + 'closerEmail}}', inviteeName: A + 'inviteeName}}', inviteeEmail: A + 'inviteeEmail}}', startsAt: A + 'startsAt}}', eventName: A + 'eventName}}', status: A + 'status}}' }, { go: 'yes', url: 'https://discord.com/api/webhooks/x', body: { embeds: [] } });
-  const post = step('HTTP_REQUEST', 'Post to the closer\'s Discord', { url: '{{DISCORD.url}}', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' });
+  const post = step('HTTP_REQUEST', 'Post to the closer\'s Discord', { url: '{{DISCORD.url}}', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' }, { outputSchema: { status: leaf('status', 204) }, expectedOutputSchema: { status: 204 } });
   return {
     name: 'Discord: new call booked',
     description: 'Ported from n8n "Calendly Assign". When a booking is created, posts the New Call Booked card to the closer\'s Discord channel (webhook chosen by the booking host).',

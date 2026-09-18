@@ -5,6 +5,8 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'clear_closer_call',
   'clear_sale_override',
   'clear_therapon_call',
+  'get_calendly_event_types',
+  'set_calendly_event_type',
   'get_closers',
   'get_closer_cash',
   'get_closer_commission',

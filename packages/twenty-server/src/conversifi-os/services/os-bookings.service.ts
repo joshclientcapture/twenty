@@ -64,16 +64,12 @@ const RECORD_BATCH_SIZE = 100;
 const NAME_MATCH_WINDOW_MS = 60 * 60 * 1000;
 const normaliseName = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z\s]/g, '').trim().split(/\s+/).filter(Boolean).join(' ');
 
-// The three funnel calendars are pinned by event type id: names change when hosts are pooled or
-// renamed, the id does not. Everything else (30 Minute Meeting variants, Live Demo clones) goes by name.
-const BOOKING_TYPE_BY_EVENT_TYPE: Record<string, BookingType> = {
-  'https://api.calendly.com/event_types/751b1b74-e879-424e-9d87-b57af1bcf827': 'DEMO',
-  'https://api.calendly.com/event_types/126eb02a-2279-4f02-9574-14adf11e0fa1': 'AGENCY_DEMO',
-  'https://api.calendly.com/event_types/fa14fa02-2853-4ffd-a314-773c664fecd1': 'DISCOVERY',
-};
-const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null = null): BookingType => {
-  const pinned = eventTypeUri ? BOOKING_TYPE_BY_EVENT_TYPE[eventTypeUri] : undefined;
-  if (pinned) return pinned;
+// Event types mapped on the Closers page ("Calendars", os.calendly_event_type_map) win: names change
+// when hosts are pooled or calendars renamed, the id does not. Everything else goes by name.
+const BOOKING_TYPE_VALUES = new Set<string>(BOOKING_TYPE_OPTIONS.map((option) => option.value));
+const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null, mapped: Map<string, string>): BookingType => {
+  const pinned = eventTypeUri ? mapped.get(eventTypeUri) : undefined;
+  if (pinned && BOOKING_TYPE_VALUES.has(pinned)) return pinned as BookingType;
   const name = (eventName ?? '').toLowerCase();
   if (name.includes('next steps')) return 'NEXT_STEPS';
   if (name.includes('agency demo')) return 'AGENCY_DEMO';
@@ -153,6 +149,10 @@ export class OsBookingsService {
       [windowDays],
     );
 
+    const mappedTypes = new Map<string, string>(
+      (await this.dataSource.query('select event_type_uri, booking_type from os.calendly_event_type_map') as { event_type_uri: string; booking_type: string }[])
+        .map((row) => [row.event_type_uri, row.booking_type]),
+    );
     const closerIds: { id: string }[] = await this.dataSource.query("select id from os.closers where coalesce(calendly_host_email, '') <> ''");
     const fromDate = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
     const verdictByUri = new Map<string, CloserCallRow>();
@@ -172,7 +172,7 @@ export class OsBookingsService {
       const verdict = verdictByUri.get(row.uri);
       const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, now);
       const recordingUrl = verdict?.recording ?? row.recording_url;
-      const type = bookingTypeFor(row.event_name, row.event_type_uri);
+      const type = bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes);
       const typeLabel = BOOKING_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
       const who = row.invitee_name || row.invitee_email || 'Unknown';
       return {

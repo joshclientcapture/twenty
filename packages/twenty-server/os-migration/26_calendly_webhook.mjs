@@ -5,7 +5,7 @@
 import { readFileSync } from 'fs';
 
 const env = Object.fromEntries(readFileSync(new URL('../.env', import.meta.url), 'utf8').split('\n').filter((line) => /^[A-Z_]+=/.test(line)).map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]));
-const token = env.OS_CALENDLY_TOKEN;
+const token = process.env.CALENDLY_REGISTER_TOKEN ?? env.OS_CALENDLY_TOKEN;
 const webhookToken = env.OS_CALENDLY_WEBHOOK_TOKEN;
 const signingKey = env.OS_CALENDLY_SIGNING_KEY;
 if (!token || !webhookToken || !signingKey) throw new Error('OS_CALENDLY_TOKEN, OS_CALENDLY_WEBHOOK_TOKEN and OS_CALENDLY_SIGNING_KEY must be set');

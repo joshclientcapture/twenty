@@ -64,7 +64,7 @@ const WEBINAR_STAGE_OPTIONS = [
 ];
 const STAGE_OPTIONS = [
   { value: 'LEAD', label: 'Lead', color: 'gray' }, { value: 'BOOKED', label: 'Call booked', color: 'blue' }, { value: 'SHOWED', label: 'Showed', color: 'sky' }, { value: 'NO_SHOW', label: 'No show', color: 'red' },
-  { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' }, { value: 'TRIAL', label: 'Trial', color: 'orange' }, { value: 'PAYING', label: 'Paying', color: 'green' }, { value: 'CHURNED', label: 'Churned', color: 'purple' },
+  { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' }, { value: 'TRIAL', label: 'Trial', color: 'orange' }, { value: 'TRIAL_ENDED', label: 'Trial ended, never paid', color: 'red' }, { value: 'PAYING', label: 'Paying', color: 'green' }, { value: 'CHURNED', label: 'Churned', color: 'purple' },
   { value: 'DFY_CLIENT', label: 'DFY client', color: 'turquoise' }, { value: 'NOT_INTERESTED', label: 'Not interested', color: 'gray' },
 ];
 const PERSON_FIELDS = [
@@ -75,6 +75,7 @@ const PERSON_FIELDS = [
   { name: 'trialStartedAt', label: 'Trial started at', type: 'DATE_TIME', icon: 'IconRocket' },
   { name: 'payingSince', label: 'Paying since', type: 'DATE_TIME', icon: 'IconCoin' },
   { name: 'churnedAt', label: 'Churned at', type: 'DATE_TIME', icon: 'IconUserOff' },
+  { name: 'trialEndedAt', label: 'Trial ended at (never paid)', type: 'DATE_TIME', icon: 'IconHourglassOff' },
   { name: 'webinarStage', label: 'Webinar stage', type: 'SELECT', icon: 'IconPresentation', options: options(WEBINAR_STAGE_OPTIONS) },
   { name: 'webinarOfferLink', label: 'Webinar offer link', type: 'TEXT', icon: 'IconLink' },
 ];
@@ -146,6 +147,7 @@ export const main = async (params) => {
   let trialStartedAt = existing?.trialStartedAt ?? null;
   let payingSince = existing?.payingSince ?? null;
   let churnedAt = existing?.churnedAt ?? null;
+  let trialEndedAt = existing?.trialEndedAt ?? null;
   let webinarStage = existing?.webinarStage ?? null;
 
   if (kind === 'form') {
@@ -168,13 +170,16 @@ export const main = async (params) => {
     if (stage === 'PAID') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); payingSince = payingSince ?? now; churnedAt = null; }
   } else if (kind === 'churn') {
     const action = text(payload.action);
-    if (action === 'add_churned') { tags.add('CHURNED_USER'); tags.delete('PAYING_USER'); churnedAt = now; }
-    if (action === 'remove_churned') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); churnedAt = null; payingSince = payingSince ?? now; }
+    // has_paid_anything=false means a trial that never paid: not customer churn, its own state.
+    const neverPaid = payload.has_paid_anything === false || payload.has_paid_anything === 'false';
+    if (action === 'add_churned' && neverPaid) trialEndedAt = now;
+    if (action === 'add_churned' && !neverPaid) { tags.add('CHURNED_USER'); tags.delete('PAYING_USER'); churnedAt = now; }
+    if (action === 'remove_churned') { tags.add('PAYING_USER'); tags.delete('CHURNED_USER'); churnedAt = null; trialEndedAt = null; payingSince = payingSince ?? now; }
   }
 
   const pick = (fresh, old) => fresh || old || '';
   // Same rules as the server's lifecycle pass, without the booking data it adds every 15 minutes.
-  const stage = payingSince && (!churnedAt || payingSince > churnedAt) ? 'PAYING' : churnedAt ? 'CHURNED' : trialStartedAt ? 'TRIAL' : signedUpAt ? 'SIGNED_UP' : existing?.stage || 'LEAD';
+  const stage = payingSince && (!churnedAt || payingSince > churnedAt) ? 'PAYING' : churnedAt ? 'CHURNED' : trialEndedAt ? 'TRIAL_ENDED' : trialStartedAt ? 'TRIAL' : signedUpAt ? 'SIGNED_UP' : existing?.stage || 'LEAD';
   return {
     stage: existing?.stage === 'DFY_CLIENT' || existing?.stage === 'NOT_INTERESTED' ? existing.stage : stage,
     webinarOfferLink: pick(text(payload.offer_link), existing?.webinarOfferLink),
@@ -187,7 +192,7 @@ export const main = async (params) => {
     monthlyRevenue: pick(text(payload.revenue), existing?.monthlyRevenue),
     leadSource: existing?.leadSource || source || null,
     latestSource: source || existing?.latestSource || null,
-    latestFormAt, signedUpAt, trialStartedAt, payingSince, churnedAt, webinarStage,
+    latestFormAt, signedUpAt, trialStartedAt, payingSince, churnedAt, trialEndedAt, webinarStage,
     tags: [...tags],
     now,
   };
@@ -197,7 +202,7 @@ export const main = async (params) => {
 const CODE_OUTPUT_SAMPLE = {
   existingId: '', email: 'sam@example.com', firstName: 'Sam', lastName: 'Carter', phoneNumber: '7700900000', phoneCallingCode: '+44', phoneCountryCode: 'GB',
   businessType: 'Agency', agencyServices: 'Outreach', monthlyRevenue: '0-2k', leadSource: 'DEMO', latestSource: 'DEMO', latestFormAt: '2026-09-18T10:00:00.000Z',
-  signedUpAt: '2026-09-18T10:00:00.000Z', trialStartedAt: '2026-09-18T10:00:00.000Z', payingSince: '2026-09-18T10:00:00.000Z', churnedAt: '2026-09-18T10:00:00.000Z',
+  signedUpAt: '2026-09-18T10:00:00.000Z', trialStartedAt: '2026-09-18T10:00:00.000Z', payingSince: '2026-09-18T10:00:00.000Z', churnedAt: '2026-09-18T10:00:00.000Z', trialEndedAt: '2026-09-18T10:00:00.000Z',
   webinarStage: 'REGISTERED', tags: ['DEMO'], now: '2026-09-18T10:00:00.000Z', stage: 'LEAD', webinarOfferLink: 'https://conversifi.io/e/lv2xk9',
 };
 
@@ -227,6 +232,7 @@ const personRecord = (codeId, { create }) => ({
   trialStartedAt: `{{${codeId}.trialStartedAt}}`,
   payingSince: `{{${codeId}.payingSince}}`,
   churnedAt: `{{${codeId}.churnedAt}}`,
+  trialEndedAt: `{{${codeId}.trialEndedAt}}`,
   webinarStage: `{{${codeId}.webinarStage}}`,
   webinarOfferLink: `{{${codeId}.webinarOfferLink}}`,
   stage: `{{${codeId}.stage}}`,

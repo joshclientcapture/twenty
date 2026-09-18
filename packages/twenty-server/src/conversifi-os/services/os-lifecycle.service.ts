@@ -7,7 +7,7 @@ import { companyNameFor, domainOf } from 'src/conversifi-os/services/os-contacts
 import { selectOptions, TwentyApiService, type WantedField } from 'src/conversifi-os/services/twenty-api.service';
 
 export type LifecycleStage =
-  | 'LEAD' | 'BOOKED' | 'SHOWED' | 'NO_SHOW' | 'SIGNED_UP' | 'TRIAL' | 'PAYING' | 'CHURNED' | 'DFY_CLIENT' | 'NOT_INTERESTED';
+  | 'LEAD' | 'BOOKED' | 'SHOWED' | 'NO_SHOW' | 'SIGNED_UP' | 'TRIAL' | 'TRIAL_ENDED' | 'PAYING' | 'CHURNED' | 'DFY_CLIENT' | 'NOT_INTERESTED';
 
 export const STAGE_OPTIONS: { value: LifecycleStage; label: string; color: string }[] = [
   { value: 'LEAD', label: 'Lead', color: 'gray' },
@@ -16,6 +16,7 @@ export const STAGE_OPTIONS: { value: LifecycleStage; label: string; color: strin
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
   { value: 'SIGNED_UP', label: 'Signed up', color: 'yellow' },
   { value: 'TRIAL', label: 'Trial', color: 'orange' },
+  { value: 'TRIAL_ENDED', label: 'Trial ended, never paid', color: 'red' },
   { value: 'PAYING', label: 'Paying', color: 'green' },
   { value: 'CHURNED', label: 'Churned', color: 'purple' },
   { value: 'DFY_CLIENT', label: 'DFY client', color: 'turquoise' },
@@ -52,6 +53,7 @@ export const LIFECYCLE_FIELDS: WantedField[] = [
   { name: 'trialStartedAt', label: 'Trial started at', type: 'DATE_TIME', icon: 'IconRocket' },
   { name: 'payingSince', label: 'Paying since', type: 'DATE_TIME', icon: 'IconCoin' },
   { name: 'churnedAt', label: 'Churned at', type: 'DATE_TIME', icon: 'IconUserOff' },
+  { name: 'trialEndedAt', label: 'Trial ended at (never paid)', type: 'DATE_TIME', icon: 'IconHourglassOff' },
   { name: 'latestFormAt', label: 'Latest form at', type: 'DATE_TIME', icon: 'IconForms' },
   { name: 'lastBookingAt', label: 'Last call at', type: 'DATE_TIME', icon: 'IconCalendarEvent' },
   { name: 'lastBookingStatus', label: 'Last call outcome', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: selectOptions(BOOKING_STATUS_OPTIONS) } },
@@ -72,6 +74,7 @@ type PersonRow = {
   trialStartedAt: string | null;
   payingSince: string | null;
   churnedAt: string | null;
+  trialEndedAt: string | null;
   lastBookingAt: string | null;
   lastBookingStatus: string | null;
   lastBookingType: string | null;
@@ -80,16 +83,18 @@ type PersonRow = {
 
 type BookingRow = { personId: string | null; startsAt: string; status: string; bookingType: string; closer: string | null };
 
-type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null };
+type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null };
 
 const PAGE = 200;
 const BATCH = 100;
 
-export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus'>): LifecycleStage => {
+export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus'>): LifecycleStage => {
   if (person.notInterested) return 'NOT_INTERESTED';
   if ((person.ghlTags ?? []).includes('DFY_CLIENT') || person.stage === 'DFY_CLIENT') return 'DFY_CLIENT';
   if (person.payingSince && (!person.churnedAt || person.payingSince > person.churnedAt)) return 'PAYING';
   if (person.churnedAt) return 'CHURNED';
+  // A cancelled trial that never paid is not customer churn; it gets its own state and nurture.
+  if (person.trialEndedAt) return 'TRIAL_ENDED';
   if (person.trialStartedAt) return 'TRIAL';
   if (person.signedUpAt) return 'SIGNED_UP';
   if (person.nextBookingAt) return 'BOOKED';
@@ -114,6 +119,7 @@ export class OsLifecycleService {
   async ensureFields() {
     if (this.fieldsReady) return;
     await this.twentyApi.ensureFields('person', LIFECYCLE_FIELDS);
+    await this.twentyApi.ensureSelectOptions('person', 'stage', selectOptions(STAGE_OPTIONS));
     this.fieldsReady = true;
   }
 
@@ -158,6 +164,7 @@ export class OsLifecycleService {
         payingSince: earliest((fact) => fact.paying_since) ?? person.payingSince,
         // Stripe is the authority once the address is known to it; a reactivation clears the churn date.
         churnedAt: facts.length ? (facts.some((fact) => fact.churned_at === null && fact.paying_since) ? null : latest((fact) => fact.churned_at)) : person.churnedAt,
+        trialEndedAt: facts.length ? (facts.some((fact) => fact.paying_since) ? null : latest((fact) => fact.trial_ended_at)) : person.trialEndedAt,
         lastBookingAt: lastBooking?.startsAt ?? person.lastBookingAt,
         lastBookingStatus: lastBooking?.status ?? person.lastBookingStatus,
         lastBookingType: lastBooking?.bookingType ?? person.lastBookingType,
@@ -204,7 +211,7 @@ export class OsLifecycleService {
       const result: { people: { edges: { node: PersonRow; cursor: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecyclePeople($after: String) {
            people(first: ${PAGE}, after: $after) {
-             edges { cursor node { id emails { primaryEmail additionalEmails } companyId closer ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
+             edges { cursor node { id emails { primaryEmail additionalEmails } companyId closer ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
              pageInfo { hasNextPage endCursor }
            }
          }`,
@@ -262,7 +269,11 @@ export class OsLifecycleService {
              (select min(trial_start) from subs s where s.email = e.email) as trial_started_at,
              least(p.first_paid, (select min(created) from subs s where s.email = e.email and s.status in ('active', 'past_due'))) as paying_since,
              case when exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'trialing', 'past_due')) then null
-                  else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as churned_at
+                  when p.first_paid is null and not exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'past_due')) then null
+                  else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as churned_at,
+             case when exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'trialing', 'past_due')) then null
+                  when p.first_paid is not null or exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'past_due')) then null
+                  else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as trial_ended_at
       from emails e
       left join customers cu on cu.email = e.email
       left join payments p on p.email = e.email
@@ -275,6 +286,7 @@ export class OsLifecycleService {
         trial_started_at: toIso(row.trial_started_at),
         paying_since: toIso(row.paying_since),
         churned_at: toIso(row.churned_at),
+        trial_ended_at: toIso(row.trial_ended_at),
       });
     }
     return facts;
@@ -303,7 +315,7 @@ const toIso = (value: unknown): string | null => {
 // Twenty returns timestamps with millisecond precision; Postgres values may carry microseconds.
 const DAY_MS = 86400000;
 // The intake sets these in real time and Stripe reports them minutes to hours later; both are the same event.
-const DATED_FIELDS = new Set(['signedUpAt', 'trialStartedAt', 'payingSince', 'churnedAt']);
+const DATED_FIELDS = new Set(['signedUpAt', 'trialStartedAt', 'payingSince', 'churnedAt', 'trialEndedAt']);
 const sameInstant = (a: unknown, b: unknown, toleranceMs: number) => {
   if (a === b) return true;
   if (a === null || b === null || a === undefined || b === undefined) return false;

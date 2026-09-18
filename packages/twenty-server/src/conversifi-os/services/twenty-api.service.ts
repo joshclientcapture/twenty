@@ -48,6 +48,12 @@ export class TwentyApiService {
     return map;
   }
 
+  // Id → primary and additional addresses, for adding a newly seen address to a known person.
+  async peopleWithEmails(): Promise<Map<string, { primaryEmail: string | null; additionalEmails: string[] }>> {
+    const people = await this.allPeople();
+    return new Map(people.map((person) => [person.id, { primaryEmail: person.emails.primaryEmail, additionalEmails: person.emails.additionalEmails ?? [] }]));
+  }
+
   async peopleByPrimaryEmail(): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     for (const person of await this.allPeople()) if (person.emails.primaryEmail) map.set(person.emails.primaryEmail.toLowerCase(), person.id);

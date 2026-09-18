@@ -97,7 +97,7 @@ export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | '
   if (person.trialEndedAt) return 'TRIAL_ENDED';
   if (person.trialStartedAt) return 'TRIAL';
   if (person.signedUpAt) return 'SIGNED_UP';
-  if (person.nextBookingAt) return 'BOOKED';
+  if (person.nextBookingAt || person.lastBookingStatus === 'UPCOMING' || person.lastBookingStatus === 'IN_PROGRESS') return 'BOOKED';
   if (person.lastBookingStatus === 'SHOWED') return 'SHOWED';
   if (person.lastBookingStatus === 'NO_SHOW') return 'NO_SHOW';
   return 'LEAD';

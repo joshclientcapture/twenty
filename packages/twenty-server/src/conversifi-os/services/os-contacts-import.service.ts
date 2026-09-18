@@ -437,7 +437,30 @@ export class OsContactsImportService {
       `calendly ${count((r) => r.from_calendly)}, customers ${count((r) => r.from_customers)}, rentals ${count((r) => r.from_rentals)}; os-only ${count((r) => !r.from_ghl)}; ` +
       `excluded ${excludedEmails.length}; merged into ${merged.length} people (${rows.length - merged.length} duplicate addresses folded); to write ${toWrite.length})`,
     );
-    if (options.onlyNew && toWrite.length === 0) return { candidates: rows.length, companies: 0, people: 0, removed: 0, skipped: 0, dryRun: false, onlyNew: true };
+    // A known person who shows up under a new address (booked with one email, signed up with another)
+    // gets that address added, so Stripe and Calendly facts under it reach the same record.
+    let linked = 0;
+    if (options.onlyNew && !options.dryRun) {
+      const known = await this.twentyApi.peopleWithEmails();
+      for (const group of merged) {
+        const addresses = [group.primary, ...group.extras].map((row) => row.email);
+        const owners = new Set(addresses.map((email) => existing.get(email)).filter((id): id is string => !!id));
+        if (owners.size !== 1) continue;
+        const [personId] = [...owners];
+        const person = known.get(personId);
+        if (!person) continue;
+        const have = new Set([person.primaryEmail, ...person.additionalEmails].filter((email): email is string => !!email).map((email) => email.toLowerCase()));
+        const missing = addresses.filter((email) => !have.has(email));
+        if (missing.length === 0) continue;
+        await this.twentyApi.records(
+          `mutation LinkExtraEmails($id: UUID!, $data: PersonUpdateInput!) { updatePerson(id: $id, data: $data) { id } }`,
+          { id: personId, data: { emails: { primaryEmail: person.primaryEmail, additionalEmails: [...person.additionalEmails, ...missing] } } },
+        );
+        linked++;
+      }
+      if (linked > 0) this.logger.log(`people: ${linked} existing people gained a new address`);
+    }
+    if (options.onlyNew && toWrite.length === 0) return { candidates: rows.length, companies: 0, people: 0, linked, removed: 0, skipped: 0, dryRun: false, onlyNew: true };
 
     // Companies first, keyed on domain, so people can point at them.
     const companyByDomain = new Map<string, { name: string; domainName: { primaryLinkUrl: string; primaryLinkLabel: string }; createdAt?: string }>();
@@ -514,7 +537,7 @@ export class OsContactsImportService {
       const secondaryEmails = merged.flatMap((group) => group.extras.map((extra) => extra.email));
       removed = await this.deletePeopleByEmail([...secondaryEmails, ...excludedEmails]);
     }
-    return { candidates: rows.length, companies: companies.length, people: written, removed, skipped: this.skipped, dryRun: !!options.dryRun };
+    return { candidates: rows.length, companies: companies.length, people: written, linked, removed, skipped: this.skipped, dryRun: !!options.dryRun };
   }
 
   // Deletes only records whose PRIMARY email is in the list; a merged person carries the extras.

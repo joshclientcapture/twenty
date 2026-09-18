@@ -28,6 +28,7 @@ type WorkflowRow = {
   name: string;
   folder: string | null;
   statuses: string[] | null;
+  position: number | null;
   updatedAt: string;
   createdAt: string;
   deletedAt: string | null;
@@ -38,11 +39,14 @@ type FolderRow = {
   __typename: 'WorkflowFolder';
   id: string;
   name: string;
+  position: number | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
   [key: string]: unknown;
 };
+
+type FolderItem = { path: string; name: string; position: number | null };
 
 type Menu =
   | { kind: 'folder'; path: string; x: number; y: number }
@@ -50,6 +54,11 @@ type Menu =
   | { kind: 'background'; x: number; y: number };
 
 type Editing = { mode: 'new' | 'rename'; path: string; draft: string } | null;
+
+type DropZone = 'into' | 'before' | 'after';
+type DropTarget = { key: string; zone: DropZone } | null;
+type DragPayload = { workflows?: string[]; folder?: string };
+type RowKind = 'folder' | 'workflow' | 'container';
 
 export const FOLDER_SEPARATOR = ' / ';
 const QUERY_KEY = 'folder';
@@ -97,8 +106,40 @@ const relativeTime = (iso: string) => {
   return new Date(iso).toLocaleDateString();
 };
 
+// Manual order first (lowest position on top), unordered items after, alphabetically.
+const byPositionThenName = <
+  TItem extends { position: number | null; name: string },
+>(
+  a: TItem,
+  b: TItem,
+) => {
+  if (a.position !== null && b.position !== null && a.position !== b.position)
+    return a.position - b.position;
+  if (a.position !== null && b.position === null) return -1;
+  if (a.position === null && b.position !== null) return 1;
+  return a.name.localeCompare(b.name);
+};
+
+// Positions are floats: an item dropped between two neighbours takes their midpoint, so one write
+// per moved item. Callers number unordered items first so the midpoint has real neighbours.
+const positionBetween = (
+  ordered: { position: number | null }[],
+  anchorIndex: number,
+  zone: 'before' | 'after',
+) => {
+  const index = zone === 'before' ? anchorIndex : anchorIndex + 1;
+  const previous = index > 0 ? ordered[index - 1].position : null;
+  const next = index < ordered.length ? ordered[index].position : null;
+  if (previous !== null && next !== null)
+    return { position: (previous + next) / 2, next };
+  if (previous !== null) return { position: previous + 1, next };
+  if (next !== null) return { position: next - 1, next };
+  return { position: 0, next };
+};
+
 // A file-explorer view of the Workflows object: folders are rows you open, workflows drag onto
-// folders (or onto the "up" row), and right-click menus cover move, rename, create and delete.
+// folders (or onto the "up" row), drop between rows to reorder, and right-click menus cover move,
+// rename, create and delete.
 export const WorkflowExplorer = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -125,15 +166,15 @@ export const WorkflowExplorer = () => {
       name: true,
       folder: true,
       statuses: true,
+      position: true,
       updatedAt: true,
     },
-    orderBy: [{ name: 'AscNullsLast' }],
     limit: 500,
   });
   const { records: folderRecords, refetch: refetchFolders } =
     useFindManyRecords<FolderRow>({
       objectNameSingular: 'workflowFolder',
-      recordGqlFields: { id: true, name: true },
+      recordGqlFields: { id: true, name: true, position: true },
       limit: 500,
     });
 
@@ -141,16 +182,21 @@ export const WorkflowExplorer = () => {
   const [selected, setSelected] = useState<string[]>([]);
   const [menu, setMenu] = useState<Menu | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null);
   const [busy, setBusy] = useState(false);
   const [lastClicked, setLastClicked] = useState<string | null>(null);
 
-  const allFolderPaths = useMemo(() => {
-    const paths = new Set<string>();
+  const folderRecordByPath = useMemo(() => {
+    const map = new Map<string, FolderRow>();
     for (const record of folderRecords) {
       const path = normalizeFolderPath(record.name);
-      if (path) paths.add(path);
+      if (path) map.set(path, record);
     }
+    return map;
+  }, [folderRecords]);
+
+  const allFolderPaths = useMemo(() => {
+    const paths = new Set<string>(folderRecordByPath.keys());
     for (const workflow of workflows) {
       const path = folderOf(workflow);
       if (path) paths.add(path);
@@ -164,7 +210,7 @@ export const WorkflowExplorer = () => {
       }
     }
     return [...paths].sort((a, b) => a.localeCompare(b));
-  }, [folderRecords, workflows]);
+  }, [folderRecordByPath, workflows]);
 
   const countIn = (path: string) =>
     workflows.filter(
@@ -173,14 +219,25 @@ export const WorkflowExplorer = () => {
     ).length;
 
   const query = search.trim().toLowerCase();
-  const childFolders = query
+  const childFolders: FolderItem[] = query
     ? []
-    : allFolderPaths.filter((path) => parentOf(path) === current);
-  const visibleWorkflows = query
-    ? workflows.filter((workflow) =>
-        workflow.name.toLowerCase().includes(query),
-      )
-    : workflows.filter((workflow) => folderOf(workflow) === current);
+    : allFolderPaths
+        .filter((path) => parentOf(path) === current)
+        .map((path) => ({
+          path,
+          name: lastSegment(path),
+          position: folderRecordByPath.get(path)?.position ?? null,
+        }))
+        .sort(byPositionThenName);
+  const visibleWorkflows = (
+    query
+      ? workflows.filter((workflow) =>
+          workflow.name.toLowerCase().includes(query),
+        )
+      : workflows.filter((workflow) => folderOf(workflow) === current)
+  )
+    .slice()
+    .sort(byPositionThenName);
 
   const open = (path: string) => {
     setSelected([]);
@@ -208,6 +265,7 @@ export const WorkflowExplorer = () => {
     };
   }, []);
 
+  // Every mutation ends with a refetch so the list reflects the change at once.
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
     try {
@@ -218,25 +276,91 @@ export const WorkflowExplorer = () => {
     }
   };
 
-  const removeWorkflows = (ids: string[]) =>
-    run(async () => {
-      await deleteWorkflows({ recordIdsToDelete: ids });
-      setSelected([]);
+  const setWorkflow = (id: string, input: Record<string, unknown>) =>
+    updateOneRecord({
+      objectNameSingular: 'workflow',
+      idToUpdate: id,
+      updateOneRecordInput: input,
     });
+  const setFolderRecord = (id: string, input: Record<string, unknown>) =>
+    updateOneRecord({
+      objectNameSingular: 'workflowFolder',
+      idToUpdate: id,
+      updateOneRecordInput: input,
+    });
+
+  const ensureFolderRecord = async (path: string): Promise<{ id: string }> => {
+    const existing = folderRecordByPath.get(path);
+    if (isDefined(existing)) return existing;
+    return createFolderRecord({ name: path });
+  };
 
   const moveWorkflows = (ids: string[], folder: string) =>
     run(async () => {
       for (const id of ids) {
         const workflow = workflows.find((candidate) => candidate.id === id);
         if (!workflow || folderOf(workflow) === folder) continue;
-        await updateOneRecord({
-          objectNameSingular: 'workflow',
-          idToUpdate: id,
-          updateOneRecordInput: { folder: folder || null },
-        });
+        await setWorkflow(id, { folder: folder || null });
       }
       setSelected([]);
     });
+
+  const reorderWorkflows = (
+    ids: string[],
+    anchorId: string,
+    zone: 'before' | 'after',
+  ) =>
+    run(async () => {
+      const list = visibleWorkflows
+        .filter((workflow) => !ids.includes(workflow.id))
+        .map((workflow) => ({ id: workflow.id, position: workflow.position }));
+      const anchorIndex = list.findIndex(
+        (workflow) => workflow.id === anchorId,
+      );
+      if (anchorIndex < 0) return;
+      for (const [index, workflow] of list.entries()) {
+        if (workflow.position === null) {
+          workflow.position = index;
+          await setWorkflow(workflow.id, { position: index });
+        }
+      }
+      const { position, next } = positionBetween(list, anchorIndex, zone);
+      const step = next !== null ? (next - position) / (ids.length + 1) : 1;
+      let cursor = position;
+      for (const id of ids) {
+        await setWorkflow(id, { position: cursor });
+        cursor += step;
+      }
+    });
+
+  const removeWorkflows = (ids: string[]) =>
+    run(async () => {
+      await deleteWorkflows({ recordIdsToDelete: ids });
+      setSelected([]);
+    });
+
+  const renameFolder = async (oldPath: string, newPath: string) => {
+    if (oldPath === newPath || !newPath) return;
+    for (const workflow of workflows) {
+      const folder = folderOf(workflow);
+      if (!folder || !isWithin(folder, oldPath)) continue;
+      await setWorkflow(workflow.id, {
+        folder: newPath + folder.slice(oldPath.length),
+      });
+    }
+    for (const record of folderRecords) {
+      const folder = normalizeFolderPath(record.name);
+      if (!folder || !isWithin(folder, oldPath)) continue;
+      await setFolderRecord(record.id, {
+        name: newPath + folder.slice(oldPath.length),
+      });
+    }
+    if (!folderRecordByPath.has(newPath) && !folderRecordByPath.has(oldPath)) {
+      await createFolderRecord({ name: newPath });
+    }
+    if (isWithin(current, oldPath) && current !== '')
+      open(newPath + current.slice(oldPath.length));
+  };
 
   const moveFolder = (path: string, targetParent: string) =>
     run(async () => {
@@ -247,41 +371,31 @@ export const WorkflowExplorer = () => {
       await renameFolder(path, newPath);
     });
 
-  const renameFolder = async (oldPath: string, newPath: string) => {
-    if (oldPath === newPath || !newPath) return;
-    for (const workflow of workflows) {
-      const folder = folderOf(workflow);
-      if (!folder || !isWithin(folder, oldPath)) continue;
-      await updateOneRecord({
-        objectNameSingular: 'workflow',
-        idToUpdate: workflow.id,
-        updateOneRecordInput: {
-          folder: newPath + folder.slice(oldPath.length),
-        },
+  const reorderFolder = (
+    path: string,
+    anchorPath: string,
+    zone: 'before' | 'after',
+  ) =>
+    run(async () => {
+      const list = childFolders
+        .filter((folder) => folder.path !== path)
+        .map((folder) => ({ path: folder.path, position: folder.position }));
+      const anchorIndex = list.findIndex(
+        (folder) => folder.path === anchorPath,
+      );
+      if (anchorIndex < 0) return;
+      for (const [index, folder] of list.entries()) {
+        if (folder.position === null) {
+          folder.position = index;
+          const record = await ensureFolderRecord(folder.path);
+          await setFolderRecord(record.id, { position: index });
+        }
+      }
+      const record = await ensureFolderRecord(path);
+      await setFolderRecord(record.id, {
+        position: positionBetween(list, anchorIndex, zone).position,
       });
-    }
-    for (const record of folderRecords) {
-      const folder = normalizeFolderPath(record.name);
-      if (!folder || !isWithin(folder, oldPath)) continue;
-      await updateOneRecord({
-        objectNameSingular: 'workflowFolder',
-        idToUpdate: record.id,
-        updateOneRecordInput: { name: newPath + folder.slice(oldPath.length) },
-      });
-    }
-    if (
-      !folderRecords.some(
-        (record) => normalizeFolderPath(record.name) === newPath,
-      ) &&
-      !folderRecords.some(
-        (record) => normalizeFolderPath(record.name) === oldPath,
-      )
-    ) {
-      await createFolderRecord({ name: newPath });
-    }
-    if (isWithin(current, oldPath) && current !== '')
-      open(newPath + current.slice(oldPath.length));
-  };
+    });
 
   const createFolder = (parent: string, name: string) =>
     run(async () => {
@@ -299,11 +413,7 @@ export const WorkflowExplorer = () => {
         if (!folder || !isWithin(folder, path)) continue;
         const rest = folder.slice(path.length).replace(/^\s*\/\s*/, '');
         const target = [parent, rest].filter(Boolean).join(FOLDER_SEPARATOR);
-        await updateOneRecord({
-          objectNameSingular: 'workflow',
-          idToUpdate: workflow.id,
-          updateOneRecordInput: { folder: target || null },
-        });
+        await setWorkflow(workflow.id, { folder: target || null });
       }
       for (const record of folderRecords) {
         const folder = normalizeFolderPath(record.name);
@@ -365,32 +475,73 @@ export const WorkflowExplorer = () => {
     event.dataTransfer.setData(DRAG_MIME, JSON.stringify({ folder: path }));
     event.dataTransfer.effectAllowed = 'move';
   };
-  const onDrop = (event: React.DragEvent, target: string) => {
-    event.preventDefault();
-    setDropTarget(null);
-    const raw = event.dataTransfer.getData(DRAG_MIME);
-    if (!raw) return;
-    const payload = JSON.parse(raw) as {
-      workflows?: string[];
-      folder?: string;
+
+  // Where on the row the pointer is: the outer thirds reorder, the middle of a folder moves into it.
+  const zoneFor = (event: React.DragEvent, kind: RowKind): DropZone => {
+    if (kind === 'container') return 'into';
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - rect.top) / rect.height;
+    if (kind === 'workflow') return ratio < 0.5 ? 'before' : 'after';
+    if (ratio < 0.3) return 'before';
+    if (ratio > 0.7) return 'after';
+    return 'into';
+  };
+  const applyDrop = (
+    payload: DragPayload,
+    key: string,
+    kind: RowKind,
+    zone: DropZone,
+  ) => {
+    if (kind === 'container' || zone === 'into') {
+      if (payload.workflows) void moveWorkflows(payload.workflows, key);
+      if (payload.folder) void moveFolder(payload.folder, key);
+      return;
+    }
+    if (
+      kind === 'workflow' &&
+      payload.workflows &&
+      !payload.workflows.includes(key)
+    ) {
+      void reorderWorkflows(payload.workflows, key, zone);
+    }
+    if (kind === 'folder' && payload.folder && payload.folder !== key) {
+      void reorderFolder(payload.folder, key, zone);
+    }
+    // A workflow dropped at the edge of a folder still goes into that folder.
+    if (kind === 'folder' && payload.workflows) {
+      void moveWorkflows(payload.workflows, key);
+    }
+  };
+  const dragOverFor =
+    (key: string, kind: RowKind) => (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      const zone = zoneFor(event, kind);
+      if (dropTarget?.key !== key || dropTarget.zone !== zone)
+        setDropTarget({ key, zone });
     };
-    if (payload.workflows) void moveWorkflows(payload.workflows, target);
-    if (payload.folder) void moveFolder(payload.folder, target);
+  const dragLeaveFor = (key: string) => () => {
+    if (dropTarget?.key === key) setDropTarget(null);
   };
-  const dragOverFor = (target: string) => (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    if (dropTarget !== target) setDropTarget(target);
-  };
-  const dragLeaveFor = (target: string) => () => {
-    if (dropTarget === target) setDropTarget(null);
-  };
-  const dropFor = (target: string) => (event: React.DragEvent) =>
-    onDrop(event, target);
+  const dropFor =
+    (key: string, kind: RowKind, target = key) =>
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const zone = zoneFor(event, kind);
+      setDropTarget(null);
+      const raw = event.dataTransfer.getData(DRAG_MIME);
+      if (!raw) return;
+      applyDrop(JSON.parse(raw) as DragPayload, target, kind, zone);
+    };
+  const dropState = (key: string) =>
+    dropTarget?.key === key ? dropTarget.zone : undefined;
 
   const crumbs = current ? current.split(FOLDER_SEPARATOR) : [];
   const menuFolders = allFolderPaths.filter((path) => path !== current);
+  const upKey = `up:${parentOf(current)}`;
 
   const editorRow = (mode: 'new' | 'rename', depthPath: string) => (
     <StyledRow data-kind="folder" data-editing="true">
@@ -430,10 +581,10 @@ export const WorkflowExplorer = () => {
           <StyledCrumb
             data-active={current === ''}
             onClick={() => open('')}
-            onDragOver={dragOverFor('')}
+            onDragOver={dragOverFor('', 'container')}
             onDragLeave={dragLeaveFor('')}
-            onDrop={dropFor('')}
-            data-drop={dropTarget === ''}
+            onDrop={dropFor('', 'container')}
+            data-drop={dropState('')}
           >
             <IconSettingsAutomation size={14} />
             Workflows
@@ -446,10 +597,10 @@ export const WorkflowExplorer = () => {
                 <StyledCrumb
                   data-active={path === current}
                   onClick={() => open(path)}
-                  onDragOver={dragOverFor(path)}
+                  onDragOver={dragOverFor(path, 'container')}
                   onDragLeave={dragLeaveFor(path)}
-                  onDrop={dropFor(path)}
-                  data-drop={dropTarget === path}
+                  onDrop={dropFor(path, 'container')}
+                  data-drop={dropState(path)}
                 >
                   {segment}
                 </StyledCrumb>
@@ -484,10 +635,10 @@ export const WorkflowExplorer = () => {
         {current !== '' && !query && (
           <StyledRow
             data-kind="up"
-            data-drop={dropTarget === parentOf(current)}
-            onDragOver={dragOverFor(parentOf(current))}
-            onDragLeave={dragLeaveFor(parentOf(current))}
-            onDrop={dropFor(parentOf(current))}
+            data-drop={dropState(upKey)}
+            onDragOver={dragOverFor(upKey, 'container')}
+            onDragLeave={dragLeaveFor(upKey)}
+            onDrop={dropFor(upKey, 'container', parentOf(current))}
             onDoubleClick={() => open(parentOf(current))}
             onClick={(event) => {
               event.stopPropagation();
@@ -503,19 +654,19 @@ export const WorkflowExplorer = () => {
         {editing?.mode === 'new' &&
           editing.path === current &&
           editorRow('new', current)}
-        {childFolders.map((path) =>
+        {childFolders.map(({ path }) =>
           editing?.mode === 'rename' && editing.path === path ? (
             <div key={path}>{editorRow('rename', path)}</div>
           ) : (
             <StyledRow
               key={path}
               data-kind="folder"
-              data-drop={dropTarget === path}
+              data-drop={dropState(path)}
               draggable
               onDragStart={(event) => onFolderDragStart(event, path)}
-              onDragOver={dragOverFor(path)}
+              onDragOver={dragOverFor(path, 'folder')}
               onDragLeave={dragLeaveFor(path)}
-              onDrop={dropFor(path)}
+              onDrop={dropFor(path, 'folder')}
               onClick={(event) => {
                 event.stopPropagation();
                 open(path);
@@ -552,8 +703,12 @@ export const WorkflowExplorer = () => {
               key={workflow.id}
               data-kind="workflow"
               data-selected={isSelected}
+              data-drop={dropState(workflow.id)}
               draggable
               onDragStart={(event) => onDragStart(event, workflow.id)}
+              onDragOver={dragOverFor(workflow.id, 'workflow')}
+              onDragLeave={dragLeaveFor(workflow.id)}
+              onDrop={dropFor(workflow.id, 'workflow')}
               onClick={(event) => {
                 event.stopPropagation();
                 toggleSelect(workflow.id, event);
@@ -603,8 +758,8 @@ export const WorkflowExplorer = () => {
         {busy
           ? 'Saving…'
           : selected.length > 0
-            ? `${selected.length} selected · drag onto a folder or right-click to move`
-            : `${visibleWorkflows.length} workflow${visibleWorkflows.length === 1 ? '' : 's'}${childFolders.length ? `, ${childFolders.length} folder${childFolders.length === 1 ? '' : 's'}` : ''}`}
+            ? `${selected.length} selected · drag between rows to reorder, onto a folder to move, or right-click`
+            : `${visibleWorkflows.length} workflow${visibleWorkflows.length === 1 ? '' : 's'}${childFolders.length ? `, ${childFolders.length} folder${childFolders.length === 1 ? '' : 's'}` : ''} · drag to reorder`}
       </StyledStatusBar>
 
       {menu && (
@@ -820,7 +975,7 @@ const StyledCrumb = styled.span`
     font-weight: ${t.font.weight.medium};
   }
 
-  &[data-drop='true'] {
+  &[data-drop='into'] {
     background-color: ${t.background.transparent.medium};
     border-color: ${t.color.blue};
   }
@@ -901,11 +1056,13 @@ const StyledRow = styled.div`
   align-items: center;
   border: 1px solid transparent;
   border-radius: ${t.border.radius.sm};
+  box-shadow: 0 0 0 0 transparent;
   color: ${t.font.color.primary};
   cursor: default;
   display: flex;
   font-size: ${t.font.size.md};
   height: 34px;
+  position: relative;
   transition: background-color 100ms ease-out;
   user-select: none;
 
@@ -928,9 +1085,18 @@ const StyledRow = styled.div`
     background-color: ${t.background.transparent.medium};
   }
 
-  &[data-drop='true'] {
+  &[data-drop='into'] {
     background-color: ${t.background.transparent.medium};
     border-color: ${t.color.blue};
+  }
+
+  /* Reorder indicator: a 2px line on the edge the item will land on. */
+  &[data-drop='before'] {
+    box-shadow: 0 -2px 0 0 ${t.color.blue};
+  }
+
+  &[data-drop='after'] {
+    box-shadow: 0 2px 0 0 ${t.color.blue};
   }
 `;
 

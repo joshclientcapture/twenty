@@ -9,7 +9,7 @@ import { TwentyApiService } from 'src/conversifi-os/services/twenty-api.service'
 
 type BookingType =
   | 'DEMO' | 'DISCOVERY' | 'AGENCY_DEMO' | 'WEBINAR' | 'SETUP_CALL' | 'ONBOARDING' | 'DIAGNOSTICS' | 'FEEDBACK' | 'NEXT_STEPS' | 'OTHER';
-type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'SHOWED' | 'NO_SHOW' | 'CANCELLED' | 'RESCHEDULED';
+type BookingStatus = 'UPCOMING' | 'IN_PROGRESS' | 'SHOWED' | 'NO_SHOW' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED';
 
 type BookingSourceRow = {
   uri: string;
@@ -56,6 +56,7 @@ const BOOKING_STATUS_OPTIONS: { value: BookingStatus; label: string; color: stri
   { value: 'IN_PROGRESS', label: 'In progress', color: 'purple' },
   { value: 'SHOWED', label: 'Showed', color: 'green' },
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
+  { value: 'COMPLETED', label: 'Completed', color: 'gray' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'gray' },
   { value: 'RESCHEDULED', label: 'Rescheduled', color: 'orange' },
 ];
@@ -83,17 +84,30 @@ const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null, m
   return 'OTHER';
 };
 
+// Only sales calls get a show / no-show verdict; support calls have no recording to judge them by
+// and a webinar seat is judged by the webinar's own attendance events.
+const SUPPORT_TYPES = new Set<BookingType>(['SETUP_CALL', 'ONBOARDING', 'DIAGNOSTICS', 'FEEDBACK']);
+const WEBINAR_ATTENDANCE_EVENTS = ['entered', 'reached_offer', 'offer_click', 'trial_click', 'paid'];
+const WEBINAR_ATTENDANCE_BEFORE_MS = 60 * 60 * 1000;
+const WEBINAR_ATTENDANCE_AFTER_MS = 4 * 60 * 60 * 1000;
+
 // Same rule as os.closer_call_rows (the closer dashboard) for bookings whose host is not a closer:
-// in progress until 30 minutes after the scheduled end, then no-show unless a recording matched.
+// in progress until 30 minutes after the scheduled end, then the outcome by booking type.
 const GRACE_MS = 30 * 60 * 1000;
 const DEFAULT_CALL_MS = 30 * 60 * 1000;
-const fallbackStatusFor = (row: BookingSourceRow, now: number): BookingStatus => {
+const fallbackStatusFor = (row: BookingSourceRow, type: BookingType, now: number, webinarAttendance: Map<string, number[]>): BookingStatus => {
   if (row.status === 'canceled') return 'CANCELLED';
   if (row.rescheduled) return 'RESCHEDULED';
   if (row.recording_url) return 'SHOWED';
   const start = new Date(row.start_time).getTime();
   const end = row.end_time ? new Date(row.end_time).getTime() : start + DEFAULT_CALL_MS;
   if (end + GRACE_MS > now) return start > now ? 'UPCOMING' : 'IN_PROGRESS';
+  if (type === 'WEBINAR') {
+    const attended = (webinarAttendance.get((row.invitee_email ?? '').toLowerCase()) ?? [])
+      .some((at) => at >= start - WEBINAR_ATTENDANCE_BEFORE_MS && at <= start + WEBINAR_ATTENDANCE_AFTER_MS);
+    return attended ? 'SHOWED' : 'NO_SHOW';
+  }
+  if (SUPPORT_TYPES.has(type)) return 'COMPLETED';
   return 'NO_SHOW';
 };
 
@@ -169,6 +183,14 @@ export class OsBookingsService {
       for (const verdict of verdicts) verdictByUri.set(verdict.call_key, verdict);
     }
 
+    const webinarAttendance = new Map<string, number[]>();
+    const attendanceRows: { email: string; occurred_at: string }[] = await this.dataSource.query(
+      `select lower(email) as email, occurred_at from os.webinar_events
+       where event = any($1) and email is not null and occurred_at >= now() - ($2::int * interval '1 day')`,
+      [WEBINAR_ATTENDANCE_EVENTS, windowDays + 1],
+    );
+    for (const row of attendanceRows) webinarAttendance.set(row.email, [...(webinarAttendance.get(row.email) ?? []), new Date(row.occurred_at).getTime()]);
+
     // Full map, so a booking made from a merged person's second address still links.
     const personIdByEmail = await this.twentyApi.peopleByEmail();
     const rows = keptRows;
@@ -176,9 +198,9 @@ export class OsBookingsService {
     const now = Date.now();
     const records = rows.map((row) => {
       const verdict = verdictByUri.get(row.uri);
-      const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, now);
-      const recordingUrl = verdict?.recording ?? row.recording_url;
       const type = bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes);
+      const status = (verdict && DASHBOARD_STATUS[verdict.status]) ?? fallbackStatusFor(row, type, now, webinarAttendance);
+      const recordingUrl = verdict?.recording ?? row.recording_url;
       const typeLabel = BOOKING_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
       const who = row.invitee_name || row.invitee_email || 'Unknown';
       return {

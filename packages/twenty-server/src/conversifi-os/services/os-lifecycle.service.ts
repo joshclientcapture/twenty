@@ -28,6 +28,7 @@ const BOOKING_STATUS_OPTIONS = [
   { value: 'IN_PROGRESS', label: 'In progress', color: 'purple' },
   { value: 'SHOWED', label: 'Showed', color: 'green' },
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
+  { value: 'COMPLETED', label: 'Completed', color: 'gray' },
   { value: 'CANCELLED', label: 'Cancelled', color: 'gray' },
   { value: 'RESCHEDULED', label: 'Rescheduled', color: 'orange' },
 ];
@@ -87,6 +88,7 @@ type PersonRow = {
 };
 
 type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null };
+const SALES_BOOKING_TYPES = new Set<string>(['DISCOVERY', 'DEMO', 'AGENCY_DEMO', 'NEXT_STEPS']);
 
 type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null };
 
@@ -162,6 +164,10 @@ export class OsLifecycleService {
       const past = own.filter((booking) => booking.startsAt <= now).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
       const future = own.filter((booking) => booking.startsAt > now && (booking.status === 'UPCOMING' || booking.status === 'IN_PROGRESS')).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
       const lastBooking = past[0] ?? null;
+      // Only sales calls move the stage: a set-up call or a webinar seat says nothing about the pipeline.
+      const lastSalesBooking = past.find((booking) => SALES_BOOKING_TYPES.has(booking.bookingType)) ?? null;
+      const nextSalesBooking = future.find((booking) => SALES_BOOKING_TYPES.has(booking.bookingType)) ?? null;
+      const salesBookingStatus = own.length ? (lastSalesBooking?.status ?? null) : (SALES_BOOKING_TYPES.has(person.lastBookingType ?? '') ? person.lastBookingStatus : null);
 
       // An address Stripe only knows from a payment or the customers table carries no subscription
       // dates, so the end dates it does not have must not wipe what intake or the GHL import set.
@@ -179,7 +185,7 @@ export class OsLifecycleService {
         nextBookingAt: future[0]?.startsAt ?? null,
         closer: person.closer || (lastBooking ?? future[0])?.closer || person.closer,
       };
-      desired.stage = stageFor({ ...person, ...desired });
+      desired.stage = stageFor({ ...person, ...desired, lastBookingStatus: salesBookingStatus, nextBookingAt: nextSalesBooking?.startsAt ?? null });
       desired.lastActivityAt = [
         person.createdAt, person.lastActivityAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
         latest((fact) => fact.last_event_at),

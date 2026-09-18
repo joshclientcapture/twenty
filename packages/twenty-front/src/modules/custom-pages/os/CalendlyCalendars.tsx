@@ -1,6 +1,11 @@
 import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
-import { IconExternalLink, IconX } from 'twenty-ui/icon';
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconExternalLink,
+  IconX,
+} from 'twenty-ui/icon';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { osRpc } from '@/custom-pages/os/transport';
@@ -36,6 +41,23 @@ export const CalendlyCalendars = () => {
   const [rows, setRows] = useState<CalendlyEventType[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
+  // Collapsed by default; the choice is remembered per browser.
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('closers-calendars-open') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      window.localStorage.setItem('closers-calendars-open', next ? '1' : '0');
+    } catch {
+      // Storage may be blocked; the section still toggles for the session.
+    }
+  };
 
   const load = async () => {
     try {
@@ -74,19 +96,29 @@ export const CalendlyCalendars = () => {
   const unattached = (rows ?? []).filter((row) => row.booking_type === null);
 
   return (
-    <StyledSection>
-      <div>
+    <StyledSection data-open={open}>
+      <StyledToggle type="button" onClick={toggle} aria-expanded={open}>
+        {open ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
         <h3>Calendars</h3>
         <StyledMuted>
-          Which Calendly calendar is which sales call. Diagnostics, next steps,
-          set-up, onboarding, feedback and webinar calendars are recognised by
-          name; 30-minute meetings and recruitment calendars stay out of the
-          CRM.
+          {open
+            ? ''
+            : `${(rows ?? []).filter((row) => row.booking_type !== null).length} calendars attached`}
         </StyledMuted>
-      </div>
-      {error && <StyledMuted data-tone="negative">{error}</StyledMuted>}
-      {rows === null && <StyledMuted>Loading…</StyledMuted>}
-      {rows !== null && (
+      </StyledToggle>
+      {open && (
+        <div>
+          <StyledMuted>
+            Which Calendly calendar is which sales call. Diagnostics, next
+            steps, set-up, onboarding, feedback and webinar calendars are
+            recognised by name; 30-minute meetings and recruitment calendars
+            stay out of the CRM.
+          </StyledMuted>
+        </div>
+      )}
+      {open && error && <StyledMuted data-tone="negative">{error}</StyledMuted>}
+      {open && rows === null && <StyledMuted>Loading…</StyledMuted>}
+      {open && rows !== null && (
         <StyledSlots>
           {SLOTS.map((slot) => {
             const attached = rows.filter(
@@ -173,6 +205,22 @@ const StyledSection = styled.section`
     font-size: ${t.font.size.md};
     font-weight: ${t.font.weight.semiBold};
     margin: 0 0 ${t.spacing[1]};
+  }
+`;
+
+const StyledToggle = styled.button`
+  align-items: center;
+  background: none;
+  border: none;
+  color: ${t.font.color.primary};
+  cursor: pointer;
+  display: flex;
+  gap: ${t.spacing[2]};
+  padding: 0;
+  text-align: left;
+
+  h3 {
+    margin: 0;
   }
 `;
 

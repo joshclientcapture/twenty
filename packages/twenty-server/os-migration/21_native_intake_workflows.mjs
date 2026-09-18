@@ -78,6 +78,7 @@ const PERSON_FIELDS = [
   { name: 'trialEndedAt', label: 'Trial ended at (never paid)', type: 'DATE_TIME', icon: 'IconHourglassOff' },
   { name: 'webinarStage', label: 'Webinar stage', type: 'SELECT', icon: 'IconPresentation', options: options(WEBINAR_STAGE_OPTIONS) },
   { name: 'webinarOfferLink', label: 'Webinar offer link', type: 'TEXT', icon: 'IconLink' },
+  { name: 'lastActivityAt', label: 'Last activity', type: 'DATE_TIME', icon: 'IconActivity' },
 ];
 const objects = (await gql('/metadata', `{ objects(paging: { first: 1000 }) { edges { node { id nameSingular fieldsList { id name type } } } } }`)).objects.edges.map((edge) => edge.node);
 const person = objects.find((object) => object.nameSingular === 'person');
@@ -195,6 +196,8 @@ export const main = async (params) => {
     leadSource: existing?.leadSource || source || null,
     latestSource: source || existing?.latestSource || null,
     latestFormAt, signedUpAt, trialStartedAt, payingSince, churnedAt, trialEndedAt, webinarStage,
+    // Every app event counts as activity, even when the dated field it belongs to keeps an earlier value.
+    lastActivityAt: now,
     tags: [...tags],
     now,
   };
@@ -205,7 +208,7 @@ const CODE_OUTPUT_SAMPLE = {
   existingId: '', email: 'sam@example.com', firstName: 'Sam', lastName: 'Carter', phoneNumber: '7700900000', phoneCallingCode: '+44', phoneCountryCode: 'GB',
   businessType: 'Agency', agencyServices: 'Outreach', monthlyRevenue: '0-2k', leadSource: 'DEMO', latestSource: 'DEMO', latestFormAt: '2026-09-18T10:00:00.000Z',
   signedUpAt: '2026-09-18T10:00:00.000Z', trialStartedAt: '2026-09-18T10:00:00.000Z', payingSince: '2026-09-18T10:00:00.000Z', churnedAt: '2026-09-18T10:00:00.000Z', trialEndedAt: '2026-09-18T10:00:00.000Z',
-  webinarStage: 'REGISTERED', tags: ['DEMO'], now: '2026-09-18T10:00:00.000Z', stage: 'LEAD', webinarOfferLink: 'https://conversifi.io/e/lv2xk9',
+  webinarStage: 'REGISTERED', tags: ['DEMO'], now: '2026-09-18T10:00:00.000Z', stage: 'LEAD', webinarOfferLink: 'https://conversifi.io/e/lv2xk9', lastActivityAt: '2026-09-18T10:00:00.000Z',
 };
 
 // ---------- 3. One workflow per app event ----------
@@ -238,6 +241,7 @@ const personRecord = (codeId, { create }) => ({
   webinarStage: `{{${codeId}.webinarStage}}`,
   webinarOfferLink: `{{${codeId}.webinarOfferLink}}`,
   stage: `{{${codeId}.stage}}`,
+  lastActivityAt: `{{${codeId}.lastActivityAt}}`,
   ghlTags: `{{${codeId}.tags}}`,
 });
 const errorHandling = { retryOnFailure: { value: 1 }, continueOnFailure: { value: false } };

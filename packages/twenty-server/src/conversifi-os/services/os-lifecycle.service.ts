@@ -178,7 +178,7 @@ export class OsLifecycleService {
       };
       desired.stage = stageFor({ ...person, ...desired });
       desired.lastActivityAt = [
-        person.createdAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
+        person.createdAt, person.lastActivityAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
         ...(bookingsByPerson.get(person.id) ?? []).map((booking) => booking.bookedAt),
       ].filter((value): value is string => !!value).sort().reverse()[0] ?? person.createdAt;
 

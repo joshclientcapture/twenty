@@ -1,9 +1,10 @@
 import { styled } from '@linaria/react';
 import { useEffect, useState } from 'react';
+import { IconExternalLink, IconX } from 'twenty-ui/icon';
 import { themeCssVariables as t } from 'twenty-ui/theme-constants';
 
 import { osRpc } from '@/custom-pages/os/transport';
-import { StyledMuted, StyledTable } from '@/custom-pages/os/ui';
+import { StyledMuted } from '@/custom-pages/os/ui';
 
 type CalendlyEventType = {
   uri: string;
@@ -11,34 +12,29 @@ type CalendlyEventType = {
   active: boolean;
   duration: number;
   kind: string;
+  url: string | null;
   hosts: string;
   recent: number;
   booking_type: string | null;
 };
 
-// Mirrors the Booking object's type options; "Auto" leaves the choice to the event name.
-const BOOKING_TYPES: { value: string; label: string }[] = [
-  { value: '', label: 'Auto (by name)' },
+// The three sales calendars drive stages, pre-call emails, no-show follow-up and closer stats.
+// Only calendars attached here (plus the fixed support calendars named below) are saved to the CRM.
+const SLOTS: { value: string; label: string }[] = [
   { value: 'DISCOVERY', label: 'DFY discovery' },
   { value: 'DEMO', label: 'Software demo' },
   { value: 'AGENCY_DEMO', label: 'Agency demo' },
-  { value: 'WEBINAR', label: 'Webinar' },
-  { value: 'SETUP_CALL', label: 'Set-up call' },
-  { value: 'ONBOARDING', label: 'Onboarding' },
-  { value: 'DIAGNOSTICS', label: 'Diagnostics' },
-  { value: 'FEEDBACK', label: 'Feedback' },
-  { value: 'NEXT_STEPS', label: 'Next steps' },
-  { value: 'OTHER', label: 'Other' },
 ];
 
-// Admin section on the Closers page: which Calendly event type counts as which kind of call.
-// The mapping drives Booking.bookingType, so the pre-call sequences follow a renamed or new
-// calendar without a code change.
+const shortUrl = (row: CalendlyEventType) =>
+  row.url
+    ? row.url.replace(/^https?:\/\/(www\.)?calendly\.com\//, '')
+    : (row.uri.split('/').pop() ?? row.uri);
+
 export const CalendlyCalendars = () => {
   const [rows, setRows] = useState<CalendlyEventType[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
 
   const load = async () => {
     try {
@@ -55,16 +51,16 @@ export const CalendlyCalendars = () => {
     void load();
   }, []);
 
-  const save = async (uri: string, bookingType: string) => {
+  const assign = async (uri: string, bookingType: string | null) => {
     setSaving(uri);
     try {
       await osRpc('set_calendly_event_type', {
         p_uri: uri,
-        p_booking_type: bookingType || null,
+        p_booking_type: bookingType,
       });
       setRows((current) =>
         (current ?? []).map((row) =>
-          row.uri === uri ? { ...row, booking_type: bookingType || null } : row,
+          row.uri === uri ? { ...row, booking_type: bookingType } : row,
         ),
       );
     } catch (saveError) {
@@ -74,78 +70,88 @@ export const CalendlyCalendars = () => {
     }
   };
 
-  const visible = (rows ?? []).filter(
-    (row) => showAll || row.recent > 0 || row.booking_type !== null,
-  );
+  const unattached = (rows ?? []).filter((row) => row.booking_type === null);
 
   return (
     <StyledSection>
-      <StyledHeading>
-        <div>
-          <h3>Calendars</h3>
-          <StyledMuted>
-            Which Calendly event is which kind of call. Renaming or replacing a
-            calendar only needs a change here.
-          </StyledMuted>
-        </div>
-        <StyledLink type="button" onClick={() => setShowAll((value) => !value)}>
-          {showAll ? 'Hide unused' : `Show all (${rows?.length ?? 0})`}
-        </StyledLink>
-      </StyledHeading>
+      <div>
+        <h3>Calendars</h3>
+        <StyledMuted>
+          Which Calendly calendar is which sales call. Diagnostics, next steps,
+          set-up, onboarding, feedback and webinar calendars are recognised by
+          name; 30-minute meetings and recruitment calendars stay out of the
+          CRM.
+        </StyledMuted>
+      </div>
       {error && <StyledMuted data-tone="negative">{error}</StyledMuted>}
-      <StyledTable>
-        <thead>
-          <tr>
-            <th>Calendly event</th>
-            <th>Hosts</th>
-            <th data-right>Bookings (180 d)</th>
-            <th>Counts as</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows === null && (
-            <tr>
-              <td colSpan={4} data-muted>
-                Loading…
-              </td>
-            </tr>
-          )}
-          {visible.map((row) => (
-            <tr key={row.uri} data-inactive={!row.active}>
-              <td>
-                <StyledName>{row.name}</StyledName>
-                <StyledMuted>
-                  {row.duration} min · {row.kind}
-                  {!row.active ? ' · inactive' : ''}
-                </StyledMuted>
-              </td>
-              <td data-muted>{row.hosts || '—'}</td>
-              <td data-right>{row.recent}</td>
-              <td>
+      {rows === null && <StyledMuted>Loading…</StyledMuted>}
+      {rows !== null && (
+        <StyledSlots>
+          {SLOTS.map((slot) => {
+            const attached = rows.filter(
+              (row) => row.booking_type === slot.value,
+            );
+            return (
+              <StyledSlot key={slot.value}>
+                <StyledSlotTitle>{slot.label}</StyledSlotTitle>
+                {attached.map((row) => (
+                  <StyledCalendar key={row.uri} data-inactive={!row.active}>
+                    <div>
+                      <StyledName>{row.name}</StyledName>
+                      <StyledMuted>
+                        {row.hosts || 'no host yet'} · {row.recent} booking
+                        {row.recent === 1 ? '' : 's'} in 180 d
+                        {!row.active ? ' · inactive in Calendly' : ''}
+                      </StyledMuted>
+                      {row.url && (
+                        <StyledUrl
+                          href={row.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {row.url.replace(/^https?:\/\//, '')}{' '}
+                          <IconExternalLink size={12} />
+                        </StyledUrl>
+                      )}
+                    </div>
+                    <StyledRemove
+                      type="button"
+                      title="Detach"
+                      disabled={saving === row.uri}
+                      onClick={() => void assign(row.uri, null)}
+                    >
+                      <IconX size={14} />
+                    </StyledRemove>
+                  </StyledCalendar>
+                ))}
+                {attached.length === 0 && (
+                  <StyledMuted>No calendar attached</StyledMuted>
+                )}
                 <StyledSelect
-                  value={row.booking_type ?? ''}
-                  disabled={saving === row.uri}
-                  data-set={row.booking_type ? 'true' : 'false'}
-                  onChange={(event) => void save(row.uri, event.target.value)}
+                  value=""
+                  disabled={saving !== null || unattached.length === 0}
+                  onChange={(event) => {
+                    if (event.target.value)
+                      void assign(event.target.value, slot.value);
+                  }}
                 >
-                  {BOOKING_TYPES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  <option value="">
+                    {attached.length
+                      ? 'Attach another calendar…'
+                      : 'Attach a calendar…'}
+                  </option>
+                  {unattached.map((row) => (
+                    <option key={row.uri} value={row.uri}>
+                      {row.name} · {shortUrl(row)}
+                      {row.recent ? ` · ${row.recent} recent` : ''}
                     </option>
                   ))}
                 </StyledSelect>
-              </td>
-            </tr>
-          ))}
-          {rows !== null && visible.length === 0 && (
-            <tr>
-              <td colSpan={4} data-muted>
-                No Calendly event types synced yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </StyledTable>
+              </StyledSlot>
+            );
+          })}
+        </StyledSlots>
+      )}
     </StyledSection>
   );
 };
@@ -159,17 +165,6 @@ const StyledSection = styled.section`
   gap: ${t.spacing[3]};
   padding: ${t.spacing[4]};
 
-  tr[data-inactive='true'] td {
-    opacity: 0.6;
-  }
-`;
-
-const StyledHeading = styled.div`
-  align-items: flex-start;
-  display: flex;
-  gap: ${t.spacing[3]};
-  justify-content: space-between;
-
   h3 {
     color: ${t.font.color.primary};
     font-size: ${t.font.size.md};
@@ -178,23 +173,88 @@ const StyledHeading = styled.div`
   }
 `;
 
-const StyledLink = styled.button`
-  background: none;
-  border: none;
-  color: ${t.font.color.tertiary};
-  cursor: pointer;
-  font-size: ${t.font.size.sm};
-  padding: 0;
-  white-space: nowrap;
+const StyledSlots = styled.div`
+  display: grid;
+  gap: ${t.spacing[3]};
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+`;
 
-  &:hover {
-    color: ${t.font.color.primary};
+const StyledSlot = styled.div`
+  background: ${t.background.primary};
+  border: 1px solid ${t.border.color.light};
+  border-radius: ${t.border.radius.md};
+  display: flex;
+  flex-direction: column;
+  gap: ${t.spacing[2]};
+  padding: ${t.spacing[3]};
+`;
+
+const StyledSlotTitle = styled.div`
+  color: ${t.font.color.primary};
+  font-size: ${t.font.size.md};
+  font-weight: ${t.font.weight.medium};
+`;
+
+const StyledCalendar = styled.div`
+  align-items: flex-start;
+  background: ${t.background.transparent.lighter};
+  border: 1px solid ${t.border.color.light};
+  border-radius: ${t.border.radius.sm};
+  display: flex;
+  gap: ${t.spacing[2]};
+  justify-content: space-between;
+  padding: ${t.spacing[2]};
+
+  &[data-inactive='true'] {
+    opacity: 0.7;
   }
 `;
 
 const StyledName = styled.div`
   color: ${t.font.color.primary};
+  font-size: ${t.font.size.sm};
   font-weight: ${t.font.weight.medium};
+`;
+
+const StyledUrl = styled.a`
+  align-items: center;
+  color: ${t.font.color.tertiary};
+  display: inline-flex;
+  font-size: ${t.font.size.xs};
+  gap: 4px;
+  margin-top: 2px;
+  text-decoration: none;
+  word-break: break-all;
+
+  &:hover {
+    color: ${t.font.color.primary};
+    text-decoration: underline;
+  }
+`;
+
+const StyledRemove = styled.button`
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: ${t.border.radius.sm};
+  color: ${t.font.color.light};
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 22px;
+  justify-content: center;
+  padding: 0;
+  width: 22px;
+
+  &:hover {
+    background: ${t.background.transparent.medium};
+    color: ${t.font.color.primary};
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
 `;
 
 const StyledSelect = styled.select`
@@ -204,13 +264,7 @@ const StyledSelect = styled.select`
   color: ${t.font.color.secondary};
   font-size: ${t.font.size.sm};
   height: 28px;
-  min-width: 160px;
   padding: 0 ${t.spacing[2]};
-
-  &[data-set='true'] {
-    color: ${t.font.color.primary};
-    font-weight: ${t.font.weight.medium};
-  }
 
   &:disabled {
     opacity: 0.6;

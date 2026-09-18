@@ -439,11 +439,12 @@ export class OsSyncService {
     }
 
     try {
+      await this.dataSource.query('alter table os.calendly_event_types add column if not exists scheduling_url text');
       const eventTypesResponse = await fetch(`${CAL}/event_types?user=${encodeURIComponent(hostUserUri)}&count=100`, { headers });
       if (eventTypesResponse.ok) {
         const eventTypes = (await eventTypesResponse.json()).collection ?? [];
         const rows = eventTypes.map((eventType: any) => ({
-          uri: eventType.uri, name: eventType.name, slug: eventType.slug, active: eventType.active,
+          uri: eventType.uri, name: eventType.name, slug: eventType.slug, active: eventType.active, scheduling_url: eventType.scheduling_url ?? null,
           duration: eventType.duration, kind: eventType.kind, synced_at: nowIso(),
         }));
         await this.upsert.rows('calendly_event_types', rows, ['uri']);

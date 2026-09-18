@@ -120,7 +120,7 @@ export class OsBookingsService {
     if (!this.twentyApi.isConfigured()) return { skipped: 'no OS_TWENTY_API_KEY' };
     await this.ensureMetadata();
 
-    const rows: BookingSourceRow[] = await this.dataSource.query(
+    const allRows: BookingSourceRow[] = await this.dataSource.query(
       `with closers as (
          select id, name, lower(calendly_host_email) as host_email, lower(fathom_email) as fathom_email
          from os.closers where coalesce(calendly_host_email, '') <> ''
@@ -153,6 +153,11 @@ export class OsBookingsService {
       (await this.dataSource.query('select event_type_uri, booking_type from os.calendly_event_type_map') as { event_type_uri: string; booking_type: string }[])
         .map((row) => [row.event_type_uri, row.booking_type]),
     );
+    // Sales calendars come from the Closers page mapping; support calendars are recognised by name.
+    // Everything else (30-minute meetings, recruitment, one-offs) stays out of the CRM.
+    const isKept = (row: BookingSourceRow) => bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER';
+    const keptRows = allRows.filter(isKept);
+    const staleUris = allRows.filter((row) => !isKept(row)).map((row) => row.uri);
     const closerIds: { id: string }[] = await this.dataSource.query("select id from os.closers where coalesce(calendly_host_email, '') <> ''");
     const fromDate = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
     const verdictByUri = new Map<string, CloserCallRow>();
@@ -166,6 +171,7 @@ export class OsBookingsService {
 
     // Full map, so a booking made from a merged person's second address still links.
     const personIdByEmail = await this.twentyApi.peopleByEmail();
+    const rows = keptRows;
     const personIdByName = await this.matchRecentLeadsByName(rows, personIdByEmail);
     const now = Date.now();
     const records = rows.map((row) => {
@@ -209,7 +215,17 @@ export class OsBookingsService {
       );
       written += batch.length;
     }
-    return { bookings: written, linkedToPeople: records.filter((record) => record.personId).length, windowDays };
+    // Bookings mirrored earlier from calendars that are no longer kept are removed.
+    let removed = 0;
+    for (let offset = 0; offset < staleUris.length; offset += RECORD_BATCH_SIZE) {
+      const uris = staleUris.slice(offset, offset + RECORD_BATCH_SIZE);
+      const result = await this.twentyApi.records<{ deleteBookings: { id: string }[] }>(
+        `mutation DropUnmappedBookings($uris: [String!]) { deleteBookings(filter: { calendlyUri: { in: $uris } }) { id } }`,
+        { uris },
+      );
+      removed += result.deleteBookings.length;
+    }
+    return { bookings: written, linkedToPeople: records.filter((record) => record.personId).length, removed, windowDays };
   }
 
   // A lead who books with a different address than the one they typed in the form minutes earlier

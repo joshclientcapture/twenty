@@ -380,8 +380,14 @@ export class OsContactsImportService {
         from os.stripe_subscriptions where customer_email is not null group by lower(customer_email)
       ),
       calendly as (
-        select lower(email) as email, max(name) as name, min(booked_at) as booked_at
-        from os.calendly_invitees where email is not null group by lower(email)
+        -- Invitees of the calendars the CRM keeps: attached sales calendars or support calendars by name.
+        select lower(i.email) as email, max(i.name) as name, min(i.booked_at) as booked_at
+        from os.calendly_invitees i
+        join os.calendly_bookings b on b.uri = i.booking_uri
+        where i.email is not null
+          and (b.event_type_uri in (select event_type_uri from os.calendly_event_type_map)
+               or lower(b.name) similar to '%(discovery|demo|diagnostic|next steps|set up|setup|onboarding|feedback|webinar)%')
+        group by lower(i.email)
       ),
       payments as (
         select lower(email) as email, max(payer_name) as name, min(created) as created

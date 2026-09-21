@@ -46,7 +46,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
   ),
   base as (
     select p.*, cc.user_id, cc.auth_email, cc.stripe_email, cc.stripe_name, cc.status, cc.plan_type, cc.signup_at,
-      sn.customer_name sub_name, sn.customer_email sub_email,
+      sn.customer_name sub_name, sn.customer_email sub_email, dfy.dfy_status,
       lower(cc.auth_email) ae, lower(cc.stripe_email) se,
       lower(btrim(regexp_replace(coalesce(nullif(cc.stripe_name,''), sn.customer_name, p.payer_name, ''),'\s+',' ','g'))) nm
     from pay p

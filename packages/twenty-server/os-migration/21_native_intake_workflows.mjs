@@ -188,7 +188,7 @@ export const main = async (params) => {
   const pick = (fresh, old) => fresh || old || '';
   // Previews and smoke tests from the app must not become leads: they all land on one sink record.
   const testLike = /(@example\.(invalid|com|org)$|@crmwiring\.dev$|@test\.com$|^preview@|^test@|^(demo(-[a-z0-9]+)?|lookup[0-9]*|[a-z-]*test[a-z0-9-]*)@conversifi\.io$)/i.test(email)
-    || /(^|\s)(test|preview)(\s|$)/i.test((firstName + ' ' + lastName).trim());
+    || /(^|\s)(test|tester|testing|preview)(\s|$)/i.test((firstName + ' ' + lastName).trim());
   if (testLike) {
     return {
       stage: 'NOT_INTERESTED', webinarOfferLink: '', existingId: TEST_SINK_ID, email: 'intake-test@conversifi.io', firstName: 'Intake', lastName: 'Test sink',

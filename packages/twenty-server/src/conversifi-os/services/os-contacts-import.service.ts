@@ -142,7 +142,8 @@ export const isExcluded = (row: { email: string; first_name: string | null; last
   const [local, domain] = row.email.split('@');
   if (!domain || EXCLUDED_DOMAINS.has(domain) || domain.endsWith('.oastify.com') || /yopmail|mailinator/.test(domain)) return true;
   if (/test/i.test(local)) return true;
-  return /\btest\b/i.test(`${row.first_name ?? ''} ${row.last_name ?? ''}`);
+  // Same words as os.is_test_identity, so the OS pages, the mirror and the importer agree on what a test is.
+  return /(^|\s)(test|tester|testing|preview)(\s|$)/i.test(`${row.first_name ?? ''} ${row.last_name ?? ''}`);
 };
 
 // Markers that stay in Tags after the GHL history is folded into fields.

@@ -527,6 +527,8 @@ export class OsContactsImportService {
       const tags = new Set(all.flatMap((row) => row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value));
       // GHL tags become fields; Tags itself keeps only markers that mean something on their own.
       const fromTags = fieldsFromTags(tags);
+      // The four booleans decide the dated fields below; they are not person fields themselves.
+      const { signedUp: _signedUp, trialStarted: _trialStarted, paying: _paying, churned: _churned, ...tagFields } = fromTags;
       const name = primary.first_name || primary.last_name ? { firstName: primary.first_name ?? '', lastName: primary.last_name ?? '' } : nameFromEmail(primary.email);
       const leadSince = all.map((row) => row.lead_since).filter((value): value is string => !!value).sort()[0] ?? null;
       return {
@@ -536,7 +538,7 @@ export class OsContactsImportService {
         companyId: domain ? companyIdByDomain.get(domain) ?? null : null,
         leadSource: leadSourceFor(primary),
         ghlTags: [...tags].filter((tag) => KEPT_TAGS.has(tag)),
-        ...fromTags,
+        ...tagFields,
         businessType: first((row) => row.business_type) ?? '',
         agencyServices: first((row) => row.agency_services) ?? '',
         monthlyRevenue: first((row) => row.monthly_revenue) ?? '',

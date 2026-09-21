@@ -94,6 +94,7 @@ const emailsFieldId = person.fieldsList.find((field) => field.name === 'emails')
 // ---------- 2. The merge code shared by every flow ----------
 const MERGE_CODE = String.raw`
 const DIAL_CODES = ['1','7','20','27','30','31','32','33','34','36','39','40','41','43','44','45','46','47','48','49','51','52','54','55','56','57','58','60','61','62','63','64','65','66','81','82','84','86','90','91','92','94','98','212','213','216','218','230','234','254','255','256','260','263','264','265','266','267','268','269','290','291','297','298','299','350','351','352','353','354','355','356','357','358','359','370','371','372','373','374','375','376','377','378','380','381','382','385','386','387','389','420','421','423','500','501','502','503','504','505','506','507','508','509','590','591','592','593','594','595','596','597','598','599','670','672','673','674','675','676','677','678','679','680','681','682','683','685','686','687','688','689','690','691','692','850','852','853','855','856','880','886','960','961','962','963','964','965','966','967','968','970','971','972','973','974','975','976','977','992','993','994','995','996','998'];
+const SHARED_CODES = ['1', '7', '39', '44', '47', '61', '212', '262', '290', '358', '500', '590', '599', '672'];
 const COUNTRY = { '1': 'US', '44': 'GB', '61': 'AU', '353': 'IE', '91': 'IN', '49': 'DE', '33': 'FR', '34': 'ES', '39': 'IT', '31': 'NL', '55': 'BR', '52': 'MX', '27': 'ZA', '971': 'AE', '65': 'SG', '64': 'NZ', '351': 'PT', '48': 'PL', '46': 'SE', '47': 'NO', '45': 'DK', '32': 'BE', '41': 'CH', '43': 'AT', '90': 'TR', '234': 'NG', '254': 'KE', '92': 'PK', '63': 'PH', '60': 'MY', '62': 'ID', '66': 'TH', '84': 'VN', '20': 'EG', '966': 'SA', '972': 'IL', '380': 'UA', '7': 'RU', '81': 'JP', '82': 'KR', '86': 'CN' };
 const text = (value) => (typeof value === 'string' && value.trim() !== '' && !value.includes('{{') && !/^not (asked|applicable)$/i.test(value.trim()) ? value.trim() : '');
 const phoneParts = (raw) => {
@@ -102,7 +103,9 @@ const phoneParts = (raw) => {
   if (!cleaned.startsWith('+')) return { number: cleaned, code: '', country: '' };
   const digits = cleaned.slice(1);
   const code = [3, 2, 1].map((length) => digits.slice(0, length)).find((candidate) => DIAL_CODES.includes(candidate)) ?? '';
-  return { number: digits.slice(code.length), code: code ? '+' + code : '', country: COUNTRY[code] ?? '' };
+  // Codes shared by several countries (+1, +44, +61, ...) are left for Twenty to infer from the number;
+  // naming one wrongly makes the update fail with conflicting country codes.
+  return { number: digits.slice(code.length), code: code ? '+' + code : '', country: SHARED_CODES.includes(code) ? '' : (COUNTRY[code] ?? '') };
 };
 const ROUTE = { demo: 'DEMO', demo_call: 'DEMO', 'agency demo': 'AGENCY', agency: 'AGENCY', dfy: 'DFY', webinar: 'WEBINAR' };
 const ROUTE_TAG = { DEMO: 'DEMO', AGENCY: 'AGENCY_DEMO', AGENCY_FUNNEL: 'AGENCYFUNNEL_LEAD', DFY: 'DFY', WEBINAR: 'WEB_REGISTERED' };

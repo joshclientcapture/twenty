@@ -10,8 +10,8 @@ create table if not exists os.suppressed_emails (
 -- Test identities: throwaway domains, internal test addresses, and names that are literally a test.
 create or replace function os.is_test_identity(p_email text, p_name text default null)
 returns boolean language sql immutable as $$
-  select coalesce(p_email, '') ~* '(@example\.(invalid|com|org)$|@crmwiring\.dev$|@test\.com$|@joshuatest\.com$|@clientcapture\.io$|@yopmail\.|@mailinator\.|^preview@|^test@|^jamal@gmail\.com$|^jamaldjs1507@gmail\.com$|^jamalrobinson1507@gmail\.com$|^(demo(-[a-z0-9]+)?|lookup[0-9]*|[a-z0-9-]*test[a-z0-9-]*|native\.test.*|intake\.check.*)@conversifi\.io$)'
-      or coalesce(p_name, '') ~* '(^|\s)(test|tester|testing|preview)(\s|$)';
+  select coalesce(p_email, '') ~* '(@example\.(invalid|com|org)$|@crmwiring\.dev$|@test\.com$|@joshuatest\.com$|@clientcapture\.io$|@yopmail\.|@mailinator\.|^preview@|^test@|^jamal@gmail\.com$|^jamaldjs1507@gmail\.com$|^jamalrobinson1507@gmail\.com$|^jamalconversi@gmail\.com$|^(demo(-[a-z0-9]+)?|lookup[0-9]*|[a-z0-9-]*test[a-z0-9-]*|native\.test.*|intake\.check.*)@conversifi\.io$)'
+      or coalesce(p_name, '') ~* '(^|\s)(test|tester|testerr+|testing|testttt|preview)(\s|$)';
 $$;
 
 create or replace function os.is_suppressed(p_email text, p_name text default null)

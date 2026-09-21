@@ -20,7 +20,7 @@ type Viewer = { workspaceId: string; userWorkspaceId?: string | null; email?: st
 
 // A link object (note target, participant, ...) is visible when it points at the viewer's own
 // person or company, or at nothing scoped at all.
-export const scopeLinkFilter = (filter: ScopedFilter | undefined, email: string, relations: ('person' | 'company')[]): ScopedFilter => {
+export const scopeLinkFilter = (filter: ScopedFilter | undefined, email: string, relations: string[]): ScopedFilter => {
   const unlinked: ScopedFilter = { and: relations.map((relation) => ({ [`${relation}Id`]: { is: 'NULL' } })) };
   const own: ScopedFilter = { or: [unlinked, ...relations.map((relation) => ({ [relation]: { closerEmail: { eq: email } } }))] };
   return filter && Object.keys(filter).length > 0 ? { and: [filter, own] } : own;

@@ -25,14 +25,17 @@ const SCOPED_ACTIONS: Record<string, ScopeAction> = {
 
 // Which scoped relations each link object carries; a relation that does not exist on the object
 // would break the query, so the list is explicit.
-export const LINK_OBJECTS: Record<string, ('person' | 'company')[]> = {
+// Participants point at a person through a plain relation; the target objects use morph relations
+// named targetPerson / targetCompany / targetBooking (their id columns are targetPersonId and so on).
+const MORPH_LINKS = ['targetPerson', 'targetCompany', 'targetBooking'];
+export const LINK_OBJECTS: Record<string, string[]> = {
   messageParticipant: ['person'],
   calendarEventParticipant: ['person'],
-  timelineActivity: ['person', 'company'],
-  noteTarget: ['person', 'company'],
-  taskTarget: ['person', 'company'],
-  attachment: ['person', 'company'],
-  favorite: ['person', 'company'],
+  timelineActivity: MORPH_LINKS,
+  noteTarget: MORPH_LINKS,
+  taskTarget: MORPH_LINKS,
+  attachment: MORPH_LINKS,
+  favorite: MORPH_LINKS,
 };
 const LINK_ACTIONS: Record<string, ScopeAction> = { findMany: 'link', findOne: 'link', groupBy: 'link' };
 

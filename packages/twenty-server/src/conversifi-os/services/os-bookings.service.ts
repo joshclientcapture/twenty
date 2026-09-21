@@ -86,6 +86,12 @@ export const bookingTypeFor = (eventName: string | null, eventTypeUri: string | 
   return 'OTHER';
 };
 
+// Until the /calendar route became DFY-only on 18 Sep 2026, every Discovery booking was pitched the
+// software, so those calls are demos; Discovery from that day on is the DFY call. Agency demos are unchanged.
+const DFY_CUTOVER = new Date('2026-09-18T00:00:00Z').getTime();
+const historicallyDemo = (type: BookingType, bookedAt: string | Date | null): BookingType =>
+  type === 'DISCOVERY' && bookedAt && new Date(bookedAt).getTime() < DFY_CUTOVER ? 'DEMO' : type;
+
 // Only sales calls get a show / no-show verdict; support calls have no recording to judge them by
 // and a webinar seat is judged by the webinar's own attendance events.
 const SUPPORT_TYPES = new Set<BookingType>(['SETUP_CALL', 'ONBOARDING', 'DIAGNOSTICS', 'FEEDBACK']);
@@ -243,7 +249,7 @@ export class OsBookingsService {
     const now = Date.now();
     const records = rows.map((row) => {
       const verdict = verdictByUri.get(row.uri);
-      const type = bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes);
+      const type = historicallyDemo(bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes), row.booked_at);
       // The closer dashboard's verdict is about sales calls; a closer's own set-up call is still support.
       const status = (!SUPPORT_TYPES.has(type) && verdict && DASHBOARD_STATUS[verdict.status]) || fallbackStatusFor(row, type, now, webinarAttendance);
       const recordingUrl = verdict?.recording ?? row.recording_url;

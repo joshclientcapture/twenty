@@ -19,15 +19,18 @@ import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.serv
 import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
 import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
+import { UserRoleModule } from 'src/engine/metadata-modules/user-role/user-role.module';
+import { CLOSER_SCOPE_HOOKS } from 'src/conversifi-os/query-hooks/closer-scope.pre-query-hooks';
+import { CloserScopeService } from 'src/conversifi-os/query-hooks/closer-scope.service';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 
 // Conversifi's ops analytics (the former "OS" Supabase project), served from the `os` schema
 // of the core database. Kept outside `engine/` so upstream merges never touch it.
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
-  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule],
+  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, UserRoleModule],
   controllers: [OsController, OsIntakeController, OsCalendlyWebhookController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, CloserScopeService, ...CLOSER_SCOPE_HOOKS],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
 })
 export class ConversifiOsModule {}

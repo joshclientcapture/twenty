@@ -99,9 +99,10 @@ const PAGE = 200;
 const BATCH = 100;
 
 export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus'>): LifecycleStage => {
-  if (person.notInterested) return 'NOT_INTERESTED';
+  // Money wins over a mood: a paying customer flagged not interested is still a customer.
   if ((person.ghlTags ?? []).includes('DFY_CLIENT') || person.stage === 'DFY_CLIENT') return 'DFY_CLIENT';
   if (person.payingSince && (!person.churnedAt || person.payingSince > person.churnedAt)) return 'PAYING';
+  if (person.notInterested) return 'NOT_INTERESTED';
   if (person.churnedAt) return 'CHURNED';
   // A live trial stays a trial even with a call booked; the call is part of the trial.
   if (person.trialStartedAt && !person.trialEndedAt) return 'TRIAL';

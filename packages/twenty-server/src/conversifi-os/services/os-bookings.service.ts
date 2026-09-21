@@ -117,6 +117,23 @@ const findDuplicateBookings = (rows: BookingSourceRow[]) => {
   return duplicates;
 };
 
+type MirroredBooking = {
+  name: string; calendlyUri: string; startsAt: string | Date | null; endsAt: string | Date | null; bookedAt: string | Date | null; rescheduledToAt: string | Date | null;
+  bookingType: string | null; status: string | null; trialed: boolean | null; overridden: boolean | null; closer: string | null; closerId: string | null;
+  inviteeName: string | null; inviteeEmail: string | null; inviteeFirstName: string | null; inviteeTimezone: string | null; closerEmail: string | null; eventName: string | null;
+  personId: string | null; rescheduleLink: { primaryLinkUrl: string | null } | null; cancelLink: { primaryLinkUrl: string | null } | null;
+  recording: { primaryLinkUrl: string | null } | null; joinLink: { primaryLinkUrl: string | null } | null;
+};
+const instant = (value: string | Date | null | undefined) => (value ? new Date(value).toISOString() : '');
+const link = (value: { primaryLinkUrl: string | null } | null | undefined) => value?.primaryLinkUrl ?? '';
+// What a booking looks like once written, so a candidate row and a mirrored row compare equal.
+const fingerprintOf = (booking: MirroredBooking) => JSON.stringify([
+  booking.name, instant(booking.startsAt), instant(booking.endsAt), instant(booking.bookedAt), instant(booking.rescheduledToAt),
+  booking.bookingType ?? '', booking.status ?? '', booking.trialed ?? false, booking.overridden ?? false, booking.closer ?? '', booking.closerId ?? '',
+  booking.inviteeName ?? '', booking.inviteeEmail ?? '', booking.inviteeFirstName ?? '', booking.inviteeTimezone ?? '', booking.closerEmail ?? '', booking.eventName ?? '',
+  booking.personId ?? '', link(booking.rescheduleLink), link(booking.cancelLink), link(booking.recording), link(booking.joinLink),
+]);
+
 // Same rule as os.closer_call_rows (the closer dashboard) for bookings whose host is not a closer:
 // in progress until 30 minutes after the scheduled end, then the outcome by booking type.
 const GRACE_MS = 30 * 60 * 1000;
@@ -266,9 +283,13 @@ export class OsBookingsService {
       };
     });
 
+    // Only rows that actually differ are written: every upsert is a record update that fans out to
+    // timeline entries and workflow triggers, and 2,000 untouched bookings an hour was pure noise.
+    const existing = await this.existingFingerprints(fromDate);
+    const changed = records.filter((record) => existing.get(record.calendlyUri) !== fingerprintOf(record));
     let written = 0;
-    for (let offset = 0; offset < records.length; offset += RECORD_BATCH_SIZE) {
-      const batch = records.slice(offset, offset + RECORD_BATCH_SIZE);
+    for (let offset = 0; offset < changed.length; offset += RECORD_BATCH_SIZE) {
+      const batch = changed.slice(offset, offset + RECORD_BATCH_SIZE);
       await this.twentyApi.records(
         `mutation UpsertBookings($data: [BookingCreateInput!]!) { createBookings(data: $data, upsert: true) { id } }`,
         { data: batch },
@@ -285,7 +306,29 @@ export class OsBookingsService {
       );
       removed += result.deleteBookings.length;
     }
-    return { bookings: written, linkedToPeople: records.filter((record) => record.personId).length, removed, windowDays };
+    return { bookings: records.length, written, unchanged: records.length - changed.length, linkedToPeople: records.filter((record) => record.personId).length, removed, windowDays };
+  }
+
+  // The mirrored bookings as Twenty holds them now, reduced to the same shape the mirror writes.
+  private async existingFingerprints(fromDate: string): Promise<Map<string, string>> {
+    const fingerprints = new Map<string, string>();
+    let after: string | null = null;
+    for (;;) {
+      const result: { bookings: { edges: { node: MirroredBooking }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
+        `query MirroredBookings($after: String, $from: DateTime!) {
+           bookings(first: 200, after: $after, filter: { startsAt: { gte: $from } }) {
+             edges { node { name calendlyUri startsAt endsAt bookedAt rescheduledToAt bookingType status trialed overridden closer closerId
+                            inviteeName inviteeEmail inviteeFirstName inviteeTimezone closerEmail eventName personId
+                            rescheduleLink { primaryLinkUrl } cancelLink { primaryLinkUrl } recording { primaryLinkUrl } joinLink { primaryLinkUrl } } }
+             pageInfo { hasNextPage endCursor }
+           }
+         }`,
+        { after, from: new Date(fromDate).toISOString() },
+      );
+      for (const { node } of result.bookings.edges) fingerprints.set(node.calendlyUri, fingerprintOf(node));
+      if (!result.bookings.pageInfo.hasNextPage) return fingerprints;
+      after = result.bookings.pageInfo.endCursor;
+    }
   }
 
   // A lead who books with a different address than the one they typed in the form minutes earlier

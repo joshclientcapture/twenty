@@ -1207,6 +1207,7 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                       kpi={{
                         label: 'Earned',
                         value: fmtUsd2(comm.earned),
+                        delta: `${comm.payments} payments`,
                         to: `${recordsBase}sales&${repQ}`,
                       }}
                     />

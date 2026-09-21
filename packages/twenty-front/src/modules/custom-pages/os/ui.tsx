@@ -319,6 +319,8 @@ export const StyledTile = styled.div`
   div[data-delta] {
     font-size: ${t.font.size.xs};
     color: ${t.font.color.tertiary};
+    /* always takes its line, so a tile without a sub-line keeps its value level with its neighbours */
+    min-height: 1.4em;
   }
   div[data-delta='positive'] {
     color: ${POSITIVE};
@@ -354,7 +356,7 @@ export const KpiTile = ({ kpi }: { kpi: Kpi }) => {
       </div>
       {/* '' keeps the attribute present (so [data-value] styles apply) when there is no tone */}
       <div data-value={kpi.valueTone ?? ''}>{kpi.value}</div>
-      {kpi.delta !== undefined && <div data-delta={kpi.tone ?? ''}>{kpi.delta}</div>}
+      <div data-delta={kpi.tone ?? ''}>{kpi.delta ?? ''}</div>
     </StyledTile>
   );
   return href ? <StyledTileLink to={href}>{tile}</StyledTileLink> : tile;

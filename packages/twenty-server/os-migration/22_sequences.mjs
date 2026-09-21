@@ -174,6 +174,21 @@ const guardedChain = (personId, items, guard) => {
 };
 
 // ---------- booking time helper (code step) ----------
+// Guards against bulk enrolment: a backfill, a calendar remap or a rule change rewrites hundreds
+// of records at once and every one of them fires the trigger. Only an event that happened in the
+// last N hours is worth a sequence; anything older is history being tidied.
+const RECENT_CODE = String.raw`
+export const main = async (params) => {
+  const at = params.at ? new Date(params.at).getTime() : NaN;
+  const hours = Number(params.hours) || 48;
+  const now = Date.now();
+  const recent = Number.isFinite(at) && now - at <= hours * 3600000 && at - now <= 3600000;
+  return { recent: recent ? 'yes' : 'no' };
+};
+`;
+const recentCheck = (at, hours) => code('Recent event?', 'RECENT', RECENT_CODE, { at, hours }, { recent: 'yes' });
+const isRecent = () => condition('{{RECENT.recent}}', 'TEXT', 'IS', 'yes');
+
 const BOOKING_TIME_CODE = String.raw`
 export const main = async (params) => {
   const booking = params;
@@ -314,7 +329,8 @@ const noShowWorkflow = () => {
     name: 'No-show follow-up (16 emails)',
     description: 'Ported from GHL "No Show Sequence" + n8n templates. Starts when a Demo / Discovery / Agency demo booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer\'s mailbox. Stops as soon as the person trials, pays, rebooks, shows, becomes a DFY client, opts out or is marked not interested.',
     trigger: trigger.updated('booking', ['status']),
-    steps: [branch('No-show on a sales call?', [
+    steps: [recentCheck('{{trigger.properties.after.startsAt}}', 72), branch('No-show on a sales call?', [
+      isRecent(),
       condition('{{trigger.properties.after.status}}', 'SELECT', 'IS', 'NO_SHOW'),
       condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY'),
       condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'WEBINAR'),
@@ -325,7 +341,7 @@ const noShowWorkflow = () => {
       condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'NEXT_STEPS'),
       condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'OTHER'),
     ], body)],
-    testPayload: (personId) => ({ id: randomUUID(), status: 'NO_SHOW', personId, bookingType: 'DEMO', closerEmail: 'sales@conversifi.io' }),
+    testPayload: (personId) => ({ id: randomUUID(), status: 'NO_SHOW', personId, bookingType: 'DEMO', closerEmail: 'sales@conversifi.io', startsAt: new Date(Date.now() - 3600000).toISOString() }),
   };
 };
 
@@ -336,7 +352,7 @@ const personTriggered = ({ key, name, description, field, firstCheck, items, gua
     name: `${name} · on ${event}`,
     description,
     trigger: event === 'created' ? trigger.created('person') : trigger.updated('person', [field]),
-    steps: [branch(firstCheck.name, firstCheck.conditions, guardedChain(T.id, items, guard))],
+    steps: [recentCheck(T.field(field), 48), branch(firstCheck.name, [isRecent(), ...firstCheck.conditions], guardedChain(T.id, items, guard))],
     testPayload: (personId) => ({ id: personId, [field]: wantValue ? new Date().toISOString() : null }),
     key: `${key}-${event}`,
   }));

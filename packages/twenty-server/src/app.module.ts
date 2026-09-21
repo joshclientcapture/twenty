@@ -88,7 +88,9 @@ const MIGRATED_REST_METHODS = [
 export class AppModule {
   private static getConditionalModules(): DynamicModule[] {
     const modules: DynamicModule[] = [];
-    const frontPath = join(__dirname, 'front');
+    // Conversifi: FRONT_PATH lets the built front live outside dist, so a server build (which wipes
+    // dist) never takes the site down while it runs.
+    const frontPath = process.env.FRONT_PATH?.trim() || join(__dirname, 'front');
 
     if (existsSync(frontPath)) {
       modules.push(

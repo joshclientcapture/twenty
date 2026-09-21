@@ -535,6 +535,14 @@ export const BookingsCalendar = () => {
   const colorFor = (booking: BookingRecord) =>
     colorByCloserId.get(booking.closerId) ??
     'var(--t-font-color-light, #9ca3af)';
+  // A closer sees only their own bookings, so a chip for a colleague would only ever empty the grid.
+  const closersInView = useMemo(
+    () =>
+      activeClosers.filter((closer) =>
+        records.some((booking) => booking.closerId === closer.id),
+      ),
+    [activeClosers, records],
+  );
 
   const visible = useMemo(
     () =>
@@ -688,7 +696,7 @@ export const BookingsCalendar = () => {
               title="All closers"
               onClick={() => setCloserFilter('all')}
             />
-            {activeClosers.map((closer) => (
+            {closersInView.map((closer) => (
               <Button
                 key={closer.id}
                 size="small"

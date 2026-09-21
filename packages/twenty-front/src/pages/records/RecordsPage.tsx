@@ -33,6 +33,7 @@ import {
   setSetterRecruiter,
   type RecordRow,
 } from '@/custom-pages/os/data';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 type Col = {
   key: string;
@@ -388,7 +389,7 @@ const SortMark = ({ on, dir }: { on: boolean; dir: 'asc' | 'desc' }) => (
   </span>
 );
 
-export const RecordsPage = () => {
+const RecordsPageContent = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const type = params.get('type') ?? 'calls';
@@ -828,3 +829,6 @@ export const RecordsPage = () => {
     </StyledPage>
   );
 };
+
+// The ledger drill-down shows payments and commission; admins only.
+export const RecordsPage = () => (useIsOsAdmin() ? <RecordsPageContent /> : <OsRestricted title="Records" />);

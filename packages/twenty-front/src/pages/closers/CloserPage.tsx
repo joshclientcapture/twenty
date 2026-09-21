@@ -78,6 +78,7 @@ import {
   findOwnCloser,
   setCloserCall,
 } from '@/custom-pages/os/closers';
+import { OsRestricted } from '@/custom-pages/os/OsRestricted';
 
 const thisMonth = new Date().toISOString().slice(0, 7);
 const moLabel = (mk: string) => {
@@ -603,7 +604,9 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
       </StyledPage>
     );
   }
-  if (closer && restricted) {
+  // A member who is no closer at all gets the plain lock; a closer gets a link to their own page.
+  if (closer && restricted && !ownCloser) return <OsRestricted title={closer.name} />;
+  if (closer && restricted && ownCloser) {
     return (
       <StyledPage>
         <PageHeader title={closer.name} Icon={IconUser} />
@@ -611,8 +614,8 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
           <StyledContent>
             <StyledNotice>
               You can only view your own page.{' '}
-              <StyledTextLink to={`/closers/${ownCloser!.id}`}>
-                Open {ownCloser!.name}
+              <StyledTextLink to={`/closers/${ownCloser.id}`}>
+                Open {ownCloser.name}
               </StyledTextLink>
             </StyledNotice>
           </StyledContent>
@@ -960,15 +963,19 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                     }}
                   />
                 </StyledField>
-                <StyledDivider />
-                <Button
-                  size="small"
-                  variant="secondary"
-                  Icon={IconRefresh}
-                  title={fathomBusy ? 'Syncing…' : 'Refresh Fathom'}
-                  disabled={fathomBusy}
-                  onClick={refreshFathomNow}
-                />
+                {isAdmin && (
+                  <>
+                    <StyledDivider />
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      Icon={IconRefresh}
+                      title={fathomBusy ? 'Syncing…' : 'Refresh Fathom'}
+                      disabled={fathomBusy}
+                      onClick={refreshFathomNow}
+                    />
+                  </>
+                )}
               </StyledRow>
 
               <StyledStatStrip>

@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { CLOSER_SCOPED_OBJECTS, CloserScopeService } from 'src/conversifi-os/query-hooks/closer-scope.service';
+
 import { FieldMetadataType, type ObjectRecord } from 'twenty-shared/types';
 import { isDefined, isValidUuid } from 'twenty-shared/utils';
 import { type FindOptionsRelations, type ObjectLiteral } from 'typeorm';
@@ -40,6 +42,13 @@ const EMPTY_RELATION_SENTINEL_RECORD_ID =
   '00000000-0000-0000-0000-000000000000';
 const NESTED_RELATION_QUERY_MAX_CONCURRENCY = 4;
 
+// Conversifi: the SQL fragment that keeps a closer inside their own rows when a relation targets
+// a scoped object; a no-op condition otherwise so the query builders stay uniform.
+const closerScopeSqlFor = (targetObjectNameSingular: string, closerEmail: string | null | undefined): { sql: string; params: Record<string, string> } =>
+  closerEmail && (CLOSER_SCOPED_OBJECTS as readonly string[]).includes(targetObjectNameSingular)
+    ? { sql: `"${targetObjectNameSingular}"."closerEmail" = :closerScopeEmail`, params: { closerScopeEmail: closerEmail } }
+    : { sql: '1 = 1', params: {} };
+
 type ProcessNestedRelationsArgs<T extends ObjectRecord = ObjectRecord> = {
   flatObjectMetadataMaps: FlatEntityMaps<FlatObjectMetadata>;
   flatFieldMetadataMaps: FlatEntityMaps<OrmFlatFieldMetadata>;
@@ -56,17 +65,25 @@ type ProcessNestedRelationsArgs<T extends ObjectRecord = ObjectRecord> = {
   repository?: WorkspaceRepository;
   // oxlint-disable-next-line typescript/no-explicit-any
   selectedFields: Record<string, any>;
+  closerEmail?: string | null;
 };
 
 @Injectable()
 export class ProcessNestedRelationsHelper {
-  constructor(private readonly workspaceOrmManager: WorkspaceOrmManager) {}
+  constructor(
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
+    // Conversifi: related people, bookings and companies are filtered for closers as well,
+    // otherwise a company's people or a participant's person would bypass the row scoping.
+    private readonly closerScope: CloserScopeService,
+  ) {}
 
   public async processNestedRelations<T extends ObjectRecord = ObjectRecord>(
     args: ProcessNestedRelationsArgs<T>,
   ): Promise<void> {
+    const closerEmail = await this.closerScope.scopeEmail(args.authContext);
+
     await this.processNestedRelationsWithLimiter(
-      args,
+      { ...args, closerEmail },
       createConcurrencyLimiter(NESTED_RELATION_QUERY_MAX_CONCURRENCY),
     );
   }
@@ -88,12 +105,14 @@ export class ProcessNestedRelationsHelper {
       rolePermissionConfig,
       repository,
       selectedFields,
+      closerEmail,
     }: ProcessNestedRelationsArgs<T>,
     relationQueryLimiter: ConcurrencyLimiter,
   ): Promise<void> {
     const processRelationTasks = Object.entries(relations).map(
       ([sourceFieldName, nestedRelations]) =>
         this.processRelation({
+          closerEmail,
           flatObjectMetadataMaps,
           flatFieldMetadataMaps,
           parentObjectMetadataItem,
@@ -134,6 +153,7 @@ export class ProcessNestedRelationsHelper {
     repository,
     relationQueryLimiter,
     selectedFields,
+    closerEmail,
   }: {
     flatObjectMetadataMaps: FlatEntityMaps<FlatObjectMetadata>;
     flatFieldMetadataMaps: FlatEntityMaps<OrmFlatFieldMetadata>;
@@ -146,6 +166,7 @@ export class ProcessNestedRelationsHelper {
     aggregate: Record<string, AggregationField>;
     limit: number;
     authContext: WorkspaceAuthContext;
+    closerEmail?: string | null;
     useReplica: boolean;
     rolePermissionConfig?: RolePermissionConfig;
     repository?: WorkspaceRepository;
@@ -277,6 +298,7 @@ export class ProcessNestedRelationsHelper {
           aggregate,
           sourceFieldName,
           targetObjectNameSingular,
+          closerEmail,
         }),
       );
 
@@ -314,6 +336,7 @@ export class ProcessNestedRelationsHelper {
           rolePermissionConfig,
           repository,
           selectedFields,
+          closerEmail,
         },
         relationQueryLimiter,
       );
@@ -383,6 +406,7 @@ export class ProcessNestedRelationsHelper {
     aggregate,
     sourceFieldName,
     targetObjectNameSingular,
+    closerEmail,
   }: {
     referenceQueryBuilder: WorkspaceSelectQueryBuilder;
     targetObjectRepository: WorkspaceRepository;
@@ -396,11 +420,13 @@ export class ProcessNestedRelationsHelper {
     aggregate: Record<string, any>;
     sourceFieldName: string;
     targetObjectNameSingular: string;
+    closerEmail?: string | null;
     // oxlint-disable-next-line typescript/no-explicit-any
   }): Promise<{ relationResults: any[]; relationAggregatedFieldsResult: any }> {
     if (ids.length === 0) {
       return { relationResults: [], relationAggregatedFieldsResult: {} };
     }
+    const closerScopeSql = closerScopeSqlFor(targetObjectNameSingular, closerEmail);
 
     const aggregateForRelation = aggregate[sourceFieldName];
     // oxlint-disable-next-line typescript/no-explicit-any
@@ -418,6 +444,7 @@ export class ProcessNestedRelationsHelper {
       const aggregatedFieldsValues = await aggregateQueryBuilder
         .addSelect(column, column.replace(/["']/g, ''))
         .where(`${column} IN (:...ids)`, { ids })
+        .andWhere(closerScopeSql.sql, closerScopeSql.params)
         .groupBy(column)
         .getRawMany();
 
@@ -446,6 +473,7 @@ export class ProcessNestedRelationsHelper {
       const result = await referenceQueryBuilder
         .setFindOptions(findOptionsWithJoinColumn)
         .where(`${column} IN (:...ids)`, { ids })
+        .andWhere(closerScopeSql.sql, closerScopeSql.params)
         .take(perParentLimit * parentRecordsCount)
         .getMany();
 
@@ -459,6 +487,7 @@ export class ProcessNestedRelationsHelper {
         column,
         ids,
         perParentLimit,
+        closerScopeSql,
       });
 
     const recordIdsToHydrate =
@@ -469,6 +498,7 @@ export class ProcessNestedRelationsHelper {
     const result = await referenceQueryBuilder
       .setFindOptions(findOptionsWithJoinColumn)
       .where(`id IN (:...recordIdsToHydrate)`, { recordIdsToHydrate })
+      .andWhere(closerScopeSql.sql, closerScopeSql.params)
       .getMany();
 
     return { relationResults: result, relationAggregatedFieldsResult };
@@ -480,12 +510,14 @@ export class ProcessNestedRelationsHelper {
     column,
     ids,
     perParentLimit,
+    closerScopeSql,
   }: {
     targetObjectRepository: WorkspaceRepository;
     targetObjectNameSingular: string;
     column: string;
     ids: string[];
     perParentLimit: number;
+    closerScopeSql: { sql: string; params: Record<string, string> };
   }): Promise<string[]> {
     const sanitizedIds = ids.filter(isValidUuid);
 
@@ -496,7 +528,8 @@ export class ProcessNestedRelationsHelper {
     const perParentRecordIdsQueryBuilder = targetObjectRepository
       .createQueryBuilder(targetObjectNameSingular)
       .select(`"${targetObjectNameSingular}"."id"`, 'id')
-      .where(`${column} = "lateralParents"."parentId"`);
+      .where(`${column} = "lateralParents"."parentId"`)
+      .andWhere(closerScopeSql.sql, closerScopeSql.params);
 
     perParentRecordIdsQueryBuilder.applyRowLevelPermissions();
 

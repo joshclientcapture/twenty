@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+
+import { CloserScopeModule } from 'src/conversifi-os/query-hooks/closer-scope.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { CommonArgsProcessors } from 'src/engine/api/common/common-args-processors/common-args-processors';
@@ -30,6 +32,7 @@ import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache
 
 @Module({
   imports: [
+    CloserScopeModule,
     WorkspaceQueryHookModule,
     WorkspaceQueryRunnerModule,
     PermissionsModule,

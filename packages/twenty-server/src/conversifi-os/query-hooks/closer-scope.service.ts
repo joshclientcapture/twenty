@@ -18,6 +18,14 @@ const CACHE_MS = 60 * 1000;
 type ScopedFilter = Record<string, unknown>;
 type Viewer = { workspaceId: string; userWorkspaceId?: string | null; email?: string | null };
 
+// A link object (note target, participant, ...) is visible when it points at the viewer's own
+// person or company, or at nothing scoped at all.
+export const scopeLinkFilter = (filter: ScopedFilter | undefined, email: string, relations: ('person' | 'company')[]): ScopedFilter => {
+  const unlinked: ScopedFilter = { and: relations.map((relation) => ({ [`${relation}Id`]: { is: 'NULL' } })) };
+  const own: ScopedFilter = { or: [unlinked, ...relations.map((relation) => ({ [relation]: { closerEmail: { eq: email } } }))] };
+  return filter && Object.keys(filter).length > 0 ? { and: [filter, own] } : own;
+};
+
 // Adds "closer email is the viewer's" to whatever filter the query already carries.
 export const scopeFilter = (filter: ScopedFilter | undefined, email: string): ScopedFilter => {
   const own: ScopedFilter = { closerEmail: { eq: email } };

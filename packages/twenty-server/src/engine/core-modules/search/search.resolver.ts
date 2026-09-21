@@ -59,6 +59,9 @@ export class SearchResolver {
     const includedObjectNameSingulars = closerEmail
       ? (requestedIncluded?.length ? requestedIncluded : [...CLOSER_SCOPED_OBJECTS]).filter((name) => (CLOSER_SCOPED_OBJECTS as readonly string[]).includes(name))
       : requestedIncluded;
+    if (closerEmail && includedObjectNameSingulars?.length === 0) {
+      return { edges: [], pageInfo: { hasNextPage: false, endCursor: null } };
+    }
 
     const { flatObjectMetadataMaps, flatFieldMetadataMaps } =
       await this.workspaceManyOrAllFlatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps(

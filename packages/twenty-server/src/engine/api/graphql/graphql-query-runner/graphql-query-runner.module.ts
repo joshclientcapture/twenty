@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+
+import { CloserScopeModule } from 'src/conversifi-os/query-hooks/closer-scope.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ProcessNestedRelationsHelper } from 'src/engine/api/common/common-nested-relations-processor/process-nested-relations.helper';
@@ -15,6 +17,7 @@ import { ViewModule } from 'src/engine/metadata-modules/view/view.module';
 
 @Module({
   imports: [
+    CloserScopeModule,
     WorkspaceQueryHookModule,
     WorkspaceQueryRunnerModule,
     PermissionsModule,

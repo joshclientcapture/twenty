@@ -7,10 +7,11 @@ import { companyNameFor, domainOf } from 'src/conversifi-os/services/os-contacts
 import { selectOptions, TwentyApiService, type WantedField } from 'src/conversifi-os/services/twenty-api.service';
 
 export type LifecycleStage =
-  | 'LEAD' | 'BOOKED' | 'SHOWED' | 'NO_SHOW' | 'SIGNED_UP' | 'TRIAL' | 'TRIAL_ENDED' | 'PAYING' | 'CHURNED' | 'DFY_CLIENT' | 'NOT_INTERESTED';
+  | 'LEAD' | 'WEBINAR' | 'BOOKED' | 'SHOWED' | 'NO_SHOW' | 'SIGNED_UP' | 'TRIAL' | 'TRIAL_ENDED' | 'PAYING' | 'CHURNED' | 'DFY_CLIENT' | 'NOT_INTERESTED';
 
 export const STAGE_OPTIONS: { value: LifecycleStage; label: string; color: string }[] = [
   { value: 'LEAD', label: 'Lead', color: 'gray' },
+  { value: 'WEBINAR', label: 'Webinar', color: 'pink' },
   { value: 'BOOKED', label: 'Call booked', color: 'blue' },
   { value: 'SHOWED', label: 'Showed', color: 'sky' },
   { value: 'NO_SHOW', label: 'No show', color: 'red' },
@@ -94,6 +95,7 @@ type PersonRow = {
   lastBookingAt: string | null;
   lastBookingStatus: string | null;
   lastBookingType: string | null;
+  webinarStage: string | null;
   nextBookingAt: string | null;
 };
 
@@ -106,7 +108,7 @@ type StripeFacts = { email: string; signed_up_at: string | null; trial_started_a
 const PAGE = 200;
 const BATCH = 100;
 
-export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus' | 'dfyPayingSince' | 'dfyChurnedAt'>): LifecycleStage => {
+export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus' | 'dfyPayingSince' | 'dfyChurnedAt' | 'webinarStage'>): LifecycleStage => {
   // Money wins over a mood: a paying customer flagged not interested is still a customer.
   // A live DFY subscription on Whop makes a DFY client; the manual flag and the old tag still count.
   if (person.dfyPayingSince && !person.dfyChurnedAt) return 'DFY_CLIENT';
@@ -123,6 +125,8 @@ export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | '
   if (person.signedUpAt) return 'SIGNED_UP';
   if (person.lastBookingStatus === 'SHOWED') return 'SHOWED';
   if (person.lastBookingStatus === 'NO_SHOW') return 'NO_SHOW';
+  // A webinar seat is warmer than a cold lead but says nothing about a sales call.
+  if (person.webinarStage) return 'WEBINAR';
   return 'LEAD';
 };
 
@@ -220,7 +224,8 @@ export class OsLifecycleService {
         closer: closerName,
         closerEmail: closerName ? closersByName.get(closerName) ?? '' : '',
       };
-      desired.stage = stageFor({ ...person, ...desired, lastBookingStatus: salesBookingStatus, nextBookingAt: nextSalesBooking?.startsAt ?? null });
+      const webinarBooked = own.length ? own.some((booking) => booking.bookingType === 'WEBINAR') : person.lastBookingType === 'WEBINAR';
+      desired.stage = stageFor({ ...person, ...desired, lastBookingStatus: salesBookingStatus, nextBookingAt: nextSalesBooking?.startsAt ?? null, webinarStage: person.webinarStage || (webinarBooked ? 'REGISTERED' : null) });
       desired.lastActivityAt = [
         person.createdAt, person.lastActivityAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
         latest((fact) => fact.last_event_at),
@@ -268,7 +273,7 @@ export class OsLifecycleService {
       const result: { people: { edges: { node: PersonRow; cursor: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecyclePeople($after: String) {
            people(first: ${PAGE}, after: $after) {
-             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer closerEmail dfyPayingSince dfyChurnedAt dfyPlan ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
+             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer closerEmail dfyPayingSince dfyChurnedAt dfyPlan ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt webinarStage } }
              pageInfo { hasNextPage endCursor }
            }
          }`,

@@ -59,6 +59,8 @@ export const LIFECYCLE_FIELDS: WantedField[] = [
   { name: 'lastBookingAt', label: 'Last call at', type: 'DATE_TIME', icon: 'IconCalendarEvent' },
   { name: 'lastBookingStatus', label: 'Last call outcome', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: selectOptions(BOOKING_STATUS_OPTIONS) } },
   { name: 'lastBookingType', label: 'Last call type', type: 'SELECT', icon: 'IconTag', extra: { options: selectOptions(BOOKING_TYPE_OPTIONS) } },
+  // The closer's login email, so a record-level permission can compare it with the viewer's own.
+  { name: 'closerEmail', label: 'Closer email', type: 'TEXT', icon: 'IconMail' },
   { name: 'nextBookingAt', label: 'Next call at', type: 'DATE_TIME', icon: 'IconCalendarClock' },
   { name: 'webinarOfferLink', label: 'Webinar offer link', type: 'TEXT', icon: 'IconLink' },
   // Latest of: became a lead, form, booking made, signup, trial, payment, churn. The People list sorts on it.
@@ -73,6 +75,7 @@ type PersonRow = {
   emails: { primaryEmail: string | null; additionalEmails: string[] | null };
   companyId: string | null;
   closer: string | null;
+  closerEmail: string | null;
   ghlTags: string[] | null;
   notInterested: boolean | null;
   stage: string | null;
@@ -87,7 +90,7 @@ type PersonRow = {
   nextBookingAt: string | null;
 };
 
-type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null };
+type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null; closerId: string | null; closerEmail: string | null };
 const SALES_BOOKING_TYPES = new Set<string>(['DISCOVERY', 'DEMO', 'AGENCY_DEMO', 'NEXT_STEPS']);
 
 type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null; has_live_subscription: boolean };
@@ -152,6 +155,10 @@ export class OsLifecycleService {
       if (domain) wantedDomains.add(domain);
     }
     const companyIdByDomain = await this.upsertCompanies([...wantedDomains]);
+    const closerRows: { name: string; email: string | null }[] = await this.dataSource.query(
+      "select name, lower(coalesce(login_email, calendly_host_email)) as email from os.closers where active",
+    );
+    const closersByName = new Map(closerRows.map((row) => [row.name, row.email ?? '']));
 
     const patches: Record<string, unknown>[] = [];
     let companiesLinked = 0;
@@ -169,6 +176,8 @@ export class OsLifecycleService {
       const lastSalesBooking = past.find((booking) => SALES_BOOKING_TYPES.has(booking.bookingType)) ?? null;
       const nextSalesBooking = future.find((booking) => SALES_BOOKING_TYPES.has(booking.bookingType)) ?? null;
       const salesBookingStatus = own.length ? (lastSalesBooking?.status ?? null) : (SALES_BOOKING_TYPES.has(person.lastBookingType ?? '') ? person.lastBookingStatus : null);
+      const salesBookingWithCloser = [lastSalesBooking, nextSalesBooking].find((booking) => booking?.closerId) ?? null;
+      const closerName = (person.closer && closersByName.has(person.closer) ? person.closer : null) ?? salesBookingWithCloser?.closer ?? '';
 
       // An address Stripe only knows from a payment or the customers table carries no subscription
       // dates, so the end dates it does not have must not wipe what intake or the GHL import set.
@@ -186,7 +195,10 @@ export class OsLifecycleService {
         lastBookingStatus: lastBooking?.status ?? person.lastBookingStatus,
         lastBookingType: lastBooking?.bookingType ?? person.lastBookingType,
         nextBookingAt: future[0]?.startsAt ?? null,
-        closer: person.closer || (lastBooking ?? future[0])?.closer || person.closer,
+        // A closer comes from a sales call with a real closer behind it, never from a set-up call or a
+        // webinar seat; a name that is not a closer at all (a support host, a recruiter) is dropped.
+        closer: closerName,
+        closerEmail: closerName ? closersByName.get(closerName) ?? '' : '',
       };
       desired.stage = stageFor({ ...person, ...desired, lastBookingStatus: salesBookingStatus, nextBookingAt: nextSalesBooking?.startsAt ?? null });
       desired.lastActivityAt = [
@@ -233,7 +245,7 @@ export class OsLifecycleService {
       const result: { people: { edges: { node: PersonRow; cursor: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecyclePeople($after: String) {
            people(first: ${PAGE}, after: $after) {
-             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
+             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer closerEmail ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
              pageInfo { hasNextPage endCursor }
            }
          }`,
@@ -252,7 +264,7 @@ export class OsLifecycleService {
       const result: { bookings: { edges: { node: BookingRow }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecycleBookings($after: String) {
            bookings(first: ${PAGE}, after: $after, filter: { personId: { is: NOT_NULL } }) {
-             edges { node { personId startsAt bookedAt status bookingType closer } }
+             edges { node { personId startsAt bookedAt status bookingType closer closerId closerEmail } }
              pageInfo { hasNextPage endCursor }
            }
          }`,

@@ -605,7 +605,7 @@ const RevenuePageContent = () => {
                   kpi={{
                     label: 'DFY MRR',
                     value: fmtUsd(dfy.mrr),
-                    delta: 'Whop, not in ARR above',
+                    delta: 'Whop, included in ARR above',
                     valueTone: 'positive',
                   }}
                 />

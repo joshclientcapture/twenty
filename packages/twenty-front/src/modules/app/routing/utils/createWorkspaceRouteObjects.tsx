@@ -95,6 +95,12 @@ const SnakePage = lazy(() =>
   })),
 );
 
+const Game2048Page = lazy(() =>
+  import('~/pages/game2048/Game2048Page').then((module) => ({
+    default: module.Game2048Page,
+  })),
+);
+
 const NotFound = lazy(() =>
   import('~/pages/not-found/NotFound').then((module) => ({
     default: module.NotFound,
@@ -252,6 +258,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <SnakePage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Game2048,
+      element: (
+        <LazyRoute>
+          <Game2048Page />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

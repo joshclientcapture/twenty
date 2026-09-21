@@ -31,6 +31,7 @@ export enum AppPath {
 
   // Conversifi custom pages
   Snake = '/snake',
+  Game2048 = '/2048',
   Sales = '/sales',
   Records = '/records',
   Therapon = '/therapon',

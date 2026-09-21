@@ -1,5 +1,5 @@
 import { AppPath } from "twenty-shared/types";
-import { IconBuildingSkyscraper, IconPresentation, IconTrendingUp, IconUsers, type IconComponent } from "twenty-ui/icon";
+import { IconBuildingSkyscraper, IconPresentation, IconSquareNumber2, IconTrendingUp, IconUsers, type IconComponent } from "twenty-ui/icon";
 
 import { IconSnake } from "@/custom-pages/components/IconSnake";
 import { IconSales } from "@/custom-pages/os/IconSales";
@@ -42,6 +42,9 @@ export const CUSTOM_PAGE_SECTIONS: CustomPageSection[] = [
   {
     key: "games",
     title: "Games",
-    pages: [{ label: "Snake", path: AppPath.Snake, Icon: IconSnake as IconComponent }],
+    pages: [
+      { label: "Snake", path: AppPath.Snake, Icon: IconSnake as IconComponent },
+      { label: "2048", path: AppPath.Game2048, Icon: IconSquareNumber2 as IconComponent },
+    ],
   },
 ];

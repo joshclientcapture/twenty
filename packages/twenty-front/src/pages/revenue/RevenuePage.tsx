@@ -46,11 +46,13 @@ import { useConfirm } from '@/custom-pages/os/useConfirm';
 import {
   type Churn,
   type ChurnExclusion,
+  type DfyRevenue,
   type ChurnListRow,
   type ChurnMonth,
   fetchChurn,
   fetchChurnExclusions,
   fetchChurnList,
+  fetchDfyRevenue,
   fetchGoalTracker,
   fetchGrowth,
   fetchTrialForecast,
@@ -245,6 +247,7 @@ const ChurnTable = ({
 const RevenuePageContent = () => {
   const { confirm, ConfirmHost } = useConfirm('revenue');
   const [growth, setGrowth] = useState<Growth | null>(null);
+  const [dfy, setDfy] = useState<DfyRevenue | null>(null);
   const [churn, setChurn] = useState<Churn | null>(null);
   const [exclusions, setExclusions] = useState<ChurnExclusion[]>([]);
   const [goals, setGoals] = useState<GoalMonth[]>([]);
@@ -273,6 +276,9 @@ const RevenuePageContent = () => {
     fetchGrowth()
       .then(setGrowth)
       .catch((e) => setErr('Growth: ' + (e as Error).message));
+    fetchDfyRevenue()
+      .then(setDfy)
+      .catch(() => setDfy(null));
     loadChurn().catch((e) => setErr('Churn: ' + (e as Error).message));
     fetchGoalTracker()
       .then(setGoals)
@@ -592,6 +598,40 @@ const RevenuePageContent = () => {
                     </StyledCard>
                   ))}
             </StyledGrid6>
+
+            {dfy && (dfy.clients > 0 || dfy.collected > 0) && (
+              <StyledGrid4>
+                <KpiTile
+                  kpi={{
+                    label: 'DFY MRR',
+                    value: fmtUsd(dfy.mrr),
+                    delta: 'Whop, not in ARR above',
+                    valueTone: 'positive',
+                  }}
+                />
+                <KpiTile
+                  kpi={{
+                    label: 'DFY clients',
+                    value: String(dfy.clients),
+                    delta: 'live memberships',
+                  }}
+                />
+                <KpiTile
+                  kpi={{
+                    label: 'DFY collected',
+                    value: fmtUsd(dfy.collected),
+                    delta: 'lifetime',
+                  }}
+                />
+                <KpiTile
+                  kpi={{
+                    label: 'DFY this month',
+                    value: fmtUsd(dfy.collected_this_month),
+                    delta: 'cash in',
+                  }}
+                />
+              </StyledGrid4>
+            )}
 
             {/* ARR growth and projection */}
             <StyledCard>

@@ -53,6 +53,7 @@ export class OsWhopWebhookController {
     const data = (body?.data ?? {}) as Record<string, unknown>;
     if (event.startsWith('payment.')) {
       await this.whop.applyPayment(data as never);
+      await this.whop.mirrorToLedger();
       if (event === 'payment.succeeded' || event === 'payment.failed') this.ping(event, data).catch((error) => this.logger.warn(`whop discord ping failed: ${(error as Error).message}`));
     }
     else if (event.startsWith('membership.')) await this.whop.applyMembership(data as never);

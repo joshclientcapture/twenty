@@ -147,6 +147,13 @@ export async function fetchGrowth(): Promise<Growth> {
   return data as Growth;
 }
 
+export type DfyRevenue = { mrr: number; clients: number; collected: number; collected_this_month: number; monthly: Record<string, number> };
+export async function fetchDfyRevenue(): Promise<DfyRevenue> {
+  const { data, error } = await osClient.rpc("get_dfy_revenue");
+  if (error) throw error;
+  return data as DfyRevenue;
+}
+
 export type ChurnMonth = { month: string; start: number; new: number; churned: number; reactivated: number; net: number; churn_rate: number | null; churned_arr: number };
 export type Churn = { months: ChurnMonth[]; series: { month: string; rate: number | null }[] };
 export async function fetchChurn(): Promise<Churn> {

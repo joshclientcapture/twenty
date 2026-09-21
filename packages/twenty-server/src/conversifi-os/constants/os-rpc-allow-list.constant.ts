@@ -45,6 +45,7 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'get_customer_points',
   'get_customer_records',
   'get_dashboard_metrics',
+  'get_dfy_revenue',
   'get_disconnected_accounts',
   'get_goal_tracker',
   'get_growth',

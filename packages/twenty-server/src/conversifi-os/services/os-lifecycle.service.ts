@@ -333,7 +333,7 @@ export class OsLifecycleService {
         select lower(customer_email) as email from os.stripe_subscriptions where customer_email is not null
         union select lower(stripe_email) from os.conversifi_customers where stripe_email is not null
         union select lower(auth_email) from os.conversifi_customers where auth_email is not null
-        union select lower(email) from os.stripe_payments where email is not null
+        union select lower(email) from os.stripe_payments where email is not null and source = 'stripe'
       ),
       -- A customer often pays under a different address than the one they signed up with; the app's
       -- customers table knows both, so subscriptions and payments are also filed under the sign-up address.
@@ -355,10 +355,10 @@ export class OsLifecycleService {
       payments as (
         select email, min(created) as first_paid, max(created) as last_paid from (
           select lower(email) as email, created from os.stripe_payments
-          where paid and coalesce(amount_cents, 0) > 0 and lower(coalesce(status, '')) = 'succeeded' and email is not null
+          where source = 'stripe' and paid and coalesce(amount_cents, 0) > 0 and lower(coalesce(status, '')) = 'succeeded' and email is not null
           union all
           select a.auth_email, y.created from os.stripe_payments y join aliases a on a.stripe_email = lower(y.email)
-          where y.paid and coalesce(y.amount_cents, 0) > 0 and lower(coalesce(y.status, '')) = 'succeeded'
+          where y.source = 'stripe' and y.paid and coalesce(y.amount_cents, 0) > 0 and lower(coalesce(y.status, '')) = 'succeeded'
         ) paid group by 1
       )
       select e.email,

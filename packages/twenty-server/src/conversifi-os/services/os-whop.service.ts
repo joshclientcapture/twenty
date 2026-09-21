@@ -119,6 +119,13 @@ export class OsWhopService {
     }], ['id']);
   }
 
+  // Paid Whop payments join the Stripe payments table (source = 'whop') so the sales ledger, commission
+  // and Records see one list; the ledger is rebuilt right after so a new DFY sale is attributed at once.
+  async mirrorToLedger() {
+    await this.dataSource.query('select os.mirror_whop_payments()');
+    await this.dataSource.query('select os.refresh_sales_ledger()');
+  }
+
   // Full re-read of payments and memberships from the API; cheap at DFY volumes and it fills whatever
   // a missed webhook left out. Product titles come from the product list so the ledger can name them.
   async sync() {
@@ -153,6 +160,7 @@ export class OsWhopService {
     for (const membership of memberships) await this.applyMembership(withTitle(membership));
     const payments = await list<WhopPayment>('payments');
     for (const payment of payments) await this.applyPayment(withTitle(payment));
+    await this.mirrorToLedger();
     return { products: products.length, memberships: memberships.length, payments: payments.length };
   }
 }

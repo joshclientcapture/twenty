@@ -185,7 +185,7 @@ export class OsBookingsService {
        invitees as (
          select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled, max(cancel_reason) as cancel_reason,
                 max(uri) as invitee_uri, max(nullif(new_invitee_uri, '')) as new_invitee_uri,
-                bool_or(exists (select 1 from os.suppressed_emails s where s.email = lower(calendly_invitees.email))) as suppressed,
+                bool_or(os.is_suppressed(calendly_invitees.email, calendly_invitees.name)) as suppressed,
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
@@ -223,7 +223,7 @@ export class OsBookingsService {
       bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER'
       && !(row.status === 'canceled' && (row.cancel_reason ?? '').startsWith(DUPLICATE_CANCEL_REASON))
       && !duplicateUris.has(row.uri)
-      // A person deleted in the CRM takes their bookings with them.
+      // A person deleted in the CRM takes their bookings with them; test identities never get in.
       && !row.suppressed;
     const keptRows = allRows.filter(isKept);
     const staleUris = allRows.filter((row) => !isKept(row)).map((row) => row.uri);

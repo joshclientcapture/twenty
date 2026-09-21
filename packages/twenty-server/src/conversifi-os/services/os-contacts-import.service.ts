@@ -230,16 +230,25 @@ export const domainOf = (website: string | null, email: string) => {
   if (website) {
     try {
       const host = new URL(website.startsWith('http') ? website : `https://${website}`).hostname.replace(/^www\./, '').toLowerCase();
-      if (DOMAIN_PATTERN.test(host) && !/^[0-9.]+$/.test(host) && !FREE_MAIL_DOMAINS.has(host)) return host;
+      if (DOMAIN_PATTERN.test(host) && !/^[0-9.]+$/.test(host) && !isFreeMailHost(host)) return host;
     } catch {
       // fall back to the email domain
     }
   }
   const emailDomain = email.split('@')[1]?.toLowerCase() ?? '';
-  return DOMAIN_PATTERN.test(emailDomain) && !FREE_MAIL_DOMAINS.has(emailDomain) ? emailDomain : null;
+  return DOMAIN_PATTERN.test(emailDomain) && !isFreeMailHost(emailDomain) ? emailDomain : null;
 };
-export const companyNameFor = (companyName: string | null, domain: string) =>
-  companyName ?? domain.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+// A mistyped free-mail domain (gmail.om, yahoo.com.br, hotmail.co) is still not a company.
+const FREE_MAIL_STEM = /^(gmail|googlemail|yahoo|hotmail|outlook|live|icloud|aol|yopmail|protonmail|proton|msn|ymail)\.[a-z]{2,4}(\.[a-z]{2,3})?$/;
+export const isFreeMailHost = (host: string) => FREE_MAIL_DOMAINS.has(host) || FREE_MAIL_STEM.test(host);
+const nameFromDomain = (domain: string) => domain.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+// GHL exports carry its own field label ("Company Name; Acme"), URLs, phone numbers and placeholders
+// where a company name should be; anything that is not a name falls back to the domain.
+export const companyNameFor = (companyName: string | null, domain: string) => {
+  const cleaned = (companyName ?? '').replace(/^company name;?\s*/i, '').replace(/^https?:\/\/(www\.)?/i, '').replace(/^www\./i, '').replace(/\/+$/, '').trim();
+  if (!cleaned || /^[0-9 +()-]+$/.test(cleaned) || /^(-|\.|none|n\/?a|null|undefined|company name)$/i.test(cleaned)) return nameFromDomain(domain);
+  return cleaned;
+};
 
 const leadSourceFor = (row: CandidateRow): string => {
   const tags = new Set(row.ghl_tags ?? []);
@@ -523,6 +532,7 @@ export class OsContactsImportService {
       const all = [primary, ...extras];
       const first = <TValue>(pick: (row: CandidateRow) => TValue | null | undefined) =>
         all.map(pick).find((value) => value !== null && value !== undefined && value !== '') ?? null;
+      const phones = phonesFor(first((row) => row.phone));
       const domain = first((row) => domainOf(row.website, row.email));
       const tags = new Set(all.flatMap((row) => row.ghl_tags ?? []).map((tag) => TAG_VALUE_BY_TAG.get(tag)).filter((value): value is string => !!value));
       // GHL tags become fields; Tags itself keeps only markers that mean something on their own.
@@ -534,7 +544,7 @@ export class OsContactsImportService {
       return {
         name,
         emails: { primaryEmail: primary.email, additionalEmails: extras.map((extra) => extra.email) },
-        phones: phonesFor(first((row) => row.phone)),
+        phones,
         companyId: domain ? companyIdByDomain.get(domain) ?? null : null,
         leadSource: leadSourceFor(primary),
         ghlTags: [...tags].filter((tag) => KEPT_TAGS.has(tag)),
@@ -543,7 +553,8 @@ export class OsContactsImportService {
         agencyServices: first((row) => row.agency_services) ?? '',
         monthlyRevenue: first((row) => row.monthly_revenue) ?? '',
         closer: first((row) => closerFor(row) || null) ?? '',
-        countryCode: first((row) => row.country) ?? '',
+        // GHL defaults every contact to GB; the phone's country is the honest answer when there is one.
+        countryCode: phones?.primaryPhoneCountryCode || first((row) => row.country) || '',
         leadSince,
         // Twenty lets an import set createdAt, so "created" reflects when they became a lead.
         createdAt: leadSince ?? undefined,

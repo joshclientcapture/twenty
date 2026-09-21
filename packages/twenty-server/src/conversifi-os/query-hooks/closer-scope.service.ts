@@ -48,6 +48,14 @@ export class CloserScopeService {
     return this.scopeEmailFor({ workspaceId: authContext.workspace.id, userWorkspaceId: authContext.userWorkspaceId, email: authContext.user.email });
   }
 
+  // Workflow runs and versions are system objects, which Twenty exempts from object permissions,
+  // yet a run carries every lead payload it processed. Only admins get to read them.
+  async isAdmin(authContext: WorkspaceAuthContext): Promise<boolean> {
+    if (authContext.type !== 'user') return true;
+    const roleId = await this.userRoleService.getRoleIdForUserWorkspace({ workspaceId: authContext.workspace.id, userWorkspaceId: authContext.userWorkspaceId });
+    return (await this.roleLabel(roleId)) === 'Admin';
+  }
+
   async scopeEmailFor({ workspaceId, userWorkspaceId, email }: Viewer): Promise<string | null> {
     if (!userWorkspaceId) return null;
     const roleId = await this.userRoleService.getRoleIdForUserWorkspace({ workspaceId, userWorkspaceId });

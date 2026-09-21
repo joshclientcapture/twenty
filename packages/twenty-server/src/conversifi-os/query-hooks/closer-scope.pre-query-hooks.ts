@@ -13,7 +13,7 @@ import { CLOSER_SCOPED_OBJECTS, type CloserScopedObject, CloserScopeService, sco
 // Link objects (notes, tasks, timeline, participants, attachments, favourites) are readable only
 // where they point at the closer's own person or company, or at nothing scoped at all.
 // Admins, members, API keys, workflows and the sync never reach these paths.
-type ScopeAction = 'filter' | 'own' | 'stamp' | 'refuse' | 'link';
+type ScopeAction = 'filter' | 'own' | 'stamp' | 'refuse' | 'link' | 'admin';
 
 const SCOPED_ACTIONS: Record<string, ScopeAction> = {
   findMany: 'filter', findOne: 'filter', groupBy: 'filter',
@@ -38,10 +38,17 @@ export const LINK_OBJECTS: Record<string, string[]> = {
   favorite: MORPH_LINKS,
 };
 const LINK_ACTIONS: Record<string, ScopeAction> = { findMany: 'link', findOne: 'link', groupBy: 'link' };
+// System objects Twenty never checks object permissions on; their contents are admin business.
+const ADMIN_ONLY_OBJECTS = ['workflowRun', 'workflowVersion'];
+const ADMIN_ACTIONS: Record<string, ScopeAction> = { findMany: 'admin', findOne: 'admin', groupBy: 'admin' };
 
 type AnyArgs = Record<string, unknown>;
 
 const apply = async (scope: CloserScopeService, authContext: WorkspaceAuthContext, object: string, action: ScopeAction, args: AnyArgs): Promise<AnyArgs> => {
+  if (action === 'admin') {
+    if (await scope.isAdmin(authContext)) return args;
+    throw new ForbiddenError('Workflow runs are visible to admins only.');
+  }
   const email = await scope.scopeEmail(authContext);
   if (!email) return args;
   switch (action) {
@@ -85,4 +92,5 @@ const makeHook = (object: string, method: string, action: ScopeAction) => {
 export const CLOSER_SCOPE_HOOKS = [
   ...CLOSER_SCOPED_OBJECTS.flatMap((object) => Object.entries(SCOPED_ACTIONS).map(([method, action]) => makeHook(object, method, action))),
   ...Object.keys(LINK_OBJECTS).flatMap((object) => Object.entries(LINK_ACTIONS).map(([method, action]) => makeHook(object, method, action))),
+  ...ADMIN_ONLY_OBJECTS.flatMap((object) => Object.entries(ADMIN_ACTIONS).map(([method, action]) => makeHook(object, method, action))),
 ];

@@ -1,12 +1,16 @@
 import { Body, Controller, HttpCode, Logger, NotFoundException, Param, Post, Req } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+
+import { DataSource } from 'typeorm';
 
 import { createHmac, timingSafeEqual } from 'crypto';
 
 import { type Request } from 'express';
 import { ApiPath } from 'twenty-shared/types';
 
-import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
+import { bookingTypeFor, OsBookingsService } from 'src/conversifi-os/services/os-bookings.service';
 import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
+import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 
 const env = (name: string) => {
@@ -62,6 +66,8 @@ export class OsCalendlyWebhookController {
     private readonly upsert: OsUpsertService,
     private readonly bookings: OsBookingsService,
     private readonly contacts: OsContactsImportService,
+    private readonly lifecycle: OsLifecycleService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   @Post(':token')
@@ -121,12 +127,20 @@ export class OsCalendlyWebhookController {
     }], ['uri'], { questions_answers: 'jsonb', tracking: 'jsonb' });
 
     this.logger.log(`calendly ${body.event}: ${event.name} at ${event.start_time} (${invitee.email})`);
+    // Recruitment and other unmapped calendars are stored for the poll's records but never mirrored,
+    // so they must not trigger the import and mirror either (most webhooks are recruitment ones).
+    const mapped = new Map<string, string>(
+      (await this.dataSource.query('select event_type_uri, booking_type from os.calendly_event_type_map') as { event_type_uri: string; booking_type: string }[])
+        .map((row) => [row.event_type_uri, row.booking_type]),
+    );
+    if (bookingTypeFor(event.name ?? null, event.event_type ?? null, mapped) === 'OTHER') return { ok: true, ignored: true };
     this.mirrorSoon();
     return { ok: true };
   }
 
   // Calendly waits only a few seconds for a reply, so the mirror into the Booking object runs after
-  // the response; overlapping webhooks share one run and trigger one more when it finishes.
+  // the response; overlapping webhooks share one run and trigger one more when it finishes. The
+  // lifecycle pass follows so the person reads Booked with their closer straight away, not at :15.
   private mirrorSoon() {
     if (this.syncInFlight) {
       this.syncQueued = true;
@@ -139,6 +153,8 @@ export class OsCalendlyWebhookController {
       .catch((error) => this.logger.error(`person import after calendly webhook failed: ${(error as Error).message}`))
       .then(() => this.bookings.sync(45))
       .catch((error) => this.logger.error(`bookings mirror after calendly webhook failed: ${(error as Error).message}`))
+      .then(() => this.lifecycle.sync())
+      .catch((error) => this.logger.error(`lifecycle after calendly webhook failed: ${(error as Error).message}`))
       .finally(() => {
         this.syncInFlight = null;
         if (this.syncQueued) {

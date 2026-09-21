@@ -70,7 +70,7 @@ const normaliseName = (value: string) => value.toLowerCase().normalize('NFKD').r
 // Event types mapped on the Closers page ("Calendars", os.calendly_event_type_map) win: names change
 // when hosts are pooled or calendars renamed, the id does not. Everything else goes by name.
 const BOOKING_TYPE_VALUES = new Set<string>(BOOKING_TYPE_OPTIONS.map((option) => option.value));
-const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null, mapped: Map<string, string>): BookingType => {
+export const bookingTypeFor = (eventName: string | null, eventTypeUri: string | null, mapped: Map<string, string>): BookingType => {
   const pinned = eventTypeUri ? mapped.get(eventTypeUri) : undefined;
   if (pinned && BOOKING_TYPE_VALUES.has(pinned)) return pinned as BookingType;
   const name = (eventName ?? '').toLowerCase();

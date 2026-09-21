@@ -7,6 +7,7 @@ import { OsBookingsService } from 'src/conversifi-os/services/os-bookings.servic
 import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-import.service';
 import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.service';
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
+import { OsWhopService } from 'src/conversifi-os/services/os-whop.service';
 
 export type OsSyncStep =
   | 'stripe-payments'
@@ -20,11 +21,13 @@ export type OsSyncStep =
   | 'ledger'
   | 'trial-forward'
   | 'people'
+  | 'whop'
   | 'bookings';
 
 export const OS_SYNC_STEPS: OsSyncStep[] = [
   'stripe-payments',
   'stripe-subs',
+  'whop',
   'stripe-geo',
   'geocode',
   'fathom',
@@ -39,7 +42,7 @@ export const OS_SYNC_STEPS: OsSyncStep[] = [
 
 // The 15 minute cron in the OS project ran only these three, with a 3 day Calendly window.
 // Bookings run before people so the lifecycle pass sees the latest call outcomes.
-export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'calendly', 'bookings', 'people'];
+export const OS_FAST_STEPS: OsSyncStep[] = ['fathom', 'stripe-subs', 'whop', 'calendly', 'bookings', 'people'];
 
 type StepResult = { step: OsSyncStep; ok: boolean; detail?: unknown; skipped?: string; error?: string };
 
@@ -67,6 +70,7 @@ export class OsSyncService {
     private readonly bookings: OsBookingsService,
     private readonly contacts: OsContactsImportService,
     private readonly lifecycle: OsLifecycleService,
+    private readonly whop: OsWhopService,
   ) {}
 
   async runSteps(steps: OsSyncStep[], calendlyWindowDays?: number): Promise<StepResult[]> {
@@ -80,6 +84,7 @@ export class OsSyncService {
       switch (step) {
         case 'stripe-payments': return await this.wrap(step, () => this.stripePayments());
         case 'stripe-subs': return await this.wrap(step, () => this.stripeSubscriptions());
+        case 'whop': return await this.wrap(step, () => this.whop.sync());
         case 'stripe-geo': return await this.wrap(step, () => this.stripeGeo());
         case 'geocode': return await this.wrap(step, () => this.geocodeCustomers());
         case 'fathom': return await this.wrap(step, () => this.fathom());

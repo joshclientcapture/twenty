@@ -55,6 +55,10 @@ export const LIFECYCLE_FIELDS: WantedField[] = [
   { name: 'payingSince', label: 'Paying since', type: 'DATE_TIME', icon: 'IconCoin' },
   { name: 'churnedAt', label: 'Churned at', type: 'DATE_TIME', icon: 'IconUserOff' },
   { name: 'trialEndedAt', label: 'Trial ended at (never paid)', type: 'DATE_TIME', icon: 'IconHourglassOff' },
+  // DFY is billed through Whop; these mirror the DFY subscription the way the four above mirror Stripe.
+  { name: 'dfyPayingSince', label: 'DFY paying since', type: 'DATE_TIME', icon: 'IconCoin' },
+  { name: 'dfyChurnedAt', label: 'DFY churned at', type: 'DATE_TIME', icon: 'IconUserOff' },
+  { name: 'dfyPlan', label: 'DFY plan', type: 'TEXT', icon: 'IconPackage' },
   { name: 'latestFormAt', label: 'Latest form at', type: 'DATE_TIME', icon: 'IconForms' },
   { name: 'lastBookingAt', label: 'Last call at', type: 'DATE_TIME', icon: 'IconCalendarEvent' },
   { name: 'lastBookingStatus', label: 'Last call outcome', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: selectOptions(BOOKING_STATUS_OPTIONS) } },
@@ -84,6 +88,9 @@ type PersonRow = {
   payingSince: string | null;
   churnedAt: string | null;
   trialEndedAt: string | null;
+  dfyPayingSince: string | null;
+  dfyChurnedAt: string | null;
+  dfyPlan: string | null;
   lastBookingAt: string | null;
   lastBookingStatus: string | null;
   lastBookingType: string | null;
@@ -93,13 +100,16 @@ type PersonRow = {
 type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null; closerId: string | null; closerEmail: string | null };
 const SALES_BOOKING_TYPES = new Set<string>(['DISCOVERY', 'DEMO', 'AGENCY_DEMO', 'NEXT_STEPS']);
 
+type WhopFacts = { paying_since: string | null; churned_at: string | null; plan: string | null; last_event_at: string | null };
 type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null; has_live_subscription: boolean };
 
 const PAGE = 200;
 const BATCH = 100;
 
-export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus'>): LifecycleStage => {
+export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | 'stage' | 'payingSince' | 'churnedAt' | 'trialEndedAt' | 'trialStartedAt' | 'signedUpAt' | 'nextBookingAt' | 'lastBookingStatus' | 'dfyPayingSince' | 'dfyChurnedAt'>): LifecycleStage => {
   // Money wins over a mood: a paying customer flagged not interested is still a customer.
+  // A live DFY subscription on Whop makes a DFY client; the manual flag and the old tag still count.
+  if (person.dfyPayingSince && !person.dfyChurnedAt) return 'DFY_CLIENT';
   if ((person.ghlTags ?? []).includes('DFY_CLIENT') || person.stage === 'DFY_CLIENT') return 'DFY_CLIENT';
   if (person.payingSince && (!person.churnedAt || person.payingSince > person.churnedAt)) return 'PAYING';
   if (person.notInterested) return 'NOT_INTERESTED';
@@ -142,7 +152,7 @@ export class OsLifecycleService {
   async sync() {
     if (!this.twentyApi.isConfigured()) return { skipped: 'no OS_TWENTY_API_KEY' };
     await this.ensureFields();
-    const [people, bookings, stripe] = await Promise.all([this.allPeople(), this.allBookings(), this.stripeFacts()]);
+    const [people, bookings, stripe, whop] = await Promise.all([this.allPeople(), this.allBookings(), this.stripeFacts(), this.whopFacts()]);
     const now = new Date().toISOString();
 
     const bookingsByPerson = new Map<string, BookingRow[]>();
@@ -188,7 +198,11 @@ export class OsLifecycleService {
       // An address Stripe only knows from a payment or the customers table carries no subscription
       // dates, so the end dates it does not have must not wipe what intake or the GHL import set.
       const stripeKnowsSubscription = facts.some((fact) => fact.trial_started_at !== null || fact.paying_since !== null);
+      const dfy = emails.map((email) => whop.get(email)).find((fact) => !!fact) ?? null;
       const desired: Partial<PersonRow> = {
+        dfyPayingSince: dfy ? dfy.paying_since : person.dfyPayingSince,
+        dfyChurnedAt: dfy ? dfy.churned_at : person.dfyChurnedAt,
+        dfyPlan: dfy ? dfy.plan : person.dfyPlan,
         signedUpAt: earliest((fact) => fact.signed_up_at) ?? person.signedUpAt,
         trialStartedAt: earliest((fact) => fact.trial_started_at) ?? person.trialStartedAt,
         // Once Stripe knows the subscription, its paying date is the truth, absent included: a trial that
@@ -210,6 +224,7 @@ export class OsLifecycleService {
       desired.lastActivityAt = [
         person.createdAt, person.lastActivityAt, person.latestFormAt, desired.signedUpAt, desired.trialStartedAt, desired.payingSince, desired.churnedAt, desired.trialEndedAt,
         latest((fact) => fact.last_event_at),
+        dfy?.last_event_at ?? null,
         ...(bookingsByPerson.get(person.id) ?? []).map((booking) => booking.bookedAt),
       ].filter((value): value is string => !!value).sort().reverse()[0] ?? person.createdAt;
 
@@ -253,7 +268,7 @@ export class OsLifecycleService {
       const result: { people: { edges: { node: PersonRow; cursor: string }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
         `query LifecyclePeople($after: String) {
            people(first: ${PAGE}, after: $after) {
-             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer closerEmail ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
+             edges { cursor node { id createdAt latestFormAt lastActivityAt emails { primaryEmail additionalEmails } companyId closer closerEmail dfyPayingSince dfyChurnedAt dfyPlan ghlTags notInterested stage signedUpAt trialStartedAt payingSince churnedAt trialEndedAt lastBookingAt lastBookingStatus lastBookingType nextBookingAt } }
              pageInfo { hasNextPage endCursor }
            }
          }`,
@@ -286,6 +301,32 @@ export class OsLifecycleService {
 
   // One row per address Stripe or the app knows: first signup, first trial, first paid, and the
   // churn date when nothing is active any more.
+  // One row per Whop address: when DFY started paying, when it ended (no live membership left), the plan.
+  private async whopFacts(): Promise<Map<string, WhopFacts>> {
+    const rows: { email: string; paying_since: unknown; churned_at: unknown; plan: string | null; last_event_at: unknown }[] = await this.dataSource.query(`
+      with dfy_memberships as (
+        select lower(m.email) as email, m.status, m.valid, m.created_at, m.canceled_at, m.renewal_period_end, coalesce(p.title, m.product_title) as plan, m.synced_at
+        from os.whop_memberships m left join os.whop_products p on p.id = m.product_id
+        where m.email is not null and coalesce(p.offer, 'DFY') = 'DFY'
+      ),
+      dfy_payments as (
+        select lower(email) as email, min(coalesce(paid_at, created_at)) as first_paid, max(coalesce(paid_at, created_at)) as last_paid
+        from os.whop_payments y left join os.whop_products p on p.id = y.product_id
+        where y.email is not null and y.status = 'paid' and coalesce(y.total_cents, 0) > 0 and coalesce(p.offer, 'DFY') = 'DFY' group by 1
+      )
+      select m.email,
+             least(min(m.created_at), min(y.first_paid)) as paying_since,
+             case when bool_or(m.valid) then null else max(coalesce(m.canceled_at, m.renewal_period_end)) end as churned_at,
+             (array_agg(m.plan order by m.valid desc, m.created_at desc))[1] as plan,
+             greatest(max(m.created_at), max(m.canceled_at), max(y.last_paid)) as last_event_at
+      from dfy_memberships m left join dfy_payments y on y.email = m.email
+      group by m.email
+    `);
+    const facts = new Map<string, WhopFacts>();
+    for (const row of rows) facts.set(row.email, { paying_since: toIso(row.paying_since), churned_at: toIso(row.churned_at), plan: row.plan, last_event_at: toIso(row.last_event_at) });
+    return facts;
+  }
+
   private async stripeFacts(): Promise<Map<string, StripeFacts>> {
     const rows: StripeFacts[] = await this.dataSource.query(`
       with emails as (
@@ -413,7 +454,7 @@ const toIso = (value: unknown): string | null => {
 // Twenty returns timestamps with millisecond precision; Postgres values may carry microseconds.
 const DAY_MS = 86400000;
 // The intake sets these in real time and Stripe reports them minutes to hours later; both are the same event.
-const DATED_FIELDS = new Set(['signedUpAt', 'trialStartedAt', 'payingSince', 'churnedAt', 'trialEndedAt']);
+const DATED_FIELDS = new Set(['signedUpAt', 'trialStartedAt', 'payingSince', 'churnedAt', 'trialEndedAt', 'dfyPayingSince', 'dfyChurnedAt']);
 const sameInstant = (a: unknown, b: unknown, toleranceMs: number) => {
   if (a === b) return true;
   if (a === null || b === null || a === undefined || b === undefined) return false;

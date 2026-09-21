@@ -101,6 +101,12 @@ const Game2048Page = lazy(() =>
   })),
 );
 
+const FlappyPage = lazy(() =>
+  import('~/pages/flappy/FlappyPage').then((module) => ({
+    default: module.FlappyPage,
+  })),
+);
+
 const NotFound = lazy(() =>
   import('~/pages/not-found/NotFound').then((module) => ({
     default: module.NotFound,
@@ -267,6 +273,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <Game2048Page />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Flappy,
+      element: (
+        <LazyRoute>
+          <FlappyPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

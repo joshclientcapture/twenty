@@ -103,11 +103,13 @@ export const stageFor = (person: Pick<PersonRow, 'notInterested' | 'ghlTags' | '
   if ((person.ghlTags ?? []).includes('DFY_CLIENT') || person.stage === 'DFY_CLIENT') return 'DFY_CLIENT';
   if (person.payingSince && (!person.churnedAt || person.payingSince > person.churnedAt)) return 'PAYING';
   if (person.churnedAt) return 'CHURNED';
+  // A live trial stays a trial even with a call booked; the call is part of the trial.
+  if (person.trialStartedAt && !person.trialEndedAt) return 'TRIAL';
+  // A sales call in the diary outranks an old sign-up or a trial that ended: the call is what happens next.
+  if (person.nextBookingAt || person.lastBookingStatus === 'UPCOMING' || person.lastBookingStatus === 'IN_PROGRESS') return 'BOOKED';
   // A cancelled trial that never paid is not customer churn; it gets its own state and nurture.
   if (person.trialEndedAt) return 'TRIAL_ENDED';
-  if (person.trialStartedAt) return 'TRIAL';
   if (person.signedUpAt) return 'SIGNED_UP';
-  if (person.nextBookingAt || person.lastBookingStatus === 'UPCOMING' || person.lastBookingStatus === 'IN_PROGRESS') return 'BOOKED';
   if (person.lastBookingStatus === 'SHOWED') return 'SHOWED';
   if (person.lastBookingStatus === 'NO_SHOW') return 'NO_SHOW';
   return 'LEAD';

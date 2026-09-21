@@ -447,8 +447,9 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
 
   const closer = closers ? findCloser(closers, closerId) : null;
   const ownCloser = closers ? findOwnCloser(closers, currentUser?.email) : null;
+  // Closers see their own page only; other members see nothing until they are made a closer.
   const restricted =
-    !isAdmin && ownCloser !== null && ownCloser.id !== closerId;
+    !isAdmin && closers !== null && (ownCloser === null || ownCloser.id !== closerId);
 
   useEffect(() => {
     fetchClosers()

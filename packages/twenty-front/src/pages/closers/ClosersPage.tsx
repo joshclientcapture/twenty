@@ -45,6 +45,7 @@ import {
 } from '@/custom-pages/os/closers';
 import { type ShowUp } from '@/custom-pages/os/data';
 import { CalendlyCalendars } from '@/custom-pages/os/CalendlyCalendars';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 type CloserStats = {
   showUp: ShowUp | null;
@@ -319,6 +320,8 @@ export const ClosersPage = () => {
   const ownCloser = closers ? findOwnCloser(closers, currentUser?.email) : null;
   if (closers && !isAdmin && ownCloser)
     return <Navigate to={`/closers/${ownCloser.id}`} replace />;
+  // A member who is not a closer has no page of their own here and must not see everyone's cash.
+  if (closers && !isAdmin && !ownCloser) return <OsRestricted title="Closers" />;
 
   const openNew = () => {
     setForm(EMPTY_FORM);

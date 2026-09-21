@@ -18,13 +18,14 @@ import { OsContactsImportService } from 'src/conversifi-os/services/os-contacts-
 import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.service';
 import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
+import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 
 // Conversifi's ops analytics (the former "OS" Supabase project), served from the `os` schema
 // of the core database. Kept outside `engine/` so upstream merges never touch it.
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
-  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule],
+  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule],
   controllers: [OsController, OsIntakeController, OsCalendlyWebhookController],
   providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],

@@ -63,6 +63,7 @@ import {
   setChurnExclusion,
   type TrialForecast,
 } from '@/custom-pages/os/data';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 const mkLabel = (mk: string) => {
   const [y, m] = mk.split('-').map(Number);
@@ -241,7 +242,7 @@ const ChurnTable = ({
   </StyledScroll>
 );
 
-export const RevenuePage = () => {
+const RevenuePageContent = () => {
   const { confirm, ConfirmHost } = useConfirm('revenue');
   const [growth, setGrowth] = useState<Growth | null>(null);
   const [churn, setChurn] = useState<Churn | null>(null);
@@ -1296,3 +1297,6 @@ export const RevenuePage = () => {
     </StyledPage>
   );
 };
+
+// Financial pages are admin only; members get the same page shell with a lock.
+export const RevenuePage = () => (useIsOsAdmin() ? <RevenuePageContent /> : <OsRestricted title="Revenue" />);

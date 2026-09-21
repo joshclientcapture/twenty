@@ -1,5 +1,9 @@
 // Functions in the `os` schema that the CRM front end may call. Anything else is refused,
 // so a new function has to be listed here deliberately before it becomes reachable.
+// Reads are open to every workspace member; everything else needs the workspace admin
+// permission, except call verdict overrides, which a closer may set for their own page.
+export const isOsReadFunction = (functionName: string) => /^(get|list|search|find)_/.test(functionName);
+export const OS_RPC_CLOSER_FUNCTIONS = new Set<string>(['set_closer_call', 'clear_closer_call', 'set_therapon_call', 'clear_therapon_call']);
 export const OS_RPC_ALLOW_LIST = new Set<string>([
   'add_rental_cycle',
   'clear_closer_call',

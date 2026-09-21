@@ -67,6 +67,7 @@ import {
   type RangeMetrics,
   type ShowUp,
 } from '@/custom-pages/os/data';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 const rangePreset = (kind: string): { from: string; to: string } => {
   const today = new Date();
@@ -605,4 +606,4 @@ const OperatingSystem = () => {
   );
 };
 
-export const SalesPage = OperatingSystem;
+export const SalesPage = () => (useIsOsAdmin() ? <OperatingSystem /> : <OsRestricted title="Sales" />);

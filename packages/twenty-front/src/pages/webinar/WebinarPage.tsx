@@ -46,6 +46,7 @@ import {
   type WebinarFunnel,
   type WebinarMember,
 } from '@/custom-pages/os/data';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 type RangeKey = 'today' | '7' | '30' | '90' | 'all' | 'custom';
 type Range = { from: string | null; to: string | null };
@@ -351,7 +352,7 @@ const FunnelCard = ({
   );
 };
 
-export const WebinarPage = () => {
+const WebinarPageContent = () => {
   const { confirm, ConfirmHost } = useConfirm('webinar');
   const [rangeKey, setRangeKey] = useState<RangeKey>('30');
   const [custom, setCustom] = useState<Range>({ from: null, to: null });
@@ -943,3 +944,6 @@ export const WebinarPage = () => {
     </StyledPage>
   );
 };
+
+// Financial pages are admin only; members get the same page shell with a lock.
+export const WebinarPage = () => (useIsOsAdmin() ? <WebinarPageContent /> : <OsRestricted title="Webinar" />);

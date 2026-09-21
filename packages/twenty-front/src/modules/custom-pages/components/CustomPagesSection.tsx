@@ -6,16 +6,19 @@ import {
 } from "@/custom-pages/constants/CustomPages";
 import { CollapsibleNavigationDrawerSection } from "@/ui/navigation/navigation-drawer/components/CollapsibleNavigationDrawerSection";
 import { NavigationDrawerItem } from "@/ui/navigation/navigation-drawer/components/NavigationDrawerItem";
+import { useIsOsAdmin } from "@/custom-pages/os/OsRestricted";
 
 export const CustomPagesSection = ({ section }: { section: CustomPageSectionKey }) => {
   const { pathname } = useLocation();
+  const isAdmin = useIsOsAdmin();
   const def = CUSTOM_PAGE_SECTIONS.find((s) => s.key === section);
+  const pages = def?.pages.filter((page) => isAdmin || !page.adminOnly) ?? [];
 
-  if (!def || def.pages.length === 0) return null;
+  if (!def || pages.length === 0) return null;
 
   return (
     <CollapsibleNavigationDrawerSection sectionId={`custom-pages/${def.key}`} label={def.title}>
-      {def.pages.map(({ label, path, Icon }) => (
+      {pages.map(({ label, path, Icon }) => (
         <NavigationDrawerItem
           key={path}
           label={label}

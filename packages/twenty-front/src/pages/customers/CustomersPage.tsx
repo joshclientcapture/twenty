@@ -55,6 +55,7 @@ import {
   SOURCES,
 } from '@/custom-pages/os/data';
 import { type Closer, fetchClosers } from '@/custom-pages/os/closers';
+import { OsRestricted, useIsOsAdmin } from '@/custom-pages/os/OsRestricted';
 
 // Attribution editing (source / closer dropdowns, dud deletion, per-closer totals) is parked
 // until the ledger itself is settled. Flip to true to bring the controls back.
@@ -426,7 +427,7 @@ const SeatDrilldown = ({
   );
 };
 
-export const CustomersPage = () => {
+const CustomersPageContent = () => {
   const { confirm, ConfirmHost } = useConfirm('customers');
   const [params, setParams] = useSearchParams();
   const viewParam = params.get('view');
@@ -1247,3 +1248,6 @@ export const CustomersPage = () => {
     </StyledPage>
   );
 };
+
+// Financial pages are admin only; members get the same page shell with a lock.
+export const CustomersPage = () => (useIsOsAdmin() ? <CustomersPageContent /> : <OsRestricted title="Customers" />);

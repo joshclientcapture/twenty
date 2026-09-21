@@ -8,6 +8,8 @@ export type CustomPage = {
   label: string;
   path: string;
   Icon: IconComponent;
+  // Financial pages are hidden from members; the page itself refuses them too.
+  adminOnly?: boolean;
 };
 
 export type CustomPageSectionKey = "financials" | "games";
@@ -29,12 +31,12 @@ export const CUSTOM_PAGE_SECTIONS: CustomPageSection[] = [
     key: "financials",
     title: "Financials",
     pages: [
-      { label: "Sales", path: AppPath.Sales, Icon: IconSales as IconComponent },
+      { label: "Sales", path: AppPath.Sales, Icon: IconSales as IconComponent, adminOnly: true },
       // Individual closers live inside Closers; /therapon stays as a URL alias only.
       { label: "Closers", path: AppPath.Closers, Icon: IconUsers as IconComponent },
-      { label: "Revenue", path: AppPath.Revenue, Icon: IconTrendingUp as IconComponent },
-      { label: "Webinar", path: AppPath.Webinar, Icon: IconPresentation as IconComponent },
-      { label: "Customers", path: AppPath.Customers, Icon: IconBuildingSkyscraper as IconComponent },
+      { label: "Revenue", path: AppPath.Revenue, Icon: IconTrendingUp as IconComponent, adminOnly: true },
+      { label: "Webinar", path: AppPath.Webinar, Icon: IconPresentation as IconComponent, adminOnly: true },
+      { label: "Customers", path: AppPath.Customers, Icon: IconBuildingSkyscraper as IconComponent, adminOnly: true },
     ],
   },
   {

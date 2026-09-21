@@ -113,6 +113,9 @@ const WEB_TAG = { 'web registered': 'WEB_REGISTERED', 'web entered': 'WEB_ENTERE
 const WEB_STAGE = { 'web registered': 'REGISTERED', 'web entered': 'ENTERED', 'web reached offer': 'REACHED_OFFER', 'web offer click': 'OFFER_CLICK', 'web trial click': 'TRIAL_CLICK', 'web paid': 'PAID' };
 const STAGE_ORDER = ['REGISTERED', 'ENTERED', 'REACHED_OFFER', 'OFFER_CLICK', 'TRIAL_CLICK', 'PAID'];
 
+// The one person that test and preview payloads update instead of creating records (doNotEmail, notInterested).
+const TEST_SINK_ID = 'b5db690f-501e-4e0f-a888-40fdf6c1b770';
+
 export const main = async (params) => {
   const payload = params.payload && typeof params.payload === 'object' ? params.payload : {};
   const kind = params.kind;
@@ -183,6 +186,17 @@ export const main = async (params) => {
   }
 
   const pick = (fresh, old) => fresh || old || '';
+  // Previews and smoke tests from the app must not become leads: they all land on one sink record.
+  const testLike = /(@example\.(invalid|com|org)$|@crmwiring\.dev$|@test\.com$|^preview@|^test@|^(demo(-[a-z0-9]+)?|lookup[0-9]*|[a-z-]*test[a-z0-9-]*)@conversifi\.io$)/i.test(email)
+    || /(^|\s)(test|tester|testing|preview)(\s|$)/i.test(`${firstName} ${lastName}`.trim());
+  if (testLike) {
+    return {
+      stage: 'NOT_INTERESTED', webinarOfferLink: '', existingId: TEST_SINK_ID, email: 'intake-test@conversifi.io', firstName: 'Intake', lastName: 'Test sink',
+      phoneNumber: '', phoneCallingCode: '', phoneCountryCode: '', businessType: '', agencyServices: '', monthlyRevenue: '',
+      leadSource: 'DEMO', latestSource: source || 'DEMO', latestFormAt: now, signedUpAt: null, trialStartedAt: null, payingSince: null, churnedAt: null, trialEndedAt: null, webinarStage: null,
+      lastActivityAt: now, tags: [], now,
+    };
+  }
   // Same rules as the server's lifecycle pass, without the booking data it adds every 15 minutes.
   const stage = payingSince && (!churnedAt || payingSince > churnedAt) ? 'PAYING' : churnedAt ? 'CHURNED' : trialEndedAt ? 'TRIAL_ENDED' : trialStartedAt ? 'TRIAL' : signedUpAt ? 'SIGNED_UP' : existing?.stage || 'LEAD';
   return {

@@ -131,6 +131,8 @@ export class OsLifecycleService {
     await this.twentyApi.ensureFields('person', LIFECYCLE_FIELDS);
     await this.twentyApi.ensureSelectOptions('person', 'stage', selectOptions(STAGE_OPTIONS));
     await this.twentyApi.ensureSelectOptions('person', 'lastBookingStatus', selectOptions(BOOKING_STATUS_OPTIONS));
+    // Companies inherit their people's closer so a closer's scope covers the accounts they work.
+    await this.twentyApi.ensureFields('company', [{ name: 'closerEmail', label: 'Closer email', type: 'TEXT', icon: 'IconMail' }]);
     this.fieldsReady = true;
   }
 
@@ -161,6 +163,7 @@ export class OsLifecycleService {
     const closersByName = new Map(closerRows.map((row) => [row.name, row.email ?? '']));
 
     const patches: Record<string, unknown>[] = [];
+    const desiredByPersonId = new Map<string, Partial<PersonRow>>();
     let companiesLinked = 0;
     for (const person of people) {
       const emails = [person.emails.primaryEmail, ...(person.emails.additionalEmails ?? [])].filter((email): email is string => !!email).map((email) => email.toLowerCase());
@@ -221,6 +224,7 @@ export class OsLifecycleService {
           companiesLinked++;
         }
       }
+      desiredByPersonId.set(person.id, { ...desired, ...(patch.companyId ? { companyId: patch.companyId as string } : {}) });
       if (Object.keys(patch).length === 0) continue;
       patches.push({ id: person.id, ...patch });
     }
@@ -234,8 +238,9 @@ export class OsLifecycleService {
       );
       written += batch.length;
     }
-    this.logger.log(`lifecycle: ${people.length} people, ${written} updated, ${companiesLinked} companies linked`);
-    return { people: people.length, updated: written, companiesLinked };
+    const companiesScoped = await this.scopeCompanies(people, desiredByPersonId);
+    this.logger.log(`lifecycle: ${people.length} people, ${written} updated, ${companiesLinked} companies linked, ${companiesScoped} companies scoped`);
+    return { people: people.length, updated: written, companiesLinked, companiesScoped };
   }
 
   private async allPeople(): Promise<PersonRow[]> {
@@ -330,6 +335,42 @@ export class OsLifecycleService {
       });
     }
     return facts;
+  }
+
+  // A company's closer is the closer of its most recently active person, so scoping a closer to
+  // "their" companies follows the people they actually work.
+  private async scopeCompanies(people: PersonRow[], desiredByPersonId: Map<string, Partial<PersonRow>>): Promise<number> {
+    const wanted = new Map<string, { email: string; activity: string }>();
+    for (const person of people) {
+      const desired = desiredByPersonId.get(person.id) ?? {};
+      const companyId = (desired.companyId ?? person.companyId) as string | null;
+      const email = ((desired.closerEmail ?? person.closerEmail) ?? '') as string;
+      const activity = (desired.lastActivityAt ?? person.lastActivityAt ?? person.createdAt) as string;
+      if (!companyId || !email) continue;
+      const current = wanted.get(companyId);
+      if (!current || activity > current.activity) wanted.set(companyId, { email, activity });
+    }
+    const patches: { id: string; closerEmail: string }[] = [];
+    let after: string | null = null;
+    for (;;) {
+      const result: { companies: { edges: { node: { id: string; closerEmail: string | null } }[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } = await this.twentyApi.records(
+        `query LifecycleCompanies($after: String) { companies(first: ${PAGE}, after: $after) { edges { node { id closerEmail } } pageInfo { hasNextPage endCursor } } }`,
+        { after },
+      );
+      for (const { node } of result.companies.edges) {
+        const email = wanted.get(node.id)?.email ?? '';
+        if ((node.closerEmail ?? '') !== email) patches.push({ id: node.id, closerEmail: email });
+      }
+      if (!result.companies.pageInfo.hasNextPage) break;
+      after = result.companies.pageInfo.endCursor;
+    }
+    for (let offset = 0; offset < patches.length; offset += BATCH) {
+      await this.twentyApi.records(
+        `mutation LifecycleScopeCompanies($data: [CompanyCreateInput!]!) { createCompanies(data: $data, upsert: true) { id } }`,
+        { data: patches.slice(offset, offset + BATCH) },
+      );
+    }
+    return patches.length;
   }
 
   private async upsertCompanies(domains: string[]): Promise<Map<string, string>> {

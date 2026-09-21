@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { CloserScopeModule } from 'src/conversifi-os/query-hooks/closer-scope.module';
+
 import { FileModule } from 'src/engine/core-modules/file/file.module';
 import { SearchResolver } from 'src/engine/core-modules/search/search.resolver';
 import { SearchService } from 'src/engine/core-modules/search/services/search.service';
@@ -11,6 +13,7 @@ import { WorkspaceManyOrAllFlatEntityMapsCacheModule } from 'src/engine/metadata
     FileModule,
     WorkspaceManyOrAllFlatEntityMapsCacheModule,
     ApplicationTranslationCatalogModule,
+    CloserScopeModule,
   ],
   providers: [SearchResolver, SearchService],
 })

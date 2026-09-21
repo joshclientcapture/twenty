@@ -13,7 +13,10 @@ import { SearchService } from 'src/engine/core-modules/search/services/search.se
 import { type I18nContext } from 'src/engine/core-modules/i18n/types/i18n-context.type';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { type IDataloaders } from 'src/engine/dataloaders/dataloader.interface';
+import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
+import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
 import { AuthWorkspace } from 'src/engine/decorators/auth/auth-workspace.decorator';
+import { CLOSER_SCOPED_OBJECTS, CloserScopeService, scopeFilter } from 'src/conversifi-os/query-hooks/closer-scope.service';
 import { CustomPermissionGuard } from 'src/engine/guards/custom-permission.guard';
 import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 import { WorkspaceManyOrAllFlatEntityMapsCacheService } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.service';
@@ -31,22 +34,32 @@ export class SearchResolver {
   constructor(
     private readonly searchService: SearchService,
     private readonly workspaceManyOrAllFlatEntityMapsCacheService: WorkspaceManyOrAllFlatEntityMapsCacheService,
+    private readonly closerScope: CloserScopeService,
   ) {}
 
   @Query(() => SearchResultConnectionDTO)
   async search(
     @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId({ allowUndefined: true }) userWorkspaceId: string | undefined,
+    @AuthUser({ allowUndefined: true }) user: { email?: string | null } | undefined,
     @Args()
     {
       searchInput,
       limit,
-      filter,
-      includedObjectNameSingulars,
+      filter: requestedFilter,
+      includedObjectNameSingulars: requestedIncluded,
       excludedObjectNameSingulars,
       after,
     }: SearchArgs,
     @Context() context: { loaders: IDataloaders } & I18nContext,
   ) {
+    // Conversifi: a closer searches only within their own people, bookings and companies.
+    const closerEmail = await this.closerScope.scopeEmailFor({ workspaceId: workspace.id, userWorkspaceId, email: user?.email });
+    const filter = closerEmail ? (scopeFilter(requestedFilter as Record<string, unknown> | undefined, closerEmail) as typeof requestedFilter) : requestedFilter;
+    const includedObjectNameSingulars = closerEmail
+      ? (requestedIncluded?.length ? requestedIncluded : [...CLOSER_SCOPED_OBJECTS]).filter((name) => (CLOSER_SCOPED_OBJECTS as readonly string[]).includes(name))
+      : requestedIncluded;
+
     const { flatObjectMetadataMaps, flatFieldMetadataMaps } =
       await this.workspaceManyOrAllFlatEntityMapsCacheService.getOrRecomputeManyOrAllFlatEntityMaps(
         {

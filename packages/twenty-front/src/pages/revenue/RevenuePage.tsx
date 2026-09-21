@@ -599,7 +599,7 @@ const RevenuePageContent = () => {
                   ))}
             </StyledGrid6>
 
-            {dfy && (dfy.clients > 0 || dfy.collected > 0) && (
+            {dfy && (
               <StyledGrid4>
                 <KpiTile
                   kpi={{

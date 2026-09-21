@@ -30,10 +30,18 @@ export class OsSyncCronJob {
       await this.dataSource.query(`select os.refresh_rental_account_status()`);
       return;
     }
-    const results = await this.osSyncService.runSteps(schedule.steps, schedule.calendlyWindowDays);
+    let results: Awaited<ReturnType<OsSyncService['runSteps']>>;
+    try {
+      results = await this.osSyncService.runSteps(schedule.steps, schedule.calendlyWindowDays);
+    } catch (error) {
+      // Belt and braces: the runner already turns step errors into results, but a run that still
+      // throws must leave one line the health check can find.
+      this.logger.error(`os sync ${data.kind} failed: ${(error as Error).message}`);
+      return;
+    }
     const failed = results.filter((result) => !result.ok);
     if (failed.length) {
-      this.logger.error(`os sync ${data.kind}: ${failed.map((result) => `${result.step}: ${result.error}`).join('; ')}`);
+      this.logger.error(`os sync ${data.kind} failed: ${failed.map((result) => `${result.step}: ${result.error}`).join('; ')}`);
     } else {
       this.logger.log(`os sync ${data.kind} ok (${results.map((result) => result.step).join(', ')})`);
     }

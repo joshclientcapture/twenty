@@ -133,8 +133,10 @@ export class OsCalendlyWebhookController {
       return;
     }
     // The invitee becomes a Person first (same rules as the people step), then the booking is mirrored.
+    // A bad contact must not stop the booking from landing, so the mirror runs either way.
     this.syncInFlight = this.contacts
       .run({ onlyNew: true })
+      .catch((error) => this.logger.error(`person import after calendly webhook failed: ${(error as Error).message}`))
       .then(() => this.bookings.sync(45))
       .catch((error) => this.logger.error(`bookings mirror after calendly webhook failed: ${(error as Error).message}`))
       .finally(() => {

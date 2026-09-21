@@ -78,20 +78,20 @@ export class OsSyncService {
   async runStep(step: OsSyncStep, calendlyWindowDays = 60): Promise<StepResult> {
     try {
       switch (step) {
-        case 'stripe-payments': return this.wrap(step, () => this.stripePayments());
-        case 'stripe-subs': return this.wrap(step, () => this.stripeSubscriptions());
-        case 'stripe-geo': return this.wrap(step, () => this.stripeGeo());
-        case 'geocode': return this.wrap(step, () => this.geocodeCustomers());
-        case 'fathom': return this.wrap(step, () => this.fathom());
-        case 'calendly': return this.wrap(step, () => this.calendly(calendlyWindowDays));
-        case 'unipile': return this.wrap(step, () => this.unipile());
-        case 'prod': return this.wrap(step, () => this.syncProd());
-        case 'ledger': return this.wrap(step, () => this.refreshLedger());
-        case 'trial-forward': return this.wrap(step, () => this.trialForward());
+        case 'stripe-payments': return await this.wrap(step, () => this.stripePayments());
+        case 'stripe-subs': return await this.wrap(step, () => this.stripeSubscriptions());
+        case 'stripe-geo': return await this.wrap(step, () => this.stripeGeo());
+        case 'geocode': return await this.wrap(step, () => this.geocodeCustomers());
+        case 'fathom': return await this.wrap(step, () => this.fathom());
+        case 'calendly': return await this.wrap(step, () => this.calendly(calendlyWindowDays));
+        case 'unipile': return await this.wrap(step, () => this.unipile());
+        case 'prod': return await this.wrap(step, () => this.syncProd());
+        case 'ledger': return await this.wrap(step, () => this.refreshLedger());
+        case 'trial-forward': return await this.wrap(step, () => this.trialForward());
         // Fast runs refresh recent and upcoming calls; full runs re-mirror the whole history.
         // New trials, payers and bookers become People without waiting for a GHL re-export.
-        case 'people': return this.wrap(step, async () => ({ contacts: await this.contacts.run({ onlyNew: true }), lifecycle: await this.lifecycle.sync() }));
-        case 'bookings': return this.wrap(step, () => this.bookings.sync(calendlyWindowDays <= 3 ? 45 : 400));
+        case 'people': return await this.wrap(step, async () => ({ contacts: await this.contacts.run({ onlyNew: true }), lifecycle: await this.lifecycle.sync() }));
+        case 'bookings': return await this.wrap(step, () => this.bookings.sync(calendlyWindowDays <= 3 ? 45 : 400));
         default: return { step, ok: false, error: `unknown step ${step}` };
       }
     } catch (error) {
@@ -100,12 +100,19 @@ export class OsSyncService {
     }
   }
 
+  // A step that throws must become a failed result here: a rejection that escapes the runner skips
+  // the run summary, and a sync that fails without a log line stays broken until someone notices.
   private async wrap(step: OsSyncStep, fn: () => Promise<unknown>): Promise<StepResult> {
-    const detail = await fn();
-    if (detail && typeof detail === 'object' && 'skipped' in detail) {
-      return { step, ok: true, skipped: String((detail as { skipped: string }).skipped) };
+    try {
+      const detail = await fn();
+      if (detail && typeof detail === 'object' && 'skipped' in detail) {
+        return { step, ok: true, skipped: String((detail as { skipped: string }).skipped) };
+      }
+      return { step, ok: true, detail };
+    } catch (error) {
+      this.logger.error(`os sync step ${step} failed: ${(error as Error).message}`);
+      return { step, ok: false, error: (error as Error).message };
     }
-    return { step, ok: true, detail };
   }
 
   private stripeKey() {

@@ -49,6 +49,7 @@ import {
 import {
   fetchAttributionSplit,
   fetchConversion,
+  fetchTrialPaths,
   fetchCustomerCounts,
   fetchDashboardMetrics,
   fetchGrowth,
@@ -60,6 +61,7 @@ import {
   REFRESH_STEPS,
   type AttributionSplit,
   type Conversion,
+  type TrialPaths,
   type CustomerCounts,
   type DashboardMetrics,
   type Growth,
@@ -171,6 +173,7 @@ const OperatingSystem = () => {
   const [showUp, setShowUp] = useState<ShowUp | null>(null);
   const [split, setSplit] = useState<AttributionSplit | null>(null);
   const [conv, setConv] = useState<Conversion | null>(null);
+  const [paths, setPaths] = useState<TrialPaths | null>(null);
   const [growth, setGrowth] = useState<Growth | null>(null);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -193,6 +196,7 @@ const OperatingSystem = () => {
     try { setShowUp(await fetchShowUp()); } catch { /* noop */ }
     try { setSplit(await fetchAttributionSplit()); } catch { /* noop */ }
     try { setConv(await fetchConversion()); } catch { /* noop */ }
+    try { setPaths(await fetchTrialPaths()); } catch { /* noop */ }
     try { setGrowth(await fetchGrowth()); } catch { /* noop */ }
     try { setMonthly(await fetchMonthlyMetrics()); } catch { /* noop */ }
     try { setLastSync(await fetchLastSync()); } catch { /* noop */ }
@@ -286,7 +290,7 @@ const OperatingSystem = () => {
   const fHeld = showUp?.held ?? 0;
   const fAttended = showUp?.recorded ?? 0;
   const fTrials = conv?.total.sat_trials ?? 0;
-  const fSales = split?.sales.therapon ?? 0;
+  const fSales = paths?.funnel.sat_sales ?? 0;
   const booked = Math.max(m?.kpis.appts_booked ?? 0, 1);
   const funnel = m
     ? [
@@ -298,10 +302,11 @@ const OperatingSystem = () => {
       ]
     : [];
 
-  const orgTrials = split ? split.trials.total - split.trials.therapon : 0;
-  const orgSales = split ? split.sales.total - split.sales.therapon : 0;
-  const orgRate = orgTrials ? Math.round((orgSales / orgTrials) * 100) : 0;
-  const organic = split
+  const orgTrials = paths?.organic.trials ?? 0;
+  const orgSales = paths?.organic.sales ?? 0;
+  const orgRate = Math.round(paths?.organic.rate ?? 0);
+  const apptRate = Math.round(paths?.appointment.rate ?? 0);
+  const organic = paths
     ? [
         { stage: 'Started a trial (no appointment)', value: orgTrials, pct: 100, note: null as string | null },
         { stage: 'Became a sale', value: orgSales, pct: orgRate, note: `${orgRate}% convert` },
@@ -503,7 +508,7 @@ const OperatingSystem = () => {
                     ))}
                   </StyledBars>
                   <StyledFootnote>
-                    Signed up with no booked call · {orgRate}% trial→sale vs {fTrials ? Math.round((fSales / fTrials) * 100) : 0}% on the appointment path
+                    Signed up with no booked call · {orgRate}% trial→sale vs {apptRate}% for people who booked a sales call
                   </StyledFootnote>
                 </StyledCard>
               </StyledStack>

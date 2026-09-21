@@ -68,6 +68,7 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'get_therapon_customers',
   'get_therapon_daily',
   'get_trial_forecast',
+  'get_trial_paths',
   'get_upcoming_renewals',
   'get_webinar_funnel',
   'get_webinar_stage_members',

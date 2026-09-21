@@ -225,6 +225,15 @@ export async function fetchTheraponCash(): Promise<TheraponCash> {
 
 // `active`/`mrr` are only populated on the sales split (Therapon's paying customers still active + their MRR).
 export type AttrSplit = { total: number; therapon: number; active?: number; mrr?: number; monthly: Record<string, { total: number; therapon: number; active?: number; mrr?: number }> };
+export type TrialPath = { trials: number; sales: number; rate: number | null };
+export type TrialPaths = { appointment: TrialPath; organic: TrialPath; funnel: { sat: number; sat_trials: number; sat_sales: number } };
+// Trial to sale by path, every closer: booked a sales call vs signed up on their own.
+export async function fetchTrialPaths(): Promise<TrialPaths> {
+  const { data, error } = await osClient.rpc("get_trial_paths");
+  if (error) throw error;
+  return data as TrialPaths;
+}
+
 export type AttributionSplit = { trials: AttrSplit; sales: AttrSplit };
 // Trials & sales, total vs Therapon-attributed (customer booked/sat a sales call).
 export async function fetchAttributionSplit(): Promise<AttributionSplit> {

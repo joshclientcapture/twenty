@@ -291,17 +291,31 @@ export class OsLifecycleService {
         union select lower(auth_email) from os.conversifi_customers where auth_email is not null
         union select lower(email) from os.stripe_payments where email is not null
       ),
+      -- A customer often pays under a different address than the one they signed up with; the app's
+      -- customers table knows both, so subscriptions and payments are also filed under the sign-up address.
+      aliases as (
+        select lower(stripe_email) as stripe_email, lower(auth_email) as auth_email from os.conversifi_customers
+        where stripe_email is not null and auth_email is not null and lower(stripe_email) <> lower(auth_email)
+      ),
       subs as (
         select lower(customer_email) as email, status, created, trial_start, canceled_at, ended_at
         from os.stripe_subscriptions where customer_email is not null
+        union all
+        select a.auth_email, s.status, s.created, s.trial_start, s.canceled_at, s.ended_at
+        from os.stripe_subscriptions s join aliases a on a.stripe_email = lower(s.customer_email)
       ),
       customers as (
         select lower(coalesce(stripe_email, auth_email)) as email, min(signup_at) as signup_at, min(trial_ends_at) as trial_ends_at
         from os.conversifi_customers group by 1
       ),
       payments as (
-        select lower(email) as email, min(created) as first_paid, max(created) as last_paid
-        from os.stripe_payments where paid and coalesce(amount_cents, 0) > 0 and lower(coalesce(status, '')) = 'succeeded' and email is not null group by 1
+        select email, min(created) as first_paid, max(created) as last_paid from (
+          select lower(email) as email, created from os.stripe_payments
+          where paid and coalesce(amount_cents, 0) > 0 and lower(coalesce(status, '')) = 'succeeded' and email is not null
+          union all
+          select a.auth_email, y.created from os.stripe_payments y join aliases a on a.stripe_email = lower(y.email)
+          where y.paid and coalesce(y.amount_cents, 0) > 0 and lower(coalesce(y.status, '')) = 'succeeded'
+        ) paid group by 1
       )
       select e.email,
              least(cu.signup_at, (select min(created) from subs s where s.email = e.email)) as signed_up_at,

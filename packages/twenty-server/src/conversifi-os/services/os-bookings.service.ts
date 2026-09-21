@@ -96,26 +96,18 @@ const WEBINAR_ATTENDANCE_AFTER_MS = 4 * 60 * 60 * 1000;
 // A person who books the same calendar with the same host several times in a burst blocks the
 // host's day with copies. Only the slot they booked last is mirrored; the rest are logged, and a
 // host cancelling them on Calendly with this reason keeps them out for good.
-const DUPLICATE_WINDOW_MS = 15 * 60 * 1000;
+const DUPLICATE_WINDOW_MINUTES = 15;
 const DUPLICATE_CANCEL_REASON = 'Duplicate booking';
-const findDuplicateBookings = (rows: BookingSourceRow[]) => {
-  const duplicates = new Set<string>();
-  const groups = new Map<string, BookingSourceRow[]>();
-  for (const row of rows) {
-    if (row.status === 'canceled' || !row.invitee_email || !row.booked_at) continue;
-    const key = `${row.invitee_email}|${row.event_type_uri ?? row.event_name}|${(row.host_email ?? '').toLowerCase()}`;
-    groups.set(key, [...(groups.get(key) ?? []), row]);
-  }
-  for (const group of groups.values()) {
-    if (group.length < 2) continue;
-    const byBooked = [...group].sort((a, b) => new Date(a.booked_at!).getTime() - new Date(b.booked_at!).getTime());
-    for (let index = 0; index < byBooked.length - 1; index += 1) {
-      const gap = new Date(byBooked[index + 1].booked_at!).getTime() - new Date(byBooked[index].booked_at!).getTime();
-      if (gap <= DUPLICATE_WINDOW_MS) duplicates.add(byBooked[index].uri);
-    }
-  }
-  return duplicates;
-};
+// Judged over the whole history, not the run's window: a sibling booked minutes apart can start
+// weeks away, and a window that sees only one of the pair would restore what the full run dropped.
+const DUPLICATE_BOOKINGS_SQL = `
+  with grouped as (
+    select b.uri, b.booked_at,
+           lead(b.booked_at) over (partition by lower(i.email), coalesce(b.event_type_uri, b.name), lower(b.host_email) order by b.booked_at) as next_booked_at
+    from os.calendly_bookings b join os.calendly_invitees i on i.booking_uri = b.uri
+    where b.status = 'active' and i.email is not null and b.booked_at is not null
+  )
+  select uri from grouped where next_booked_at is not null and next_booked_at - booked_at <= ($1::int * interval '1 minute')`;
 
 type MirroredBooking = {
   name: string; calendlyUri: string; startsAt: string | Date | null; endsAt: string | Date | null; bookedAt: string | Date | null; rescheduledToAt: string | Date | null;
@@ -216,8 +208,9 @@ export class OsBookingsService {
     );
     // Sales calendars come from the Closers page mapping; support calendars are recognised by name.
     // Everything else (30-minute meetings, recruitment, one-offs) stays out of the CRM.
-    const duplicateUris = findDuplicateBookings(allRows);
-    if (duplicateUris.size) this.logger.warn(`${duplicateUris.size} duplicate bookings (same invitee, calendar and host within ${DUPLICATE_WINDOW_MS / 60000} minutes) left out of the CRM`);
+    const duplicateRows: { uri: string }[] = await this.dataSource.query(DUPLICATE_BOOKINGS_SQL, [DUPLICATE_WINDOW_MINUTES]);
+    const duplicateUris = new Set(duplicateRows.map((row) => row.uri));
+    if (duplicateUris.size) this.logger.warn(`${duplicateUris.size} duplicate bookings (same invitee, calendar and host within ${DUPLICATE_WINDOW_MINUTES} minutes) left out of the CRM`);
     const isKept = (row: BookingSourceRow) =>
       bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER'
       && !(row.status === 'canceled' && (row.cancel_reason ?? '').startsWith(DUPLICATE_CANCEL_REASON))
@@ -301,7 +294,8 @@ export class OsBookingsService {
     for (let offset = 0; offset < staleUris.length; offset += RECORD_BATCH_SIZE) {
       const uris = staleUris.slice(offset, offset + RECORD_BATCH_SIZE);
       const result = await this.twentyApi.records<{ deleteBookings: { id: string }[] }>(
-        `mutation DropUnmappedBookings($uris: [String!]) { deleteBookings(filter: { calendlyUri: { in: $uris } }) { id } }`,
+        // Only rows still live: deleting an already deleted row again writes an empty timeline entry each run.
+        `mutation DropUnmappedBookings($uris: [String!]) { deleteBookings(filter: { and: [{ calendlyUri: { in: $uris } }, { deletedAt: { is: NULL } }] }) { id } }`,
         { uris },
       );
       removed += result.deleteBookings.length;

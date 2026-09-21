@@ -247,6 +247,8 @@ const nameFromDomain = (domain: string) => domain.split('.')[0].replace(/[-_]+/g
 export const companyNameFor = (companyName: string | null, domain: string) => {
   const cleaned = (companyName ?? '').replace(/^company name;?\s*/i, '').replace(/^https?:\/\/(www\.)?/i, '').replace(/^www\./i, '').replace(/\/+$/, '').trim();
   if (!cleaned || /^[0-9 +()-]+$/.test(cleaned) || /^(-|\.|none|n\/?a|null|undefined|company name)$/i.test(cleaned)) return nameFromDomain(domain);
+  // A bare domain typed into the name field reads better as its stem: acme.com becomes Acme.
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(cleaned)) return nameFromDomain(cleaned);
   return cleaned;
 };
 

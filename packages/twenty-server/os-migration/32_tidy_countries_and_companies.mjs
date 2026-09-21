@@ -29,6 +29,8 @@ const nameFromDomain = (domain) => domain.split('.')[0].replace(/[-_]+/g, ' ').r
 const cleanName = (name, domain) => {
   const cleaned = (name ?? '').replace(/^company name;?\s*/i, '').replace(/^https?:\/\/(www\.)?/i, '').replace(/^www\./i, '').replace(/\/+$/, '').trim();
   if (!cleaned || /^[0-9 +()-]+$/.test(cleaned) || /^(-|\.|none|n\/?a|null|undefined|company name)$/i.test(cleaned)) return domain ? nameFromDomain(domain) : cleaned;
+  // A bare domain typed into the name field reads better as its stem: acme.com becomes Acme.
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(cleaned)) return nameFromDomain(cleaned);
   return cleaned;
 };
 const hostOf = (url) => (url ?? '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase();

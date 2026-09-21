@@ -33,6 +33,7 @@ type BookingSourceRow = {
   rescheduled: boolean;
   cancel_reason: string | null;
   rescheduled_to: string | null;
+  suppressed: boolean;
   recording_url: string | null;
 };
 
@@ -184,13 +185,14 @@ export class OsBookingsService {
        invitees as (
          select booking_uri, max(name) as name, max(lower(email)) as email, bool_or(coalesce(rescheduled, false)) as rescheduled, max(cancel_reason) as cancel_reason,
                 max(uri) as invitee_uri, max(nullif(new_invitee_uri, '')) as new_invitee_uri,
+                bool_or(exists (select 1 from os.suppressed_emails s where s.email = lower(calendly_invitees.email))) as suppressed,
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
          from os.calendly_invitees group by booking_uri
        )
        select b.uri, b.name as event_name, b.event_type_uri, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled, i.cancel_reason,
-              i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url,
+              i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url, coalesce(i.suppressed, false) as suppressed,
               (select b2.start_time from os.calendly_invitees n join os.calendly_bookings b2 on b2.uri = n.booking_uri
                where n.uri = i.new_invitee_uri or n.old_invitee_uri = i.invitee_uri order by b2.start_time desc limit 1) as rescheduled_to,
               f.recording_url
@@ -220,7 +222,9 @@ export class OsBookingsService {
     const isKept = (row: BookingSourceRow) =>
       bookingTypeFor(row.event_name, row.event_type_uri, mappedTypes) !== 'OTHER'
       && !(row.status === 'canceled' && (row.cancel_reason ?? '').startsWith(DUPLICATE_CANCEL_REASON))
-      && !duplicateUris.has(row.uri);
+      && !duplicateUris.has(row.uri)
+      // A person deleted in the CRM takes their bookings with them.
+      && !row.suppressed;
     const keptRows = allRows.filter(isKept);
     const staleUris = allRows.filter((row) => !isKept(row)).map((row) => row.uri);
     const closerIds: { id: string }[] = await this.dataSource.query("select id from os.closers where coalesce(calendly_host_email, '') <> ''");

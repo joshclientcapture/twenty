@@ -20,6 +20,7 @@ import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
 import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
 import { CLOSER_SCOPE_HOOKS } from 'src/conversifi-os/query-hooks/closer-scope.pre-query-hooks';
+import { PERSON_SUPPRESSION_HOOKS, PersonSuppressionService } from 'src/conversifi-os/query-hooks/person-suppression.post-query-hooks';
 import { CloserScopeModule } from 'src/conversifi-os/query-hooks/closer-scope.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 
@@ -29,7 +30,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule],
   controllers: [OsController, OsIntakeController, OsCalendlyWebhookController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
 })
 export class ConversifiOsModule {}

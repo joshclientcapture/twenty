@@ -467,9 +467,14 @@ export class OsContactsImportService {
     const rows = allRows.filter((row) => !isExcluded(row));
     const merged = mergeDuplicates(rows);
     const existing = options.onlyNew ? await this.twentyApi.peopleByEmail() : new Map<string, string>();
-    const toWrite = options.onlyNew
+    // People deleted in the CRM stay deleted: their addresses are on the suppression list.
+    const suppressedRows: { email: string }[] = await this.dataSource.query('select email from os.suppressed_emails');
+    const suppressed = new Set(suppressedRows.map((row) => row.email));
+    const notSuppressed = (group: { primary: CandidateRow; extras: CandidateRow[] }) =>
+      !suppressed.has(group.primary.email) && !group.extras.some((extra) => suppressed.has(extra.email));
+    const toWrite = (options.onlyNew
       ? merged.filter((group) => !existing.has(group.primary.email) && !group.extras.some((extra) => existing.has(extra.email)))
-      : merged;
+      : merged).filter(notSuppressed);
     const count = (predicate: (row: CandidateRow) => boolean) => rows.filter(predicate).length;
     this.logger.log(
       `candidates: ${rows.length} (ghl ${count((r) => r.from_ghl)}, ledger ${count((r) => r.from_ledger)}, stripe ${count((r) => r.from_stripe)}, ` +

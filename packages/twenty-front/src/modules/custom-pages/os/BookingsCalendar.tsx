@@ -441,11 +441,13 @@ const RECORD_FIELDS = {
   personId: true,
 };
 
-const statusColor = (status: BookingStatus | null) =>
-  BOOKING_STATUS_META[status ?? 'UPCOMING'].color;
+// A status the server adds before the front knows it must not take the calendar down.
+const statusMeta = (status: BookingStatus | null) =>
+  BOOKING_STATUS_META[status ?? 'UPCOMING'] ?? { label: status ?? 'Unknown', color: BOOKING_STATUS_META.UPCOMING.color };
+const statusColor = (status: BookingStatus | null) => statusMeta(status).color;
 const initialsOf = (name: string) =>
   name
-    .split(/s+/)
+    .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
@@ -576,12 +578,11 @@ export const BookingsCalendar = () => {
       cancelled: 0,
     };
     for (const booking of visible) {
-      if (booking.status === 'SHOWED') tally.showed++;
+      if (booking.status === 'SHOWED' || booking.status === 'COMPLETED') tally.showed++;
       else if (booking.status === 'NO_SHOW') tally.noShow++;
       else if (
         booking.status === 'UPCOMING' ||
-        booking.status === 'IN_PROGRESS' ||
-        booking.status === 'PENDING'
+        booking.status === 'IN_PROGRESS'
       )
         tally.upcoming++;
       else if (
@@ -884,7 +885,7 @@ export const BookingsCalendar = () => {
             <StyledDrawerHead>
               <div>
                 <StyledChip style={{ color: statusColor(selected.status) }}>
-                  {BOOKING_STATUS_META[selected.status ?? 'UPCOMING'].label}
+                  {statusMeta(selected.status).label}
                 </StyledChip>
                 <h3 style={{ marginTop: 6 }}>
                   {selected.inviteeName || selected.name}

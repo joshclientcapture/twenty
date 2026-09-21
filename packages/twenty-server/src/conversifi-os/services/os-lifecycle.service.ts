@@ -90,7 +90,7 @@ type PersonRow = {
 type BookingRow = { personId: string | null; startsAt: string; bookedAt: string | null; status: string; bookingType: string; closer: string | null };
 const SALES_BOOKING_TYPES = new Set<string>(['DISCOVERY', 'DEMO', 'AGENCY_DEMO', 'NEXT_STEPS']);
 
-type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null };
+type StripeFacts = { email: string; signed_up_at: string | null; trial_started_at: string | null; paying_since: string | null; churned_at: string | null; trial_ended_at: string | null; last_event_at: string | null; has_live_subscription: boolean };
 
 const PAGE = 200;
 const BATCH = 100;
@@ -176,9 +176,11 @@ export class OsLifecycleService {
       const desired: Partial<PersonRow> = {
         signedUpAt: earliest((fact) => fact.signed_up_at) ?? person.signedUpAt,
         trialStartedAt: earliest((fact) => fact.trial_started_at) ?? person.trialStartedAt,
-        payingSince: earliest((fact) => fact.paying_since) ?? person.payingSince,
-        // Stripe is the authority once the address is known to it; a reactivation clears the churn date.
-        churnedAt: stripeKnowsSubscription ? (facts.some((fact) => fact.churned_at === null && fact.paying_since) ? null : latest((fact) => fact.churned_at)) : person.churnedAt,
+        // Once Stripe knows the subscription, its paying date is the truth, absent included: a trial that
+        // never paid must not keep a paying date the GHL tag or an intake event guessed.
+        payingSince: stripeKnowsSubscription ? earliest((fact) => fact.paying_since) : person.payingSince,
+        // Stripe is the authority once the address is known to it; only a live subscription clears churn.
+        churnedAt: stripeKnowsSubscription ? (facts.some((fact) => fact.has_live_subscription) ? null : latest((fact) => fact.churned_at)) : person.churnedAt,
         trialEndedAt: stripeKnowsSubscription ? (facts.some((fact) => fact.paying_since) ? null : latest((fact) => fact.trial_ended_at)) : person.trialEndedAt,
         lastBookingAt: lastBooking?.startsAt ?? person.lastBookingAt,
         lastBookingStatus: lastBooking?.status ?? person.lastBookingStatus,
@@ -287,7 +289,10 @@ export class OsLifecycleService {
       select e.email,
              least(cu.signup_at, (select min(created) from subs s where s.email = e.email)) as signed_up_at,
              (select min(trial_start) from subs s where s.email = e.email) as trial_started_at,
-             least(p.first_paid, (select min(created) from subs s where s.email = e.email and s.status in ('active', 'past_due'))) as paying_since,
+             -- Paying needs a subscription behind it: a one-off payment (set-up fee, DFY invoice) is not a plan.
+             case when exists (select 1 from subs s where s.email = e.email and s.status not in ('trialing', 'incomplete', 'incomplete_expired'))
+                  then least(p.first_paid, (select min(created) from subs s where s.email = e.email and s.status in ('active', 'past_due'))) end as paying_since,
+             exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'past_due', 'trialing')) as has_live_subscription,
              case when exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'trialing', 'past_due')) then null
                   when p.first_paid is null and not exists (select 1 from subs s where s.email = e.email and s.status in ('active', 'past_due')) then null
                   else (select max(coalesce(s.ended_at, s.canceled_at)) from subs s where s.email = e.email and s.status in ('canceled', 'incomplete_expired', 'unpaid')) end as churned_at,
@@ -309,6 +314,7 @@ export class OsLifecycleService {
         churned_at: toIso(row.churned_at),
         trial_ended_at: toIso(row.trial_ended_at),
         last_event_at: toIso(row.last_event_at),
+        has_live_subscription: Boolean(row.has_live_subscription),
       });
     }
     return facts;

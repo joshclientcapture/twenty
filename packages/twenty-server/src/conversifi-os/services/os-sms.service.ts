@@ -272,7 +272,7 @@ export class OsSmsService {
       await this.discord('📩 SMS from an unknown number', `${from}: ${body.slice(0, 300)}`, 0x95a5a6);
       return { matched: false };
     }
-    await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, provider_sid) values ($1, 'in', 'inbound', $2, $3) on conflict (provider_sid) do nothing`, [thread.id, body, sid]);
+    await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, provider_sid) values ($1, 'in', 'inbound', $2, $3) on conflict (provider_sid) where provider_sid is not null do nothing`, [thread.id, body, sid]);
     if (STOP_WORDS.test(body)) {
       await this.close(thread, 'opted_out', 'replied STOP');
       await this.setPersonSms(thread.person_id, 'OPTED_OUT', { smsOptOut: true });

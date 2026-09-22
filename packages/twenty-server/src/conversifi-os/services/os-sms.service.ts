@@ -368,7 +368,7 @@ export class OsSmsService {
         `mutation SmsTask($data: TaskCreateInput!) { createTask(data: $data) { id } }`,
         { data: { title: `SMS handoff: ${thread.full_name ?? thread.phone}`, status: 'TODO', bodyV2: { markdown: `Melanie's SMS bot needs a human on the ${thread.route.toUpperCase()} thread with ${thread.phone}.\n\n**Why:** ${reason}\n\n---\n\n${transcript}` } } },
       );
-      await this.twentyApi.records(`mutation SmsTaskTarget($data: TaskTargetCreateInput!) { createTaskTarget(data: $data) { id } }`, { data: { taskId: created.createTask.id, personId: thread.person_id } });
+      await this.twentyApi.records(`mutation SmsTaskTarget($data: TaskTargetCreateInput!) { createTaskTarget(data: $data) { id } }`, { data: { taskId: created.createTask.id, targetPersonId: thread.person_id } });
     } catch (error) {
       this.logger.warn(`sms: could not create the handoff task: ${(error as Error).message}`);
     }

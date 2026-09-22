@@ -1,6 +1,7 @@
 import { Command, CommandRunner } from 'nest-commander';
 
 import { OS_SYNC_CRON_SCHEDULES, type OsSyncCronJobData } from 'src/conversifi-os/constants/os-sync-cron.constant';
+import { OS_SMS_CRON_PATTERN, OsSmsCronJob } from 'src/conversifi-os/crons/jobs/os-sms.cron.job';
 import { OsSyncCronJob } from 'src/conversifi-os/crons/jobs/os-sync.cron.job';
 import { InjectMessageQueue } from 'src/engine/core-modules/message-queue/decorators/message-queue.decorator';
 import { MessageQueue } from 'src/engine/core-modules/message-queue/message-queue.constants';
@@ -27,5 +28,11 @@ export class OsSyncCronCommand extends CommandRunner {
         options: { repeat: { pattern: schedule.pattern } },
       });
     }
+    await this.messageQueueService.addCron<Record<string, never>>({
+      jobName: OsSmsCronJob.name,
+      jobId: 'os-sms-tick',
+      data: {},
+      options: { repeat: { pattern: OS_SMS_CRON_PATTERN } },
+    });
   }
 }

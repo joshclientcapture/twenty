@@ -294,12 +294,14 @@ export class OsSmsService {
   }
 
   private async answerReplies() {
-    const due: ThreadRow[] = await this.dataSource.query(
+    // TypeORM hands back [rows, count] for an UPDATE ... RETURNING, unlike a plain SELECT.
+    const locked: [ThreadRow[], number] = await this.dataSource.query(
       `update os.sms_threads set ai_busy_until = now() + ($1 || ' milliseconds')::interval where id in (
          select id from os.sms_threads where ai_due_at is not null and ai_due_at <= now() and (ai_busy_until is null or ai_busy_until < now()) and status in ('replied','opener_sent','booked','stopped') order by ai_due_at limit 20
        ) returning *`,
       [String(AI_LOCK_MS)],
     );
+    const due = Array.isArray(locked[0]) ? locked[0] : (locked as unknown as ThreadRow[]);
     let answered = 0;
     for (const thread of due) {
       try {

@@ -9,6 +9,13 @@ import { OsLifecycleService } from 'src/conversifi-os/services/os-lifecycle.serv
 import { OsUpsertService } from 'src/conversifi-os/services/os-upsert.service';
 import { OsWhopService } from 'src/conversifi-os/services/os-whop.service';
 
+const TRANSIENT_RETRIES = [5_000, 20_000];
+const isTransientNetworkError = (error: unknown) => {
+  const cause = (error as Error & { cause?: Error }).cause;
+  const text = `${(error as Error).message} ${cause?.message ?? ''} ${(cause as { code?: string })?.code ?? ''}`;
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|Connect Timeout|socket hang up|read timeout/i.test(text);
+};
+
 export type OsSyncStep =
   | 'stripe-payments'
   | 'stripe-subs'
@@ -107,16 +114,27 @@ export class OsSyncService {
 
   // A step that throws must become a failed result here: a rejection that escapes the runner skips
   // the run summary, and a sync that fails without a log line stays broken until someone notices.
+  // Calendly, Fathom and Whop all sit behind Cloudflare and the box sees a reset or a connect
+  // timeout about once an hour; a step is retried twice before it counts as a failure.
   private async wrap(step: OsSyncStep, fn: () => Promise<unknown>): Promise<StepResult> {
-    try {
-      const detail = await fn();
-      if (detail && typeof detail === 'object' && 'skipped' in detail) {
-        return { step, ok: true, skipped: String((detail as { skipped: string }).skipped) };
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const detail = await fn();
+        if (detail && typeof detail === 'object' && 'skipped' in detail) {
+          return { step, ok: true, skipped: String((detail as { skipped: string }).skipped) };
+        }
+        return { step, ok: true, detail };
+      } catch (error) {
+        const cause = (error as Error & { cause?: Error }).cause;
+        const message = `${(error as Error).message}${cause ? ` (${cause.message})` : ''}`;
+        if (attempt < TRANSIENT_RETRIES.length + 1 && isTransientNetworkError(error)) {
+          this.logger.warn(`os sync step ${step} attempt ${attempt} hit ${message}; retrying in ${TRANSIENT_RETRIES[attempt - 1] / 1000}s`);
+          await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRIES[attempt - 1]));
+          continue;
+        }
+        this.logger.error(`os sync step ${step} failed: ${message}`);
+        return { step, ok: false, error: message };
       }
-      return { step, ok: true, detail };
-    } catch (error) {
-      this.logger.error(`os sync step ${step} failed: ${(error as Error).message}`);
-      return { step, ok: false, error: (error as Error).message };
     }
   }
 

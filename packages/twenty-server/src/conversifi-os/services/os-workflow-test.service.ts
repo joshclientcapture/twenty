@@ -85,8 +85,7 @@ export class OsWorkflowTestService {
   }
 
   // The trigger record is the newest lead with a closer, so closer variables have something to
-  // point at; each Find step gets one real record of its object (the tester's own member row
-  // for workspace member finds, so a "which closer" lookup lands on their mailbox).
+  // point at; each Find step gets one real record of its object.
   private async buildContext(steps: WorkflowStep[], userEmail: string) {
     const person =
       (await this.restFirst('people', `filter=closerEmail[is]:NOT_NULL&order_by=createdAt[DescNullsLast]`)) ??
@@ -101,7 +100,7 @@ export class OsWorkflowTestService {
       const plural = PLURALS[objectName] ?? `${objectName}s`;
       const record =
         objectName === 'workspaceMember'
-          ? await this.restFirst(plural, `filter=userEmail[eq]:${encodeURIComponent(JSON.stringify(userEmail))}`)
+          ? await this.sampleMember(String(person?.closerEmail ?? ''), userEmail)
           : objectName === 'person'
             ? person
             : await this.restFirst(plural, `order_by=createdAt[DescNullsLast]`);
@@ -109,6 +108,13 @@ export class OsWorkflowTestService {
     }
     const name = person ? `${(person.name as { firstName?: string })?.firstName ?? ''} ${(person.name as { lastName?: string })?.lastName ?? ''}`.trim() : '';
     return { context, sampleName: name || (person?.id as string | undefined) || 'no lead found' };
+  }
+
+  // A "which closer" lookup lands on the sample lead's closer, the way a run would; the tester
+  // stands in only when that lead has no closer with a login.
+  private async sampleMember(closerEmail: string, userEmail: string) {
+    const byEmail = (email: string) => this.restFirst('workspaceMembers', `filter=userEmail[eq]:${encodeURIComponent(JSON.stringify(email))}`);
+    return (closerEmail ? await byEmail(closerEmail) : null) ?? (await byEmail(userEmail));
   }
 
   private async restFirst(plural: string, query: string): Promise<Record<string, unknown> | null> {

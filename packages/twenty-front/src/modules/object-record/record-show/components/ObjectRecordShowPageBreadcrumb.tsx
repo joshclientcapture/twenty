@@ -18,6 +18,8 @@ import { useAtomFamilySelectorValue } from '@/ui/utilities/state/jotai/hooks/use
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { styled } from '@linaria/react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { AppPath } from 'twenty-shared/types';
 import { FieldMetadataType } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 import { Avatar } from 'twenty-ui/data-display';
@@ -87,13 +89,23 @@ export const ObjectRecordShowPageBreadcrumb = ({
 
   const isMobile = useIsMobile();
 
-  const { loading } = useFindOneRecord({
+  // Workflows carry a folder path (the Workflows page is a file explorer); the crumbs lead back into it.
+  const isWorkflow = objectNameSingular === 'workflow';
+  const navigate = useNavigate();
+  const { loading, record } = useFindOneRecord({
     objectNameSingular,
     objectRecordId,
     recordGqlFields: {
       [labelIdentifierFieldMetadataItem?.name ?? 'name']: true,
+      ...(isWorkflow ? { folder: true } : {}),
     },
   });
+  const folderSegments = isWorkflow
+    ? String((record as { folder?: string | null } | undefined)?.folder ?? '')
+        .split('/')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
+    : [];
 
   const { objectMetadataItem } = useObjectMetadataItem({
     objectNameSingular,
@@ -176,6 +188,22 @@ export const ObjectRecordShowPageBreadcrumb = ({
           <span>{' / '}</span>
         </StyledEditableTitlePrefix>
       )}
+      {folderSegments.map((segment, index) => {
+        const path = folderSegments.slice(0, index + 1).join(' / ');
+        return (
+          <StyledEditableTitlePrefix
+            key={path}
+            onClick={() => {
+              navigate(
+                `${AppPath.RecordIndexPage.replace(':objectNamePlural', objectMetadataItem.namePlural)}?folder=${encodeURIComponent(path)}`,
+              );
+            }}
+          >
+            {segment}
+            <span>{' / '}</span>
+          </StyledEditableTitlePrefix>
+        );
+      })}
       <StyledTitle isEmphasized={isMobile}>
         <FieldContext.Provider
           value={{

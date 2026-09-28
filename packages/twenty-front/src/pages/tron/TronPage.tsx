@@ -12,18 +12,20 @@ type Point = { x: number; y: number };
 type Level = 'easy' | 'medium' | 'hard' | 'insane';
 type Phase = 'ready' | 'playing' | 'won' | 'lost' | 'draw';
 
-// Speed is cells per second. Smarts: how far ahead the computer thinks and how often it blunders.
-const LEVELS: Record<Level, { label: string; speed: number; blunder: number; territory: boolean; cutoff: boolean }> = {
-  easy: { label: 'Easy', speed: 9, blunder: 0.25, territory: false, cutoff: false },
-  medium: { label: 'Medium', speed: 12, blunder: 0.08, territory: true, cutoff: false },
-  hard: { label: 'Hard', speed: 15, blunder: 0.02, territory: true, cutoff: true },
-  insane: { label: 'Insane', speed: 19, blunder: 0, territory: true, cutoff: true },
+// Speed is cells per second. Depth is how many half-moves the computer searches (both bikes move, so 2 per
+// turn). Blunder is how often it throws the search away and picks any safe move.
+const LEVELS: Record<Level, { label: string; speed: number; blunder: number; depth: number }> = {
+  easy: { label: 'Easy', speed: 9, blunder: 0.25, depth: 0 },
+  medium: { label: 'Medium', speed: 12, blunder: 0.08, depth: 2 },
+  hard: { label: 'Hard', speed: 15, blunder: 0.02, depth: 4 },
+  insane: { label: 'Insane', speed: 20, blunder: 0, depth: 6 },
 };
 const LEVEL_ORDER: Level[] = ['easy', 'medium', 'hard', 'insane'];
 
 const DELTA: Record<Direction, Point> = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
 const OPPOSITE: Record<Direction, Direction> = { up: 'down', down: 'up', left: 'right', right: 'left' };
 const ALL: Direction[] = ['up', 'down', 'left', 'right'];
+const STEPS = [-COLS, COLS, -1, 1];
 
 type Bike = { head: Point; direction: Direction; trail: Point[] };
 
@@ -45,91 +47,112 @@ const writeBest = (value: Record<Level, number>) => {
 
 const inside = (p: Point) => p.x >= 0 && p.y >= 0 && p.x < COLS && p.y < ROWS;
 const key = (p: Point) => p.y * COLS + p.x;
-
-// Cells reachable from a start point without crossing walls, capped so a tick stays cheap.
-const reachable = (walls: Uint8Array, start: Point, cap = COLS * ROWS): number => {
-  if (!inside(start) || walls[key(start)]) return 0;
-  const seen = new Uint8Array(COLS * ROWS);
-  const queue: number[] = [key(start)];
-  seen[key(start)] = 1;
-  let count = 0;
-  while (queue.length && count < cap) {
-    const current = queue.shift() as number;
-    count++;
-    const x = current % COLS;
-    const y = (current - x) / COLS;
-    for (const d of ALL) {
-      const next = { x: x + DELTA[d].x, y: y + DELTA[d].y };
-      if (!inside(next)) continue;
-      const k = key(next);
-      if (walls[k] || seen[k]) continue;
-      seen[k] = 1;
-      queue.push(k);
-    }
-  }
-  return count;
+const stepOk = (from: number, step: number) => {
+  const to = from + step;
+  if (to < 0 || to >= COLS * ROWS) return false;
+  if (step === -1 && from % COLS === 0) return false;
+  if (step === 1 && from % COLS === COLS - 1) return false;
+  return true;
 };
 
-// Distance map by breadth-first search, used to count which cells each bike would reach first.
-const distances = (walls: Uint8Array, start: Point): Int32Array => {
-  const dist = new Int32Array(COLS * ROWS).fill(-1);
-  if (!inside(start) || walls[key(start)]) return dist;
-  const queue: number[] = [key(start)];
-  dist[key(start)] = 0;
-  while (queue.length) {
-    const current = queue.shift() as number;
-    const x = current % COLS;
-    const y = (current - x) / COLS;
-    for (const d of ALL) {
-      const next = { x: x + DELTA[d].x, y: y + DELTA[d].y };
-      if (!inside(next)) continue;
-      const k = key(next);
-      if (walls[k] || dist[k] >= 0) continue;
-      dist[k] = dist[current] + 1;
-      queue.push(k);
+const queue = new Int32Array(COLS * ROWS);
+const distA = new Int32Array(COLS * ROWS);
+const distB = new Int32Array(COLS * ROWS);
+
+// Breadth-first distances from a head cell (the head itself is a wall, so it is the one wall we start on).
+const fill = (walls: Uint8Array, start: number, dist: Int32Array) => {
+  dist.fill(-1);
+  dist[start] = 0;
+  let readIndex = 0;
+  let writeIndex = 0;
+  queue[writeIndex++] = start;
+  while (readIndex < writeIndex) {
+    const current = queue[readIndex++];
+    const next = dist[current] + 1;
+    for (const step of STEPS) {
+      if (!stepOk(current, step)) continue;
+      const to = current + step;
+      if (walls[to] || dist[to] >= 0) continue;
+      dist[to] = next;
+      queue[writeIndex++] = to;
     }
   }
-  return dist;
+  return writeIndex - 1;
 };
 
-const territory = (walls: Uint8Array, mine: Point, theirs: Point): number => {
-  const a = distances(walls, mine);
-  const b = distances(walls, theirs);
+// Cells the computer reaches before the player minus the reverse. When the bikes are walled off from each
+// other it becomes plain room to move, which is what decides the endgame.
+const evaluate = (walls: Uint8Array, computerHead: number, playerHead: number): number => {
+  const mine = fill(walls, computerHead, distA);
+  const theirs = fill(walls, playerHead, distB);
   let score = 0;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] < 0) continue;
-    if (b[i] < 0 || a[i] < b[i]) score++;
-    else if (a[i] > b[i]) score--;
+  let connected = false;
+  for (let i = 0; i < distA.length; i++) {
+    const a = distA[i];
+    const b = distB[i];
+    if (a < 0 && b < 0) continue;
+    if (a >= 0 && b >= 0) connected = true;
+    if (b < 0 || (a >= 0 && a < b)) score++;
+    else if (a < 0 || a > b) score--;
   }
-  return score;
+  return connected ? score : (mine - theirs) * 3;
+};
+
+const safeSteps = (walls: Uint8Array, head: number, direction: Direction): Direction[] =>
+  ALL.filter((d) => d !== OPPOSITE[direction] && stepOk(head, STEPS[ALL.indexOf(d)]) && !walls[head + STEPS[ALL.indexOf(d)]]);
+
+// Alternating-move minimax with alpha-beta: the computer moves, then the player, down to `depth` half-moves.
+const search = (walls: Uint8Array, computerHead: number, computerDirection: Direction, playerHead: number, playerDirection: Direction, depth: number, alpha: number, beta: number, computerToMove: boolean): number => {
+  if (depth === 0) return evaluate(walls, computerHead, playerHead);
+  if (computerToMove) {
+    const moves = safeSteps(walls, computerHead, computerDirection);
+    if (moves.length === 0) return -10000 + (6 - depth);
+    let best = -Infinity;
+    for (const d of moves) {
+      const to = computerHead + STEPS[ALL.indexOf(d)];
+      walls[to] = 1;
+      const value = search(walls, to, d, playerHead, playerDirection, depth - 1, alpha, beta, false);
+      walls[to] = 0;
+      if (value > best) best = value;
+      if (best > alpha) alpha = best;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  const moves = safeSteps(walls, playerHead, playerDirection);
+  if (moves.length === 0) return 10000 - (6 - depth);
+  let best = Infinity;
+  for (const d of moves) {
+    const to = playerHead + STEPS[ALL.indexOf(d)];
+    if (to === computerHead) return 0;
+    walls[to] = 1;
+    const value = search(walls, computerHead, computerDirection, to, d, depth - 1, alpha, beta, true);
+    walls[to] = 0;
+    if (value < best) best = value;
+    if (best < beta) beta = best;
+    if (alpha >= beta) break;
+  }
+  return best;
 };
 
 const chooseComputerMove = (walls: Uint8Array, computer: Bike, player: Bike, level: Level): Direction => {
   const config = LEVELS[level];
-  const options = ALL.filter((d) => d !== OPPOSITE[computer.direction]);
-  const safe = options.filter((d) => {
-    const next = { x: computer.head.x + DELTA[d].x, y: computer.head.y + DELTA[d].y };
-    return inside(next) && !walls[key(next)];
-  });
+  const head = key(computer.head);
+  const safe = safeSteps(walls, head, computer.direction);
   if (safe.length === 0) return computer.direction;
+  if (safe.length === 1) return safe[0];
   if (Math.random() < config.blunder) return safe[Math.floor(Math.random() * safe.length)];
-
   let bestDirection = safe[0];
   let bestScore = -Infinity;
   for (const d of safe) {
-    const next = { x: computer.head.x + DELTA[d].x, y: computer.head.y + DELTA[d].y };
-    const trial = walls.slice();
-    trial[key(next)] = 1;
-    let score = reachable(trial, next) * (config.territory ? 1 : 3);
-    if (config.territory) score += territory(trial, next, player.head) * 2;
-    if (config.cutoff) {
-      // Prefer moving across the player's path when we already hold more ground.
-      const ahead = { x: player.head.x + DELTA[player.direction].x * 3, y: player.head.y + DELTA[player.direction].y * 3 };
-      const gap = Math.abs(ahead.x - next.x) + Math.abs(ahead.y - next.y);
-      if (score > 0) score += Math.max(0, 12 - gap) * 4;
-    }
-    // Keep going straight when it is close, so the computer does not wobble.
-    if (d === computer.direction) score += 3;
+    const to = head + STEPS[ALL.indexOf(d)];
+    walls[to] = 1;
+    let score = config.depth === 0 ? fill(walls, to, distA) : search(walls, to, d, key(player.head), player.direction, config.depth - 1, -Infinity, Infinity, false);
+    walls[to] = 0;
+    // Hug the wall in the endgame and keep straight on ties, so the computer fills space instead of wobbling.
+    let openNeighbours = 0;
+    for (const step of STEPS) if (stepOk(to, step) && !walls[to + step]) openNeighbours++;
+    score = score * 8 - openNeighbours + (d === computer.direction ? 1 : 0);
     if (score > bestScore) {
       bestScore = score;
       bestDirection = d;

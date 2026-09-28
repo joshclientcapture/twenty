@@ -69,31 +69,24 @@ const StyledError = styled.div`
   font-size: ${t.font.size.xs};
 `;
 
-// Sends a text to the person from the Twilio number. The reply lands in this same Messages tab, and
-// Melanie stops answering that conversation once a human has written in it.
-export const WidgetActionSmsCompose = () => {
-  const targetRecord = useTargetRecord();
-  const [open, setOpen] = useState(false);
+// The composer itself: a small panel that sends a text to the person from the Twilio number. The reply
+// lands in this same Messages tab, and Melanie stops answering that conversation once a human has written.
+export const SmsComposePanel = ({ personId, onClose }: { personId: string; onClose: () => void }) => {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
-
-  if (targetRecord.targetObjectNameSingular !== 'person') return null;
 
   const send = async () => {
     if (!body.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await osPost<{ ok: string; reason: string; dryRun?: string }>('sms-inbox/text', { personId: targetRecord.id, body: body.trim() });
+      const result = await osPost<{ ok: string; reason: string; dryRun?: string }>('sms-inbox/text', { personId, body: body.trim() });
       if (!result.ok) throw new Error(result.reason || 'could not send');
       setSent(result.dryRun ? 'Logged (texting is still in dry run)' : 'Sent');
       setBody('');
-      window.setTimeout(() => {
-        setSent(null);
-        setOpen(false);
-      }, 1500);
+      window.setTimeout(onClose, 1500);
     } catch (sendError) {
       setError((sendError as Error).message);
     } finally {
@@ -102,30 +95,39 @@ export const WidgetActionSmsCompose = () => {
   };
 
   return (
+    <StyledPanel onClick={(event) => event.stopPropagation()}>
+      <StyledTitle>Text this person</StyledTitle>
+      <StyledTextarea
+        autoFocus
+        value={body}
+        placeholder="Type your text…"
+        disabled={busy}
+        onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send();
+          if (event.key === 'Escape') onClose();
+        }}
+      />
+      {error && <StyledError>{error}</StyledError>}
+      <StyledRow>
+        <StyledNote>{sent ?? `${body.length} characters · Ctrl+Enter to send`}</StyledNote>
+        <Button size="small" variant="secondary" title="Cancel" disabled={busy} onClick={onClose} />
+        <Button size="small" variant="primary" accent="blue" title="Send" disabled={busy || !body.trim()} onClick={send} />
+      </StyledRow>
+    </StyledPanel>
+  );
+};
+
+export const WidgetActionSmsCompose = () => {
+  const targetRecord = useTargetRecord();
+  const [open, setOpen] = useState(false);
+
+  if (targetRecord.targetObjectNameSingular !== 'person') return null;
+
+  return (
     <StyledAnchor>
       <WidgetCardHeaderActionButton Icon={IconMessage} label="Send text" onClick={() => setOpen((value) => !value)} />
-      {open && (
-        <StyledPanel onClick={(event) => event.stopPropagation()}>
-          <StyledTitle>Text this person</StyledTitle>
-          <StyledTextarea
-            autoFocus
-            value={body}
-            placeholder="Type your text…"
-            disabled={busy}
-            onChange={(event) => setBody(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send();
-              if (event.key === 'Escape') setOpen(false);
-            }}
-          />
-          {error && <StyledError>{error}</StyledError>}
-          <StyledRow>
-            <StyledNote>{sent ?? `${body.length} characters · Ctrl+Enter to send`}</StyledNote>
-            <Button size="small" variant="secondary" title="Cancel" disabled={busy} onClick={() => setOpen(false)} />
-            <Button size="small" variant="primary" accent="blue" title="Send" disabled={busy || !body.trim()} onClick={send} />
-          </StyledRow>
-        </StyledPanel>
-      )}
+      {open && <SmsComposePanel personId={targetRecord.id} onClose={() => setOpen(false)} />}
     </StyledAnchor>
   );
 };

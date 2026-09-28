@@ -113,12 +113,6 @@ const TronPage = lazy(() =>
   })),
 );
 
-const SmsPage = lazy(() =>
-  import('~/pages/sms/SmsPage').then((module) => ({
-    default: module.SmsPage,
-  })),
-);
-
 const NotFound = lazy(() =>
   import('~/pages/not-found/NotFound').then((module) => ({
     default: module.NotFound,
@@ -303,15 +297,6 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <TronPage />
-        </LazyRoute>
-      ),
-      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
-    },
-    {
-      path: AppPath.Sms,
-      element: (
-        <LazyRoute>
-          <SmsPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

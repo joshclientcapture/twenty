@@ -7,6 +7,7 @@ import { OsWhopWebhookController } from 'src/conversifi-os/controllers/os-whop-w
 import { OsSmsWebhookController } from 'src/conversifi-os/controllers/os-sms-webhook.controller';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OsSmsCronJob } from 'src/conversifi-os/crons/jobs/os-sms.cron.job';
+import { OsSmsBackfillCommand } from 'src/conversifi-os/commands/os-sms-backfill.command';
 import { OsWhopService } from 'src/conversifi-os/services/os-whop.service';
 import { OsIntakeController } from 'src/conversifi-os/controllers/os-intake.controller';
 import { OsIntakeService } from 'src/conversifi-os/services/os-intake.service';
@@ -35,7 +36,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule],
   controllers: [OsController, OsIntakeController, OsCalendlyWebhookController, OsWhopWebhookController, OsSmsWebhookController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsSmsCronJob, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
-  exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsSmsCronJob, OsSmsBackfillCommand, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
+  exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, OsSmsBackfillCommand],
 })
 export class ConversifiOsModule {}

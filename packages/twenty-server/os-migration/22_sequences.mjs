@@ -45,8 +45,16 @@ const gql = async (path, query, variables = {}, token = API_KEY) => {
   if (payload.errors) throw new Error(payload.errors.map((error) => error.message).join('; '));
   return payload.data;
 };
+const FIELD_LABELS = {
+  firstName: 'First name', startDate: 'Call date', startTime: 'Call time', timezone: 'Timezone', meetingLocation: 'Meeting link', rescheduleLink: 'Reschedule link',
+  eligible: 'Eligible', send24h: 'Send 24h reminder', send2h: 'Send 2h reminder', remind24hAt: '24h reminder at', remind2hAt: '2h reminder at', remind1hAt: '1h reminder at',
+  after15mAt: '15 min after start', after45mAt: '45 min after start', after21h30At: '21h30 after start', isWebinar: 'Is webinar', recent: 'Recent', route: 'Route',
+  go: 'Go', reason: 'Reason', threadId: 'Thread id', fullName: 'Full name', phone: 'Phone', replied: 'Replied', booked: 'Booked', live: 'Bot live', chase: 'Keep chasing',
+  transcript: 'Transcript', who: 'Who', message: 'Message', human: 'Needs a human', interest: 'Interest', body: 'Body', url: 'URL', ok: 'OK', status: 'Status', found: 'Found',
+};
+const labelFor = (key) => FIELD_LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 const leaf = (label, value) => ({ icon: 'IconVariable', type: Array.isArray(value) ? 'array' : typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string', label, value, isLeaf: true });
-const schemaOf = (sample) => Object.fromEntries(Object.entries(sample).map(([key, value]) => [key, leaf(key, value)]));
+const schemaOf = (sample) => Object.fromEntries(Object.entries(sample).map(([key, value]) => [key, leaf(labelFor(key), value)]));
 
 // ---------- metadata and mailboxes ----------
 const objects = (await gql('/metadata', `{ objects(paging: { first: 1000 }) { edges { node { id nameSingular fieldsList { id name type } } } } }`)).objects.edges.map((edge) => edge.node);
@@ -698,6 +706,15 @@ for (const spec of WORKFLOWS) {
     for (const candidate of version.steps.filter((other) => other.id !== inserted.id && JSON.stringify(other).includes(token))) {
       const repointed = JSON.parse(JSON.stringify(candidate).split(token).join(`{{${inserted.id}.`));
       await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: repointed });
+    }
+  }
+  // Every plain step is re-saved once so the server fills its output schema (record fields for a search,
+  // the declared sample for HTTP): the builder then shows short field chips instead of raw paths.
+  {
+    const version = (await gql('/graphql', `query ($id: UUID!) { workflowVersion(filter: { id: { eq: $id } }) { id steps } }`, { id: versionId })).workflowVersion;
+    for (const candidate of version.steps ?? []) {
+      if (candidate.type === 'CODE') continue;
+      await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: candidate });
     }
   }
   // File the workflow on the Workflows page (folder tree); names decide the folder.

@@ -124,6 +124,75 @@ export class OsSmsService {
     return { queued, booked, openers, ladder, replies, dryRun: this.isDryRun() };
   }
 
+  private smsObjectReady = false;
+
+  // The Text message object: one record per SMS in or out, linked to the person. Twenty's timeline logs
+  // each one under the person, which is the communications view Jamal asked for.
+  async ensureSmsObject() {
+    if (this.smsObjectReady) return;
+    const objects = await this.twentyApi.listObjects();
+    const person = objects.find((object) => object.nameSingular === 'person');
+    if (!person) throw new Error('person object not found');
+    let sms = objects.find((object) => object.nameSingular === 'smsMessage');
+    if (!sms) {
+      const created = await this.twentyApi.metadata<{ createOneObject: { id: string; nameSingular: string; fieldsList: { id: string; name: string; type: string }[] } }>(
+        `mutation CreateSmsObject($input: CreateOneObjectInput!) { createOneObject(input: $input) { id nameSingular fieldsList { id name type } } }`,
+        { input: { object: { nameSingular: 'smsMessage', namePlural: 'smsMessages', labelSingular: 'Text message', labelPlural: 'Text messages', icon: 'IconMessage', description: 'SMS sent and received by Melanie, the closers and the leads', isLabelSyncedWithName: false } } },
+      );
+      sms = created.createOneObject;
+      this.logger.log(`created smsMessage object ${sms.id}`);
+    }
+    await this.twentyApi.ensureFields('smsMessage', [
+      { name: 'direction', label: 'Direction', type: 'SELECT', icon: 'IconArrowsExchange', extra: { options: selectOptions([{ value: 'IN', label: 'Received', color: 'gray' }, { value: 'OUT', label: 'Sent', color: 'blue' }]) } },
+      { name: 'sender', label: 'From', type: 'TEXT', icon: 'IconUser' },
+      { name: 'kind', label: 'Kind', type: 'TEXT', icon: 'IconTag' },
+      { name: 'sentAt', label: 'Sent at', type: 'DATE_TIME', icon: 'IconClock' },
+      { name: 'phone', label: 'Phone', type: 'TEXT', icon: 'IconPhone' },
+      { name: 'deliveryStatus', label: 'Delivery', type: 'TEXT', icon: 'IconTruckDelivery' },
+      { name: 'providerSid', label: 'Twilio id', type: 'TEXT', icon: 'IconId' },
+      { name: 'threadId', label: 'Thread', type: 'TEXT', icon: 'IconMessages' },
+      { name: 'person', label: 'Person', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'Text messages', targetFieldIcon: 'IconMessage', type: 'MANY_TO_ONE' } } },
+    ]);
+    this.smsObjectReady = true;
+  }
+
+  private async logMessage(thread: ThreadRow, direction: 'in' | 'out', body: string, kind: string, sid: string | null, status: string | null) {
+    try {
+      await this.ensureSmsObject();
+      const sender = direction === 'in' ? (thread.full_name ?? thread.phone) : kind === 'human' ? 'Closer' : 'Melanie';
+      await this.twentyApi.records(
+        `mutation LogSms($data: SmsMessageCreateInput!) { createSmsMessage(data: $data) { id } }`,
+        { data: { name: body.slice(0, 160), direction: direction === 'in' ? 'IN' : 'OUT', sender, kind, sentAt: new Date().toISOString(), phone: thread.phone, deliveryStatus: status, providerSid: sid, threadId: thread.id, personId: thread.person_id } },
+      );
+    } catch (error) {
+      this.logger.warn(`sms: could not log the text on the person: ${(error as Error).message}`);
+    }
+  }
+
+  // One-off: mirror every stored message that has no Text message record yet.
+  async backfillMessages() {
+    await this.ensureSmsObject();
+    const rows: (ThreadRow & { m_id: string; direction: 'in' | 'out'; kind: string | null; body: string; provider_sid: string | null; provider_status: string | null; at: string })[] = await this.dataSource.query(
+      `select t.*, m.id as m_id, m.direction, m.kind, m.body, m.provider_sid, m.provider_status, m.at from os.sms_messages m join os.sms_threads t on t.id = m.thread_id order by m.at`,
+    );
+    const existing = await this.twentyApi.records<{ smsMessages: { edges: { node: { threadId: string | null; providerSid: string | null; sentAt: string } }[] } }>(
+      `query { smsMessages(first: 500) { edges { node { threadId providerSid sentAt } } } }`,
+    );
+    const seen = new Set(existing.smsMessages.edges.map(({ node }) => `${node.threadId}|${node.providerSid ?? ''}`));
+    let logged = 0;
+    for (const row of rows) {
+      const key = `${row.id}|${row.provider_sid ?? ''}`;
+      if (row.provider_sid && seen.has(key)) continue;
+      const sender = row.direction === 'in' ? (row.full_name ?? row.phone) : row.kind === 'human' ? 'Closer' : 'Melanie';
+      await this.twentyApi.records(
+        `mutation LogSms($data: SmsMessageCreateInput!) { createSmsMessage(data: $data) { id } }`,
+        { data: { name: row.body.slice(0, 160), direction: row.direction === 'in' ? 'IN' : 'OUT', sender, kind: row.kind ?? '', sentAt: row.at, phone: row.phone, deliveryStatus: row.provider_status, providerSid: row.provider_sid, threadId: row.id, personId: row.person_id } },
+      );
+      logged++;
+    }
+    return { logged, total: rows.length };
+  }
+
   async ensureFields() {
     if (this.fieldsReady) return;
     await this.twentyApi.ensureFields('person', [
@@ -279,6 +348,7 @@ export class OsSmsService {
       return { matched: false };
     }
     await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, provider_sid) values ($1, 'in', 'inbound', $2, $3) on conflict (provider_sid) where provider_sid is not null do nothing`, [thread.id, body, sid]);
+    await this.logMessage(thread, 'in', body, 'inbound', sid, 'received');
     if (STOP_WORDS.test(body)) {
       await this.close(thread, 'opted_out', 'replied STOP');
       await this.setPersonSms(thread.person_id, 'OPTED_OUT', { smsOptOut: true });
@@ -526,8 +596,10 @@ export class OsSmsService {
   private async send(thread: ThreadRow, from: string, body: string, kind: string, byAi = false): Promise<boolean> {
     if (this.isDryRun()) {
       this.logger.log(`sms DRY RUN ${kind} to ${thread.phone} from ${from || '(no sender)'}: ${body.replace(/\n/g, ' / ')}`);
-      await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, by_ai, provider_sid, provider_status) values ($1, 'out', $2, $3, $4, $5, 'dry-run')`, [thread.id, kind, body, byAi, `dry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`]);
+      const dryId = `dry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, by_ai, provider_sid, provider_status) values ($1, 'out', $2, $3, $4, $5, 'dry-run')`, [thread.id, kind, body, byAi, dryId]);
       await this.dataSource.query(`update os.sms_threads set last_outbound_at = now(), updated_at = now() where id = $1`, [thread.id]);
+      await this.logMessage(thread, 'out', body, kind, dryId, 'dry-run');
       return true;
     }
     const sid = env('OS_TWILIO_ACCOUNT_SID')!;
@@ -555,11 +627,19 @@ export class OsSmsService {
     }
     await this.dataSource.query(`insert into os.sms_messages (thread_id, direction, kind, body, by_ai, provider_sid, provider_status) values ($1, 'out', $2, $3, $4, $5, $6)`, [thread.id, kind, body, byAi, data.sid ?? null, data.status ?? null]);
     await this.dataSource.query(`update os.sms_threads set last_outbound_at = now(), updated_at = now() where id = $1`, [thread.id]);
+    await this.logMessage(thread, 'out', body, kind, data.sid ?? null, data.status ?? null);
     return true;
   }
 
   async recordStatus(sid: string, status: string) {
     await this.dataSource.query(`update os.sms_messages set provider_status = $2 where provider_sid = $1`, [sid, status]);
+    try {
+      const found = await this.twentyApi.records<{ smsMessages: { edges: { node: { id: string } }[] } }>(`query ($sid: String!) { smsMessages(filter: { providerSid: { eq: $sid } }, first: 1) { edges { node { id } } } }`, { sid });
+      const id = found.smsMessages.edges[0]?.node.id;
+      if (id) await this.twentyApi.records(`mutation ($id: UUID!, $data: SmsMessageUpdateInput!) { updateSmsMessage(id: $id, data: $data) { id } }`, { id, data: { deliveryStatus: status } });
+    } catch (error) {
+      this.logger.warn(`sms: could not update delivery status on the record: ${(error as Error).message}`);
+    }
   }
 
   // Twilio signs every webhook: base64(HMAC-SHA1(auth token, url + sorted POST params concatenated)).

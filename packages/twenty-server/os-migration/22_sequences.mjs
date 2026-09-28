@@ -233,13 +233,31 @@ const APPT_VARIANTS = [
     intro: ['demo', 'We\'re looking forward to walking you through how agencies use Conversifi to book more qualified appointments for their clients, and how you can offer it as your own service without building anything from scratch.', 'We\'ve had a look at your agency and we think this could be a strong fit. On the call we\'ll cover how you can add appointment generation to what you already offer your clients, and what the numbers look like.', 'your demo is'] },
 ];
 const closerMailboxes = [...new Set(Object.keys(senders))];
+// The sender is chosen per run: the booking's closerEmail is looked up as a CRM login (workspace member) and
+// Twenty's email step sends from that member's connected mailbox. New closers need no workflow change, only
+// a login and a connected mailbox; a booking whose host has no login goes out from the fallback mailbox.
+const findCloserMember = (emailExpression) => step('FIND_RECORDS', 'Find the closer', {
+  objectName: 'workspaceMember', limit: 1,
+  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId('workspaceMember', 'userEmail'), type: 'TEXT', operand: 'IS', value: emailExpression, displayValue: emailExpression, label: 'User email' }] },
+});
+const closerSender = (find) => ({
+  label: 'closer',
+  name: `{{${find.id}.first.name.firstName}} {{${find.id}.first.name.lastName}}`,
+  title: 'Conversifi',
+  email: `{{${find.id}.first.userEmail}}`,
+  connectedAccountId: `{{${find.id}.first.id}}`,
+});
+const senderByCloser = (chainFor) => {
+  const find = findCloserMember('{{trigger.properties.after.closerEmail}}');
+  return [find, branch('Closer has a CRM login?', [condition(`{{${find.id}.first.id}}`, 'TEXT', 'IS_NOT_EMPTY')], chainFor(closerSender(find)), chainFor(FALLBACK))];
+};
 const apptWorkflow = (variant) => {
   const times = code('Call times and eligibility', 'TIMES', BOOKING_TIME_CODE, { ...BOOKING_INPUT, types: variant.types }, BOOKING_TIME_SAMPLE);
   const C = (name) => `{{TIMES.${name}}}`;
   const to = '{{trigger.properties.after.inviteeEmail}}';
   const chainFor = (sender) => {
     const [noun, confirmLine, reminderLine, reminderLead] = variant.intro;
-    const confirm = email(`Email 1: confirmed (${sender.name})`, sender, to, variant.subjects[0], [
+    const confirm = email(`Email 1: confirmed (${sender.label ?? sender.name})`, sender, to, variant.subjects[0], [
       `Hi ${C('firstName')},`,
       `Your ${noun} is confirmed for <strong>${C('startDate')}</strong> at <strong>${C('startTime')} ${C('timezone')}</strong>.`,
       confirmLine,
@@ -253,7 +271,7 @@ const apptWorkflow = (variant) => {
         waitUntil('Wait until 2 hours before', C('remind2hAt')),
         refresh,
         branch('Still on for today?', [condition(`{{${refresh.id}.first.status}}`, 'SELECT', 'IS', 'UPCOMING'), condition(C('send2h'), 'TEXT', 'IS_NOT_EMPTY')], [
-          email(`Email 3: 2 hours (${sender.name})`, sender, to, variant.subjects[2], [
+          email(`Email 3: 2 hours (${sender.label ?? sender.name})`, sender, to, variant.subjects[2], [
             `Hey ${C('firstName')},`,
             `Just a heads up, ${reminderLead} at <strong>${C('startTime')} ${C('timezone')}</strong> today.`,
             `Here's your meeting link: ${C('meetingLocation')}`,
@@ -270,7 +288,7 @@ const apptWorkflow = (variant) => {
         waitUntil('Wait until 24 hours before', C('remind24hAt')),
         refresh24,
         branch('Still on for tomorrow?', [condition(`{{${refresh24.id}.first.status}}`, 'SELECT', 'IS', 'UPCOMING')], [
-          email(`Email 2: tomorrow (${sender.name})`, sender, to, variant.subjects[1], [
+          email(`Email 2: tomorrow (${sender.label ?? sender.name})`, sender, to, variant.subjects[1], [
             `Hey ${C('firstName')},`,
             `Just a quick reminder that ${reminderLead} <strong>tomorrow, ${C('startDate')}</strong> at <strong>${C('startTime')} ${C('timezone')}</strong>.`,
             reminderLine,
@@ -283,9 +301,7 @@ const apptWorkflow = (variant) => {
       ], twoHourTail()),
     ];
   };
-  // One branch per connected closer mailbox, keyed on the booking's host; anything else goes out from the fallback.
-  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
-  const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
+  const body = senderByCloser(chainFor);
   return {
     name: `Appointment confirmed + reminders · ${variant.label}`,
     description: `Ported from GHL "APPT CONFIRMED WORKFLOW" + n8n templates. Fires when a ${variant.label} booking is created; sends the closer's confirmation, then a 24h and a 2h reminder while the booking is still upcoming. Webinar bookings are excluded. Sender = the closer's connected mailbox, otherwise ${FALLBACK.email}.`,
@@ -318,13 +334,12 @@ const noShowWorkflow = () => {
   const chainFor = (sender) => {
     const items = NO_SHOW_EMAILS.map(([subject, paragraphs, delay], index) => ({
       check: index === 0 ? 'Person linked and still a prospect?' : 'Still a prospect?',
-      steps: (person) => [email(`No-show email ${index + 1} (${sender.name})`, sender, person.email, subject, [`Hey ${person.firstName},`, ...paragraphs], { closing: index === 15 ? 'All the best' : 'Best' })],
+      steps: (person) => [email(`No-show email ${index + 1} (${sender.label ?? sender.name})`, sender, person.email, subject, [`Hey ${person.firstName},`, ...paragraphs], { closing: index === 15 ? 'All the best' : 'Best' })],
       wait: delay ? { label: `${delay.days} day${delay.days > 1 ? 's' : ''}`, duration: delay } : null,
     }));
     return guardedChain('{{trigger.properties.after.personId}}', items, stillProspect);
   };
-  const perCloser = closerMailboxes.filter((handle) => handle !== FALLBACK.email).map((handle) => ({ conditions: [condition('{{trigger.properties.after.closerEmail}}', 'TEXT', 'IS', handle)], steps: chainFor(senders[handle]) }));
-  const body = perCloser.length ? [branches('Which closer?', perCloser, chainFor(FALLBACK))] : chainFor(FALLBACK);
+  const body = senderByCloser(chainFor);
   return {
     name: 'No-show follow-up (16 emails)',
     description: 'Ported from GHL "No Show Sequence" + n8n templates. Starts when a Demo / Discovery / Agency demo booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer\'s mailbox. Stops as soon as the person trials, pays, rebooks, shows, becomes a DFY client, opts out or is marked not interested.',

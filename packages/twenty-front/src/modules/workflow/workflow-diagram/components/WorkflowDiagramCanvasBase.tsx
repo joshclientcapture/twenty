@@ -384,7 +384,8 @@ export const WorkflowDiagramCanvasBase = ({
         {
           ...currentViewport,
           x: centeredXPosition,
-          y: isFreshlyOpened ? INITIAL_VIEWPORT_Y : currentViewport.y,
+          // Land with the top of the workflow's nodes just under the header, wherever they sit on the canvas.
+          y: isFreshlyOpened ? INITIAL_VIEWPORT_Y - flowBounds.y * INITIAL_ZOOM : currentViewport.y,
           zoom: isFreshlyOpened ? INITIAL_ZOOM : currentViewport.zoom,
         },
         { duration: hasViewportBeenMoved && !isFreshlyOpened ? 300 : 0 },

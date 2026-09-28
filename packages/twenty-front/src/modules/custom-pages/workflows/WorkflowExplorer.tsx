@@ -669,8 +669,9 @@ export const WorkflowExplorer = () => {
               onDrop={dropFor(path, 'folder')}
               onClick={(event) => {
                 event.stopPropagation();
-                open(path);
+                setSelected([]);
               }}
+              onDoubleClick={() => open(path)}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();

@@ -338,36 +338,47 @@ const NO_SHOW_EMAILS = [
   ['Final Follow Up', ['This will be my last follow up for now. I do not want to keep filling your inbox if the timing is not right.', 'If anything changes down the line just reply to any of my emails and I will be here. Or if now works after all you can grab a time here https://conversifi.io/calendar'], { days: 30 }],
   ['The Door Is Always Open', ['This is my last message for now. I genuinely believe we could help your business generate more leads and appointments on autopilot but I respect your time.', 'If you ever want to pick things back up just reply to this email or you can book in whenever you are ready at https://conversifi.io/calendar'], null],
 ];
-const noShowWorkflow = () => {
+// Two no-show sequences, one per pitch: software and agency demos point back to /demo in software
+// language, DFY discovery calls point to /calendar and talk about outreach run for them.
+const NO_SHOW_VARIANTS = [
+  { key: 'software', label: 'Software & Agency', types: ['DEMO', 'AGENCY_DEMO'], link: 'https://conversifi.io/demo', adapt: (text) => text.split('https://conversifi.io/calendar').join('https://conversifi.io/demo') },
+  { key: 'dfy', label: 'DFY', types: ['DISCOVERY'], link: 'https://conversifi.io/calendar', adapt: (text) => text
+    .split('automating your LinkedIn outreach').join('having your LinkedIn outreach run for you')
+    .split('a full demo').join('a full discovery call')
+    .split('quick 10 minute overview').join('quick 10 minute chat')
+    .split('AI conversations can qualify and book leads for you, and a quick walkthrough of how it all works in practice').join('our team builds and runs the outreach for you, and what the first month looks like')
+    .split('how we are helping businesses automate the whole process').join('how we run the whole process for professionals like you')
+    .split('We actually help set everything up for you so you do not have to figure it out on your own').join('We run everything for you, so there is nothing for you to learn or manage')
+    .split('generate more leads and appointments on autopilot').join('grow your network and book meetings without you lifting a finger') },
+];
+const NO_SHOW_ROUTE_CODE = String.raw`
+const ROUTES = { DEMO: 'software', AGENCY_DEMO: 'software', DISCOVERY: 'dfy' };
+export const main = async (params) => ({ route: ROUTES[String(params.bookingType || '')] || '' });
+`;
+const noShowWorkflow = (variant) => {
   const chainFor = (sender) => {
     const items = NO_SHOW_EMAILS.map(([subject, paragraphs, delay], index) => ({
       check: index === 0 ? 'Person linked and still a prospect?' : 'Still a prospect?',
-      steps: (person) => [email(`No-show email ${index + 1} (${sender.label ?? sender.name})`, sender, person.email, subject, [`Hey ${person.firstName},`, ...paragraphs], { closing: index === 15 ? 'All the best' : 'Best' })],
+      steps: (person) => [email(`No-show email ${index + 1} (${sender.label ?? sender.name})`, sender, person.email, subject, [`Hey ${person.firstName},`, ...paragraphs.map(variant.adapt)], { closing: index === 15 ? 'All the best' : 'Best' })],
       wait: delay ? { label: `${delay.days} day${delay.days > 1 ? 's' : ''}`, duration: delay } : null,
     }));
     return guardedChain('{{trigger.properties.after.personId}}', items, stillProspect);
   };
+  const route = code('Which pitch?', 'NSROUTE', NO_SHOW_ROUTE_CODE, { bookingType: '{{trigger.properties.after.bookingType}}' }, { route: variant.key });
   const body = senderByCloser(chainFor);
   return {
-    name: 'No-show follow-up (16 emails)',
-    description: 'Ported from GHL "No Show Sequence" + n8n templates. Starts when a Demo / Discovery / Agency demo booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer\'s mailbox. Stops as soon as the person trials, pays, rebooks, shows, becomes a DFY client, opts out or is marked not interested.',
+    name: `No-show follow-up · ${variant.label}`,
+    description: `Ported from GHL "No Show Sequence" + n8n templates, ${variant.label} wording and the ${variant.link} booking link. Starts when a ${variant.types.join(' / ')} booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer's mailbox. Stops as soon as the person trials, pays, books again or says not interested.`,
     trigger: trigger.updated('booking', ['status']),
-    steps: [recentCheck('{{trigger.properties.after.startsAt}}', 72), branch('No-show on a sales call?', [
+    steps: [recentCheck('{{trigger.properties.after.startsAt}}', 72), route, branch(`No-show on a ${variant.label} call?`, [
       isRecent(),
+      condition('{{NSROUTE.route}}', 'TEXT', 'IS', variant.key),
       condition('{{trigger.properties.after.status}}', 'SELECT', 'IS', 'NO_SHOW'),
       condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'WEBINAR'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'SETUP_CALL'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'ONBOARDING'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'DIAGNOSTICS'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'FEEDBACK'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'NEXT_STEPS'),
-      condition('{{trigger.properties.after.bookingType}}', 'SELECT', 'IS_NOT', 'OTHER'),
     ], body)],
-    testPayload: (personId) => ({ id: randomUUID(), status: 'NO_SHOW', personId, bookingType: 'DEMO', closerEmail: 'sales@conversifi.io', startsAt: new Date(Date.now() - 3600000).toISOString() }),
+    testPayload: (personId) => ({ id: randomUUID(), status: 'NO_SHOW', personId, bookingType: variant.types[0], closerEmail: 'sales@conversifi.io', startsAt: new Date(Date.now() - 3600000).toISOString() }),
   };
 };
-
 // ---------- 3. signup / trial / churn (Melanie's mailbox when connected) ----------
 const melanie = () => senderFor('melanie@conversifi.io');
 const personTriggered = ({ key, name, description, field, firstCheck, items, guard, wantValue = true }) =>
@@ -651,7 +662,7 @@ const discordPing = () => {
 const WORKFLOWS = [
   discordPing(),
   ...APPT_VARIANTS.map(apptWorkflow),
-  noShowWorkflow(),
+  ...NO_SHOW_VARIANTS.map(noShowWorkflow),
   ...SIGNUP, ...TRIAL, ...CHURN,
   webinarReminders(), webinarNoShow(), webinarOffer(),
   fiftyOff(), ...DFY_PACKAGES.map(dfyClose),
@@ -664,6 +675,13 @@ const destroyWorkflow = async (workflow) => {
   await gql('/graphql', `mutation ($id: UUID!) { deleteWorkflow(id: $id) { id } }`, { id: workflow.id });
   await gql('/graphql', `mutation ($id: UUID!) { destroyWorkflow(id: $id) { id } }`, { id: workflow.id });
 };
+
+const RETIRED_NAMES = ['No-show follow-up (16 emails)'];
+const candidateMatches = (name) => !ONLY || name.toLowerCase().includes(ONLY);
+for (const workflow of existing.filter((candidate) => RETIRED_NAMES.includes(candidate.name) && candidateMatches(candidate.name))) {
+  await destroyWorkflow(workflow);
+  console.log(`removed: ${workflow.name}`);
+}
 
 const created = [];
 for (const spec of WORKFLOWS) {

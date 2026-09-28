@@ -396,7 +396,11 @@ export class OsSmsService {
       this.logger.error('sms: no sender number configured (OS_TWILIO_FROM_US / OS_TWILIO_FROM_UK)');
       return false;
     }
-    const form = new URLSearchParams({ To: thread.phone, From: from, Body: body });
+    // US traffic goes out through the A2P-registered messaging service; everything else from the number.
+    const messagingService = env('OS_TWILIO_MESSAGING_SERVICE_SID');
+    const form = new URLSearchParams({ To: thread.phone, Body: body });
+    if (messagingService && thread.phone.startsWith('+1')) form.set('MessagingServiceSid', messagingService);
+    else form.set('From', from);
     const statusToken = env('OS_TWILIO_WEBHOOK_TOKEN');
     if (statusToken && env('SERVER_URL')) form.set('StatusCallback', `${env('SERVER_URL')}/os/sms/status/${statusToken}`);
     const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {

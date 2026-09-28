@@ -323,6 +323,8 @@ for (const spec of WORKFLOWS) {
   if (!versionId) { console.log('create failed', spec.name, JSON.stringify(result).slice(0, 1500)); continue; }
 
   const configuredCodeIds = new Set();
+  // A code step inserted later may reference one inserted earlier; its input gets the real ids too.
+  const realIds = {};
   for (const { codeStep, parentId, nextId } of insertions) {
     await mcp('create_workflow_version_step', { workflowVersionId: versionId, stepType: 'CODE', parentStepId: parentId, ...(nextId ? { nextStepId: nextId } : {}) });
     const version = (await gql('/graphql', `query ($id: UUID!) { workflowVersion(filter: { id: { eq: $id } }) { id steps } }`, { id: versionId })).workflowVersion;
@@ -331,7 +333,9 @@ for (const spec of WORKFLOWS) {
     const logicFunctionId = inserted?.settings?.input?.logicFunctionId;
     if (!logicFunctionId) { console.log('code step missing for', spec.name); break; }
     await mcp('update_logic_function_source', { logicFunctionId, code: codeStep._code.source });
-    await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: { ...inserted, name: codeStep.name, settings: { ...inserted.settings, input: { logicFunctionId, logicFunctionInput: codeStep._code.input }, outputSchema: schemaOf(codeStep._code.outputSample) } } });
+    const logicFunctionInput = JSON.parse(Object.entries(realIds).reduce((text, [key, id]) => text.split(`{{${key}.`).join(`{{${id}.`), JSON.stringify(codeStep._code.input)));
+    await mcp('update_workflow_version_step', { workflowVersionId: versionId, validate: false, step: { ...inserted, name: codeStep.name, settings: { ...inserted.settings, input: { logicFunctionId, logicFunctionInput }, outputSchema: schemaOf(codeStep._code.outputSample) } } });
+    realIds[codeStep._code.key] = inserted.id;
     const token = `{{${codeStep._code.key}.`;
     for (const candidate of version.steps.filter((other) => other.id !== inserted.id && JSON.stringify(other).includes(token))) {
       const repointed = JSON.parse(JSON.stringify(candidate).split(token).join(`{{${inserted.id}.`));

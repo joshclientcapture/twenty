@@ -7,6 +7,8 @@ import { OsWhopWebhookController } from 'src/conversifi-os/controllers/os-whop-w
 import { OsSmsWebhookController } from 'src/conversifi-os/controllers/os-sms-webhook.controller';
 import { OsHooksController } from 'src/conversifi-os/controllers/os-hooks.controller';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
+import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-test.service';
+import { ToolModule } from 'src/engine/core-modules/tool/tool.module';
 import { OsSmsCronJob } from 'src/conversifi-os/crons/jobs/os-sms.cron.job';
 import { OsSmsBackfillCommand } from 'src/conversifi-os/commands/os-sms-backfill.command';
 import { OsWhopService } from 'src/conversifi-os/services/os-whop.service';
@@ -35,9 +37,9 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
 // of the core database. Kept outside `engine/` so upstream merges never touch it.
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
-  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule],
+  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule, ToolModule],
   controllers: [OsController, OsIntakeController, OsCalendlyWebhookController, OsWhopWebhookController, OsSmsWebhookController, OsHooksController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsSmsCronJob, OsSmsBackfillCommand, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
+  providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsWorkflowTestService, OsSmsCronJob, OsSmsBackfillCommand, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, OsSmsBackfillCommand],
 })
 export class ConversifiOsModule {}

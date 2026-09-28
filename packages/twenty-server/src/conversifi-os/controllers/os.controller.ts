@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import { isOsReadFunction, OS_RPC_CLOSER_FUNCTIONS } from 'src/conversifi-os/constants/os-rpc-allow-list.constant';
 import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
+import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-test.service';
 import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep, OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
@@ -31,6 +32,7 @@ export class OsController {
     private readonly sync: OsSyncService,
     private readonly permissions: PermissionsService,
     private readonly sms: OsSmsService,
+    private readonly workflowTest: OsWorkflowTestService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -89,6 +91,27 @@ export class OsController {
   }
 
   // Admins see everything (null scope); closers only their own leads; anyone else is refused.
+  // Email steps in the workflow builder: render against a sample lead and send to the clicker.
+  @Post('workflow/send-test')
+  async workflowSendTest(
+    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown> },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    if (!body?.workflowVersionId || !body?.stepId) throw new BadRequestException('workflowVersionId and stepId are required');
+    if (!user.email) throw new BadRequestException('Your login has no email address to send the test to.');
+    return this.workflowTest.sendTest({
+      workspaceId: workspace.id,
+      userWorkspaceId,
+      userEmail: user.email,
+      workflowVersionId: body.workflowVersionId,
+      stepId: body.stepId,
+      input: body.input,
+      allowOtherSender: await this.isAdmin(workspace.id, userWorkspaceId),
+    });
+  }
+
   private async inboxScope(workspaceId: string, userWorkspaceId: string, email: string | null | undefined): Promise<string | null> {
     if (await this.isAdmin(workspaceId, userWorkspaceId)) return null;
     if (await this.isCloser(email)) return email ?? '';

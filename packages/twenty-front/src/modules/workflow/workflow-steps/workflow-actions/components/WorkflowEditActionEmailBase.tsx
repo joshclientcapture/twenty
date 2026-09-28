@@ -33,11 +33,13 @@ import { useEffect, useState } from 'react';
 import { ConnectedAccountProvider, SettingsPath } from 'twenty-shared/types';
 import { getSendableEmailHandles, isDefined } from 'twenty-shared/utils';
 import { Callout } from 'twenty-ui/feedback';
-import { IconPlus } from 'twenty-ui/icon';
+import { IconPlus, IconSend } from 'twenty-ui/icon';
 import { isNonEmptyString } from '@sniptt/guards';
 import { Button } from 'twenty-ui/input';
 import { MenuItem } from 'twenty-ui/navigation';
 import { useNavigateSettings } from '~/hooks/useNavigateSettings';
+import { osPost } from '@/custom-pages/os/transport';
+import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
 
 type WorkflowEditActionEmailBaseProps = {
   action: WorkflowEmailAction;
@@ -212,6 +214,42 @@ export const WorkflowEditActionEmailBase = ({
       saveAction.flush();
     };
   }, [saveAction]);
+
+  const { enqueueSuccessSnackBar, enqueueErrorSnackBar } = useSnackBar();
+  const [sendingTest, setSendingTest] = useState(false);
+
+  // Tests what is on screen, saved or not: the server renders this form data against a sample lead.
+  const handleSendTest = async () => {
+    const workflowVersionId = workflow?.currentVersion?.id;
+    if (!isDefined(workflowVersionId)) return;
+    setSendingTest(true);
+    try {
+      const result = await osPost<{ to: string; from: string; sample: string; unresolved: string[]; senderNote: string | null }>(
+        'workflow/send-test',
+        { workflowVersionId, stepId: action.id, input: formData },
+      );
+      const blanks = result.unresolved.length > 0 ? ` Left blank: ${result.unresolved.join(', ')}.` : '';
+      enqueueSuccessSnackBar({
+        message: `Test sent to ${result.to} from ${result.from}, filled in with ${result.sample}.${blanks}${result.senderNote ? ` ${result.senderNote}` : ''}`,
+      });
+    } catch (error) {
+      enqueueErrorSnackBar({ message: (error as Error).message });
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
+  const sendTestButton = (
+    <Button
+      key="send-test"
+      size="small"
+      variant="secondary"
+      title={sendingTest ? t`Sending…` : t`Send test`}
+      Icon={IconSend}
+      disabled={sendingTest || !isDefined(workflow?.currentVersion?.id)}
+      onClick={handleSendTest}
+    />
+  );
 
   return (
     !loading && (
@@ -405,7 +443,9 @@ export const WorkflowEditActionEmailBase = ({
             VariablePicker={WorkflowVariablePicker}
           />
         </WorkflowStepBody>
-        {!actionOptions.readonly && <WorkflowStepFooter stepId={action.id} />}
+        {!actionOptions.readonly && (
+          <WorkflowStepFooter stepId={action.id} additionalActions={[sendTestButton]} />
+        )}
       </>
     )
   );

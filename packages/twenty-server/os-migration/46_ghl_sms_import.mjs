@@ -23,11 +23,19 @@ const gql = async (query, variables = {}) => {
   if (payload.errors) throw new Error(payload.errors.map((error) => error.message).join('; '));
   return payload.data;
 };
-const ghl = async (path) => {
-  const response = await fetch(`${GHL}${path}`, { headers: { Authorization: `Bearer ${TOKEN}`, Version: '2021-04-15', Accept: 'application/json' } });
-  if (response.status === 429) { await new Promise((resolve) => setTimeout(resolve, 2000)); return ghl(path); }
-  if (!response.ok) throw new Error(`ghl ${path} ${response.status}: ${(await response.text()).slice(0, 200)}`);
-  return response.json();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Thousands of calls in a row: rate limits and dropped connections are retried, not fatal.
+const ghl = async (path, attempt = 1) => {
+  try {
+    const response = await fetch(`${GHL}${path}`, { headers: { Authorization: `Bearer ${TOKEN}`, Version: '2021-04-15', Accept: 'application/json' } });
+    if (response.status === 429) { await sleep(3000); return ghl(path, attempt); }
+    if (!response.ok) throw new Error(`ghl ${path} ${response.status}: ${(await response.text()).slice(0, 200)}`);
+    return response.json();
+  } catch (error) {
+    if (attempt >= 6) throw error;
+    await sleep(1500 * attempt);
+    return ghl(path, attempt + 1);
+  }
 };
 const pgClient = new pg.Client({ connectionString: env.PG_DATABASE_URL });
 await pgClient.connect();
@@ -75,7 +83,9 @@ let imported = 0;
 let skippedNoPerson = 0;
 let conversationsWithSms = 0;
 const unmatched = [];
+let scanned = 0;
 for (const conversation of conversations) {
+  if (++scanned % 250 === 0) console.log(`scanned ${scanned}/${conversations.length}, ${conversationsWithSms} with texts, ${imported} to import so far`);
   const messages = [];
   let lastMessageId = null;
   for (;;) {

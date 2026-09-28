@@ -5,6 +5,7 @@ import { OsController } from 'src/conversifi-os/controllers/os.controller';
 import { OsCalendlyWebhookController } from 'src/conversifi-os/controllers/os-calendly-webhook.controller';
 import { OsWhopWebhookController } from 'src/conversifi-os/controllers/os-whop-webhook.controller';
 import { OsSmsWebhookController } from 'src/conversifi-os/controllers/os-sms-webhook.controller';
+import { OsHooksController } from 'src/conversifi-os/controllers/os-hooks.controller';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OsSmsCronJob } from 'src/conversifi-os/crons/jobs/os-sms.cron.job';
 import { OsSmsBackfillCommand } from 'src/conversifi-os/commands/os-sms-backfill.command';
@@ -35,7 +36,7 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
   imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule],
-  controllers: [OsController, OsIntakeController, OsCalendlyWebhookController, OsWhopWebhookController, OsSmsWebhookController],
+  controllers: [OsController, OsIntakeController, OsCalendlyWebhookController, OsWhopWebhookController, OsSmsWebhookController, OsHooksController],
   providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsSmsCronJob, OsSmsBackfillCommand, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
   exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, OsSmsBackfillCommand],
 })

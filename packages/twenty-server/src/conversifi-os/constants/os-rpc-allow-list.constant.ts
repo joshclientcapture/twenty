@@ -20,6 +20,7 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'get_closer_sales',
   'get_closer_show_up',
   'set_closer_call',
+  'set_closer_discord',
   'upsert_closer',
   'delete_rental',
   'delete_rental_client',

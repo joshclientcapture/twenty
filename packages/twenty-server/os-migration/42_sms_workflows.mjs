@@ -63,6 +63,17 @@ const FIELD_LABELS = {
   transcript: 'Transcript', who: 'Who', message: 'Message', human: 'Needs a human', interest: 'Interest', body: 'Body', url: 'URL', ok: 'OK', status: 'Status', found: 'Found',
 };
 const labelFor = (key) => FIELD_LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+const objects = (await gql('/metadata', `{ objects(paging: { first: 1000 }) { edges { node { id nameSingular fieldsList { id name type } } } } }`)).objects.edges.map((edge) => edge.node);
+const fieldId = (objectName, fieldName) => {
+  const field = objects.find((object) => object.nameSingular === objectName)?.fieldsList.find((candidate) => candidate.name === fieldName);
+  if (!field) throw new Error(`field ${objectName}.${fieldName} not found`);
+  return field.id;
+};
+const findRecord = (name, objectName, fieldName, type, valueExpression) => step('FIND_RECORDS', name, {
+  objectName, limit: 1,
+  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId(objectName, fieldName), type, operand: 'IS', value: valueExpression, displayValue: valueExpression, label: fieldName }] },
+});
+
 const leaf = (label, value) => ({ icon: 'IconVariable', type: Array.isArray(value) ? 'array' : typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string', label, value, isLeaf: true });
 const schemaOf = (sample) => Object.fromEntries(Object.entries(sample).map(([key, value]) => [key, leaf(labelFor(key), value)]));
 
@@ -291,8 +302,15 @@ const replyWorkflow = (route) => {
   const prep = code(`Build the Gemini request (${offer.label} brief)`, 'PREP', prepCode(route), { fullName: R(state, 'fullName'), who: offer.who, transcript: R(state, 'transcript') }, { body: {} });
   const gemini = step('HTTP_REQUEST', 'Ask Gemini', { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body: '{{PREP.body}}' }, { outputSchema: { candidates: leaf('candidates', []) }, expectedOutputSchema: { candidates: [] } });
   const parse = code('Read the reply', 'PARSE', PARSE_CODE, { candidates: `{{${gemini.id}.candidates}}` }, { message: 'Sure, here is how it works.', human: '', reason: '', interest: 'neutral' });
-  const task = createRecord('Task for the closer', 'task', { title: 'SMS handoff: {{trigger.fullName}}', status: 'TODO', bodyV2: { markdown: 'Melanie\'s SMS bot needs a human on the {{trigger.route}} thread with {{trigger.phone}}.\n\n**Why:** {{PARSE.reason}}\n\n---\n\n' + R(state, 'transcript') } });
-  const target = createRecord('Link the task to the person', 'taskTarget', { taskId: `{{${task.id}.id}}`, targetPersonId: '{{trigger.personId}}' });
+  const taskBody = { title: 'SMS handoff: {{trigger.fullName}}', status: 'TODO', bodyV2: { markdown: 'Melanie\'s SMS bot needs a human on the {{trigger.route}} thread with {{trigger.phone}}.\n\n**Why:** {{PARSE.reason}}\n\n---\n\n' + R(state, 'transcript') } };
+  const person = findRecord('Find the person', 'person', 'id', 'UUID', '{{trigger.personId}}');
+  const closer = findRecord('Find the closer', 'workspaceMember', 'userEmail', 'TEXT', `{{${person.id}.first.closerEmail}}`);
+  // Two copies of the task steps: one assigned to the closer, one unassigned when the closer has no CRM login yet.
+  const taskFor = (assigned) => {
+    const task = createRecord(assigned ? 'Task for the closer' : 'Task (no closer login yet)', 'task', assigned ? { ...taskBody, assigneeId: `{{${closer.id}.first.id}}` } : taskBody);
+    const target = createRecord('Link the task to the person', 'taskTarget', { taskId: `{{${task.id}.id}}`, targetPersonId: '{{trigger.personId}}' });
+    return [task, target];
+  };
   const discordMessage = code('Discord card', 'DISCORD', DISCORD_CODE, { fullName: '{{trigger.fullName}}', phone: '{{trigger.phone}}', route: '{{trigger.route}}', reason: '{{PARSE.reason}}', transcript: R(state, 'transcript') }, { body: {} });
   return {
     key: `reply-${route}`,
@@ -312,9 +330,10 @@ const replyWorkflow = (route) => {
         discordMessage,
         branch('Needs a human?', [condition('{{PARSE.human}}', 'TEXT', 'IS', 'yes')], [
           http('Hand the thread off', `${PUBLIC}/os/sms/mark/${SMS_TOKEN}`, { threadId: '{{trigger.threadId}}', status: 'handed_off', reason: '{{PARSE.reason}}' }, { ok: 'yes', reason: '' }),
-          task,
-          target,
           ...(DISCORD ? [step('HTTP_REQUEST', 'Post to Discord', { url: DISCORD, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' }, { outputSchema: { status: leaf('status', 204) }, expectedOutputSchema: { status: 204 } })] : []),
+          person,
+          closer,
+          branch('Closer has a CRM login?', [condition(`{{${closer.id}.first.id}}`, 'TEXT', 'IS_NOT_EMPTY')], taskFor(true), taskFor(false)),
         ]),
       ]),
     ],

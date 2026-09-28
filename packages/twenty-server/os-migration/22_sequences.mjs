@@ -633,20 +633,19 @@ const dfyClose = (pack) => {
 };
 
 // ---------- 6. Discord ping per closer (ported from n8n "Calendly Assign") ----------
-// Webhook URLs live in the server .env as OS_DISCORD_WEBHOOKS = {"host@email": "https://discord.com/api/webhooks/..."}.
-const DISCORD_WEBHOOKS = JSON.parse(env.OS_DISCORD_WEBHOOKS ?? '{}');
+// The closer's name and Discord channel come from os.closers at run time (server hook), so a new closer
+// only needs a row there; nothing in the workflow changes.
+const PUBLIC_URL = env.SERVER_URL ?? 'https://crm.conversifi.io';
+const WORKFLOW_TOKEN = env.OS_WORKFLOW_TOKEN ?? env.OS_TWILIO_WEBHOOK_TOKEN ?? '';
 const DISCORD_CODE = String.raw`
-const WEBHOOKS = ${JSON.stringify(DISCORD_WEBHOOKS)};
-const NAMES = { 'jamal@conversifi.io': 'Jamal', 'sales@conversifi.io': 'Therapon', 'melanie@conversifi.io': 'Melanie', 'demo@conversifi.io': 'Alexandra' };
 export const main = async (params) => {
-  const host = String(params.closerEmail || '').toLowerCase();
-  const url = WEBHOOKS[host] || '';
+  const url = String(params.url || '');
   const go = url && params.status === 'UPCOMING' && new Date(params.startsAt).getTime() > Date.now() ? 'yes' : '';
   const when = new Date(params.startsAt).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ' (UK)';
   return {
     go, url,
     body: { embeds: [{ title: '📅 New Call Booked', color: 3066993, fields: [
-      { name: 'Booked With', value: NAMES[host] || host || 'Unknown', inline: true },
+      { name: 'Booked With', value: params.closerName || params.closerEmail || 'Unknown', inline: true },
       { name: 'Prospect', value: params.inviteeName || 'Unknown', inline: true },
       { name: 'Email', value: params.inviteeEmail || 'N/A', inline: false },
       { name: 'When', value: when, inline: true },
@@ -655,13 +654,14 @@ export const main = async (params) => {
   };
 };`;
 const discordPing = () => {
-  const message = code('Discord message', 'DISCORD', DISCORD_CODE, { closerEmail: A + 'closerEmail}}', inviteeName: A + 'inviteeName}}', inviteeEmail: A + 'inviteeEmail}}', startsAt: A + 'startsAt}}', eventName: A + 'eventName}}', status: A + 'status}}' }, { go: 'yes', url: 'https://discord.com/api/webhooks/x', body: { embeds: [] } });
+  const who = step('HTTP_REQUEST', 'Who is the closer?', { url: `${PUBLIC_URL}/os/hook/closer/${WORKFLOW_TOKEN}`, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: { email: A + 'closerEmail}}' } }, { outputSchema: schemaOf({ found: 'yes', name: 'Therapon Savvas', email: 'sales@conversifi.io', discordUrl: '' }), expectedOutputSchema: { found: 'yes', name: '', email: '', discordUrl: '' } });
+  const message = code('Discord message', 'DISCORD', DISCORD_CODE, { closerName: `{{${who.id}.name}}`, closerEmail: A + 'closerEmail}}', url: `{{${who.id}.discordUrl}}`, inviteeName: A + 'inviteeName}}', inviteeEmail: A + 'inviteeEmail}}', startsAt: A + 'startsAt}}', eventName: A + 'eventName}}', status: A + 'status}}' }, { go: 'yes', url: '', body: {} });
   const post = step('HTTP_REQUEST', 'Post to the closer\'s Discord', { url: '{{DISCORD.url}}', method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' }, { outputSchema: { status: leaf('status', 204) }, expectedOutputSchema: { status: 204 } });
   return {
     name: 'Discord: new call booked',
-    description: 'Ported from n8n "Calendly Assign". When a booking is created, posts the New Call Booked card to the closer\'s Discord channel (webhook chosen by the booking host).',
+    description: 'Ported from n8n "Calendly Assign". When a booking is created, posts the New Call Booked card to the closer\'s Discord channel; the channel and name come from the closer record, so new closers need no workflow change.',
     trigger: trigger.created('booking'),
-    steps: [message, branch('Upcoming booking with a Discord channel?', [condition('{{DISCORD.go}}', 'TEXT', 'IS_NOT_EMPTY')], [post])],
+    steps: [who, message, branch('Upcoming booking with a Discord channel?', [condition('{{DISCORD.go}}', 'TEXT', 'IS_NOT_EMPTY')], [post])],
     testPayload: () => ({ id: randomUUID(), status: 'UPCOMING', startsAt: new Date(Date.now() + 3600000).toISOString(), closerEmail: 'jamal@conversifi.io', inviteeName: 'Jamal Test', inviteeEmail: TEST_EMAIL, eventName: 'Conversifi.io Demo', bookingType: 'DEMO' }),
   };
 };

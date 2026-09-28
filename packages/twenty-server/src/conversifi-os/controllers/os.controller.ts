@@ -94,7 +94,7 @@ export class OsController {
   // Email steps in the workflow builder: render against a sample lead and send to the clicker.
   @Post('workflow/send-test')
   async workflowSendTest(
-    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown> },
+    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown>; samplePersonId?: string },
     @AuthWorkspace() workspace: WorkspaceEntity,
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
@@ -108,6 +108,7 @@ export class OsController {
       workflowVersionId: body.workflowVersionId,
       stepId: body.stepId,
       input: body.input,
+      samplePersonId: body.samplePersonId,
       allowOtherSender: await this.isAdmin(workspace.id, userWorkspaceId),
     });
   }

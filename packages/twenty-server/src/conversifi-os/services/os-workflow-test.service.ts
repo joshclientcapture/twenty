@@ -23,6 +23,7 @@ export type SendTestArgs = {
   workflowVersionId: string;
   stepId: string;
   input?: Partial<WorkflowSendEmailActionInput>;
+  samplePersonId?: string;
   allowOtherSender: boolean;
 };
 
@@ -45,7 +46,7 @@ export class OsWorkflowTestService {
     if (step.type !== 'SEND_EMAIL' && step.type !== 'DRAFT_EMAIL') throw new BadRequestException('Only email steps can be tested.');
 
     const rawInput = { ...(step.settings?.input ?? {}), ...(args.input ?? {}) } as WorkflowSendEmailActionInput;
-    const { context, sampleName } = await this.buildContext(steps, args.userEmail);
+    const { context, sampleName } = await this.buildContext(steps, args.userEmail, args.samplePersonId);
 
     const unresolved = this.unresolvedVariables(`${rawInput.subject ?? ''} ${rawInput.body ?? ''}`, context);
     const placeholders = this.fillPlaceholders(unresolved, context);
@@ -86,8 +87,9 @@ export class OsWorkflowTestService {
 
   // The trigger record is the newest lead with a closer, so closer variables have something to
   // point at; each Find step gets one real record of its object.
-  private async buildContext(steps: WorkflowStep[], userEmail: string) {
+  private async buildContext(steps: WorkflowStep[], userEmail: string, samplePersonId?: string) {
     const person =
+      (samplePersonId && isValidUuid(samplePersonId) ? await this.restFirst('people', `filter=id[eq]:${samplePersonId}`) : null) ??
       (await this.restFirst('people', `filter=closerEmail[is]:NOT_NULL&order_by=createdAt[DescNullsLast]`)) ??
       (await this.restFirst('people', `order_by=createdAt[DescNullsLast]`));
     const context: Record<string, unknown> = {
@@ -175,11 +177,13 @@ export class OsWorkflowTestService {
         [configured, args.workspaceId],
       );
       if (direct[0]) return { connectedAccountId: direct[0].id, handle: direct[0].handle, own: direct[0].id === own[0]?.id, note: null };
+      // Same rule as the live email step: the member's own mailbox, else the mailbox carrying their address.
       const viaMember: { id: string; handle: string }[] = await this.dataSource.query(
-        `select ca.id, ca.handle from core."connectedAccount" ca
-           join core."userWorkspace" uw on uw.id = ca."userWorkspaceId"
-           join ${WORKSPACE_SCHEMA}."workspaceMember" wm on wm."userId" = uw."userId"
-          where wm.id = $1 and ca."workspaceId" = $2 and ca."archivedAt" is null order by ca."createdAt" limit 1`,
+        `select ca.id, ca.handle from ${WORKSPACE_SCHEMA}."workspaceMember" wm
+           join core."connectedAccount" ca on ca."workspaceId" = $2 and ca."archivedAt" is null
+            and (ca."userWorkspaceId" in (select id from core."userWorkspace" where "userId" = wm."userId") or lower(ca.handle) = lower(wm."userEmail"))
+          where wm.id = $1
+          order by (ca."userWorkspaceId" in (select id from core."userWorkspace" where "userId" = wm."userId")) desc, ca."createdAt" limit 1`,
         [configured, args.workspaceId],
       );
       if (viaMember[0]) return { connectedAccountId: viaMember[0].id, handle: viaMember[0].handle, own: viaMember[0].id === own[0]?.id, note: null };

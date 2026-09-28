@@ -1,5 +1,6 @@
 import { type WorkflowRunStepLog } from 'twenty-shared/workflow';
 
+import { isNonEmptyString } from '@sniptt/guards';
 import {
   isDefined,
   isValidUuid,
@@ -145,20 +146,37 @@ export abstract class EmailWorkflowActionBase extends ToolBackedWorkflowAction<W
       where: { userId: workspaceMember.userId, workspaceId },
     });
 
-    if (!isDefined(userWorkspace)) {
-      return null;
+    const connectedAccount = isDefined(userWorkspace)
+      ? await this.connectedAccountRepository.findOne({
+          where: {
+            userWorkspaceId: userWorkspace.id,
+            workspaceId,
+            archivedAt: IsNull(),
+          },
+          order: { createdAt: 'ASC' },
+        })
+      : null;
+
+    if (isDefined(connectedAccount)) {
+      return connectedAccount.id;
     }
 
-    const connectedAccount = await this.connectedAccountRepository.findOne({
-      where: {
-        userWorkspaceId: userWorkspace.id,
-        workspaceId,
-        archivedAt: IsNull(),
-      },
-      order: { createdAt: 'ASC' },
-    });
+    // Conversifi: a closer's mailbox may have been connected from another login (jamal@ lives
+    // under the josh@ account), so a member without a mailbox of their own still sends from
+    // the mailbox that carries their address.
+    const memberEmail = workspaceMember.userEmail;
+    const byHandle = isNonEmptyString(memberEmail)
+      ? await this.connectedAccountRepository.findOne({
+          where: {
+            handle: memberEmail,
+            workspaceId,
+            archivedAt: IsNull(),
+          },
+          order: { createdAt: 'ASC' },
+        })
+      : null;
 
-    return connectedAccount?.id ?? null;
+    return byHandle?.id ?? null;
   }
 
   protected buildStepLog({

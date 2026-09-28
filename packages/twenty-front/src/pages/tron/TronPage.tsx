@@ -6,6 +6,8 @@ const CELL = 10;
 const WIDTH = COLS * CELL;
 const HEIGHT = ROWS * CELL;
 const BEST_KEY = 'conversifi-tron-best';
+const BOOSTS_PER_ROUND = 3;
+const BOOST_TICKS = 6;
 
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
@@ -27,7 +29,7 @@ const OPPOSITE: Record<Direction, Direction> = { up: 'down', down: 'up', left: '
 const ALL: Direction[] = ['up', 'down', 'left', 'right'];
 const STEPS = [-COLS, COLS, -1, 1];
 
-type Bike = { head: Point; direction: Direction; trail: Point[] };
+type Bike = { head: Point; direction: Direction; trail: Point[]; boostsLeft: number; boostTicks: number };
 
 const readBest = (): Record<Level, number> => {
   try {
@@ -162,8 +164,8 @@ const chooseComputerMove = (walls: Uint8Array, computer: Bike, player: Bike, lev
 };
 
 const startingBikes = (): { player: Bike; computer: Bike } => ({
-  player: { head: { x: 8, y: Math.floor(ROWS / 2) }, direction: 'right', trail: [{ x: 8, y: Math.floor(ROWS / 2) }] },
-  computer: { head: { x: COLS - 9, y: Math.floor(ROWS / 2) }, direction: 'left', trail: [{ x: COLS - 9, y: Math.floor(ROWS / 2) }] },
+  player: { head: { x: 8, y: Math.floor(ROWS / 2) }, direction: 'right', trail: [{ x: 8, y: Math.floor(ROWS / 2) }], boostsLeft: BOOSTS_PER_ROUND, boostTicks: 0 },
+  computer: { head: { x: COLS - 9, y: Math.floor(ROWS / 2) }, direction: 'left', trail: [{ x: COLS - 9, y: Math.floor(ROWS / 2) }], boostsLeft: BOOSTS_PER_ROUND, boostTicks: 0 },
 });
 
 export const TronPage = () => {
@@ -179,6 +181,7 @@ export const TronPage = () => {
   const [losses, setLosses] = useState(0);
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(readBest);
+  const [boosts, setBoosts] = useState({ player: BOOSTS_PER_ROUND, computer: BOOSTS_PER_ROUND });
 
   const reset = useCallback(() => {
     wallsRef.current = new Uint8Array(COLS * ROWS);
@@ -187,6 +190,7 @@ export const TronPage = () => {
     wallsRef.current[key(bikesRef.current.computer.head)] = 1;
     queuedRef.current = null;
     runningRef.current = false;
+    setBoosts({ player: BOOSTS_PER_ROUND, computer: BOOSTS_PER_ROUND });
     setPhase('ready');
   }, []);
 
@@ -213,6 +217,14 @@ export const TronPage = () => {
     reset();
   }, [reset]);
 
+  // A boost doubles the bike's speed for a few ticks; three per round for each side.
+  const boost = useCallback((bike: Bike, who: 'player' | 'computer') => {
+    if (bike.boostsLeft <= 0 || bike.boostTicks > 0) return;
+    bike.boostsLeft -= 1;
+    bike.boostTicks = BOOST_TICKS;
+    setBoosts((current) => ({ ...current, [who]: bike.boostsLeft }));
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const k = event.key.toLowerCase();
@@ -224,12 +236,13 @@ export const TronPage = () => {
         if (map[k] !== OPPOSITE[current]) queuedRef.current = map[k];
       } else if (k === ' ') {
         event.preventDefault();
-        start();
+        if (!runningRef.current) start();
+        else boost(bikesRef.current.player, 'player');
       } else if (k === 'r') reset();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [start, reset]);
+  }, [start, reset, boost]);
 
   useEffect(() => {
     let raf = 0;
@@ -257,6 +270,27 @@ export const TronPage = () => {
       }
     };
 
+    const straightRun = (walls: Uint8Array, bike: Bike) => {
+      let run = 0;
+      let p = { x: bike.head.x + DELTA[bike.direction].x, y: bike.head.y + DELTA[bike.direction].y };
+      while (inside(p) && !walls[key(p)] && run < 12) {
+        run++;
+        p = { x: p.x + DELTA[bike.direction].x, y: p.y + DELTA[bike.direction].y };
+      }
+      return run;
+    };
+
+    // The computer boosts when it has open road and the player is close enough for the burst to matter,
+    // or to answer the player's own boost. Easy never boosts.
+    const maybeComputerBoost = (walls: Uint8Array, computer: Bike, player: Bike) => {
+      if (levelRef.current === 'easy' || computer.boostsLeft <= 0 || computer.boostTicks > 0) return;
+      const run = straightRun(walls, computer);
+      const gap = Math.abs(player.head.x - computer.head.x) + Math.abs(player.head.y - computer.head.y);
+      const answering = player.boostTicks > 0 && gap <= 14 && run >= 4;
+      const racing = run >= 6 && gap <= 10 && Math.random() < 0.35;
+      if (answering || racing) boost(computer, 'computer');
+    };
+
     const tick = () => {
       const walls = wallsRef.current;
       const { player, computer } = bikesRef.current;
@@ -265,20 +299,36 @@ export const TronPage = () => {
         queuedRef.current = null;
       }
       computer.direction = chooseComputerMove(walls, computer, player, levelRef.current);
-      const playerNext = { x: player.head.x + DELTA[player.direction].x, y: player.head.y + DELTA[player.direction].y };
-      const computerNext = { x: computer.head.x + DELTA[computer.direction].x, y: computer.head.y + DELTA[computer.direction].y };
-      const playerCrash = !inside(playerNext) || walls[key(playerNext)] === 1;
-      const computerCrash = !inside(computerNext) || walls[key(computerNext)] === 1;
-      const headOn = playerNext.x === computerNext.x && playerNext.y === computerNext.y;
-      if ((playerCrash && computerCrash) || headOn) return finish('draw');
-      if (playerCrash) return finish('lost');
-      if (computerCrash) return finish('won');
-      walls[key(playerNext)] = 1;
-      walls[key(computerNext)] = 1;
-      player.head = playerNext;
-      player.trail.push(playerNext);
-      computer.head = computerNext;
-      computer.trail.push(computerNext);
+      maybeComputerBoost(walls, computer, player);
+      const playerSteps = player.boostTicks > 0 ? 2 : 1;
+      const computerSteps = computer.boostTicks > 0 ? 2 : 1;
+      if (player.boostTicks > 0) player.boostTicks--;
+      if (computer.boostTicks > 0) computer.boostTicks--;
+      for (let sub = 0; sub < 2; sub++) {
+        const playerMoves = sub < playerSteps;
+        const computerMoves = sub < computerSteps;
+        if (!playerMoves && !computerMoves) break;
+        // On the second sub-step the computer re-reads the board so a boost does not drive it into a wall.
+        if (sub === 1 && computerMoves) computer.direction = chooseComputerMove(walls, computer, player, levelRef.current);
+        const playerNext = playerMoves ? { x: player.head.x + DELTA[player.direction].x, y: player.head.y + DELTA[player.direction].y } : player.head;
+        const computerNext = computerMoves ? { x: computer.head.x + DELTA[computer.direction].x, y: computer.head.y + DELTA[computer.direction].y } : computer.head;
+        const playerCrash = playerMoves && (!inside(playerNext) || walls[key(playerNext)] === 1);
+        const computerCrash = computerMoves && (!inside(computerNext) || walls[key(computerNext)] === 1);
+        const headOn = playerNext.x === computerNext.x && playerNext.y === computerNext.y;
+        if ((playerCrash && computerCrash) || headOn) return finish('draw');
+        if (playerCrash) return finish('lost');
+        if (computerCrash) return finish('won');
+        if (playerMoves) {
+          walls[key(playerNext)] = 1;
+          player.head = playerNext;
+          player.trail.push(playerNext);
+        }
+        if (computerMoves) {
+          walls[key(computerNext)] = 1;
+          computer.head = computerNext;
+          computer.trail.push(computerNext);
+        }
+      }
     };
 
     const draw = () => {
@@ -311,7 +361,12 @@ export const TronPage = () => {
         for (const p of bike.trail) ctx.fillRect(p.x * CELL + 1, p.y * CELL + 1, CELL - 2, CELL - 2);
         ctx.shadowBlur = 0;
         ctx.fillStyle = '#ffffff';
+        if (bike.boostTicks > 0) {
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = 14;
+        }
         ctx.fillRect(bike.head.x * CELL + 2, bike.head.y * CELL + 2, CELL - 4, CELL - 4);
+        ctx.shadowBlur = 0;
       };
       paint(bikesRef.current.computer, orange);
       paint(bikesRef.current.player, blue);
@@ -336,7 +391,7 @@ export const TronPage = () => {
   }, []);
 
   const headline = phase === 'won' ? 'You win' : phase === 'lost' ? 'The computer wins' : phase === 'draw' ? 'Draw' : 'Tron';
-  const hint = phase === 'ready' ? 'Arrows or WASD to ride. First to crash loses.' : phase === 'playing' ? '' : `Streak ${streak} · best on ${LEVELS[level].label} ${best[level]}`;
+  const hint = phase === 'ready' ? 'Arrows or WASD to ride, space for a boost. First to crash loses.' : phase === 'playing' ? '' : `Streak ${streak} · best on ${LEVELS[level].label} ${best[level]}`;
 
   return (
     <div
@@ -369,6 +424,10 @@ export const TronPage = () => {
         </span>
         <span style={{ color: 'var(--t-font-color-tertiary)', fontSize: 14 }}>
           Best <b style={{ color: 'var(--t-font-color-primary)' }}>{best[level]}</b>
+        </span>
+        <span style={{ color: 'var(--t-font-color-tertiary)', fontSize: 14 }}>
+          Boosts <b style={{ color: 'var(--t-tag-text-blue)', letterSpacing: 2 }}>{'\u25cf'.repeat(boosts.player)}{'\u25cb'.repeat(BOOSTS_PER_ROUND - boosts.player)}</b>{' '}
+          <b style={{ color: 'var(--t-tag-text-orange)', letterSpacing: 2 }}>{'\u25cf'.repeat(boosts.computer)}{'\u25cb'.repeat(BOOSTS_PER_ROUND - boosts.computer)}</b>
         </span>
       </div>
 
@@ -444,7 +503,7 @@ export const TronPage = () => {
       </div>
 
       <div style={{ color: 'var(--t-font-color-tertiary)', fontSize: 13 }}>
-        Arrows or WASD to steer &middot; space to start &middot; R to restart &middot; you are blue, the computer is orange
+        Arrows or WASD to steer &middot; space to start, then space to boost (3 a round) &middot; R to restart &middot; you are blue, the computer is orange
       </div>
     </div>
   );

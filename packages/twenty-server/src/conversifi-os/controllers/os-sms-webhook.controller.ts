@@ -44,6 +44,44 @@ export class OsSmsWebhookController {
     return '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
   }
 
+  // The four calls the native SMS workflows make, guarded by the same path token (server to server, no Twilio signature).
+  @Post('thread/:token')
+  @HttpCode(200)
+  async thread(@Param('token') token: string, @Body() body: { personId?: string; route?: string }) {
+    this.tokenOnly(token);
+    if (!body?.personId) return { go: '', reason: 'personId missing' };
+    return this.sms.ensureThread(body.personId, body.route ?? null);
+  }
+
+  @Post('state/:token')
+  @HttpCode(200)
+  async state(@Param('token') token: string, @Body() body: { threadId?: string }) {
+    this.tokenOnly(token);
+    if (!body?.threadId) return { found: '', status: 'missing', replied: '', booked: '', live: '', transcript: '' };
+    return this.sms.state(body.threadId);
+  }
+
+  @Post('send/:token')
+  @HttpCode(200)
+  async send(@Param('token') token: string, @Body() body: { threadId?: string; body?: string; kind?: string }) {
+    this.tokenOnly(token);
+    if (!body?.threadId || !body?.body?.trim()) return { ok: '', reason: 'threadId or body missing' };
+    return this.sms.sendForThread(body.threadId, body.body.trim(), body.kind ?? 'ai');
+  }
+
+  @Post('mark/:token')
+  @HttpCode(200)
+  async mark(@Param('token') token: string, @Body() body: { threadId?: string; status?: string; reason?: string }) {
+    this.tokenOnly(token);
+    if (!body?.threadId || !body?.status) return { ok: '', reason: 'threadId or status missing' };
+    return this.sms.setStatus(body.threadId, body.status, body.reason ?? '');
+  }
+
+  private tokenOnly(token: string) {
+    const expected = env('OS_TWILIO_WEBHOOK_TOKEN');
+    if (!expected || token !== expected) throw new NotFoundException();
+  }
+
   private guard(token: string, request: Request, params: Record<string, string>, path: string) {
     const expected = env('OS_TWILIO_WEBHOOK_TOKEN');
     if (!expected || token !== expected) throw new NotFoundException();

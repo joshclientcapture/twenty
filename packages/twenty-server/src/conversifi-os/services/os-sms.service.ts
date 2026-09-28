@@ -100,6 +100,10 @@ export class OsSmsService {
     private readonly twentyApi: TwentyApiService,
   ) {}
 
+  workflowMode() {
+    return env('OS_SMS_MODE') !== 'engine';
+  }
+
   isDryRun() {
     return env('OS_SMS_DRY_RUN') === 'true' || !env('OS_TWILIO_ACCOUNT_SID') || !env('OS_TWILIO_AUTH_TOKEN');
   }
@@ -110,8 +114,10 @@ export class OsSmsService {
     if (!this.twentyApi.isConfigured()) return { skipped: 'no OS_TWENTY_API_KEY' };
     if (env('OS_SMS_ENABLED') !== 'true') return { skipped: 'OS_SMS_ENABLED is not true' };
     await this.ensureFields();
-    const queued = await this.queueCandidates();
     const booked = await this.noticeBookings();
+    // In workflow mode the two native workflows send the texts and talk to Gemini; only the booking watch runs here.
+    if (this.workflowMode()) return { booked, mode: 'workflow', dryRun: this.isDryRun() };
+    const queued = await this.queueCandidates();
     const openers = await this.sendDueOpeners();
     const ladder = await this.runLadder();
     const replies = await this.answerReplies();
@@ -286,10 +292,11 @@ export class OsSmsService {
     }
     const delay = REPLY_DELAY_MIN_MS + Math.floor(Math.random() * (REPLY_DELAY_MAX_MS - REPLY_DELAY_MIN_MS));
     await this.dataSource.query(
-      `update os.sms_threads set status = case when status in ('booked','stopped') then status else 'replied' end, last_inbound_at = now(), ladder_due_at = null, ai_due_at = now() + ($2 || ' milliseconds')::interval, updated_at = now() where id = $1`,
-      [thread.id, String(delay)],
+      `update os.sms_threads set status = case when status in ('booked','stopped') then status else 'replied' end, last_inbound_at = now(), ladder_due_at = null, ai_due_at = case when $3 then null else now() + ($2 || ' milliseconds')::interval end, updated_at = now() where id = $1`,
+      [thread.id, String(delay), this.workflowMode()],
     );
     if (thread.status !== 'booked' && thread.status !== 'stopped') await this.setPersonSms(thread.person_id, 'REPLIED');
+    if (this.workflowMode()) await this.forwardToReplyWorkflow(thread, body);
     return { matched: true };
   }
 
@@ -371,6 +378,97 @@ export class OsSmsService {
       await this.twentyApi.records(`mutation SmsTaskTarget($data: TaskTargetCreateInput!) { createTaskTarget(data: $data) { id } }`, { data: { taskId: created.createTask.id, targetPersonId: thread.person_id } });
     } catch (error) {
       this.logger.warn(`sms: could not create the handoff task: ${(error as Error).message}`);
+    }
+  }
+
+  // ---- what the native workflows call ---------------------------------------------------------------
+
+  // The chase workflow opens (or reuses) the thread 15 minutes after the form; `go` is empty when the
+  // person should not be texted: no phone, opted out, suppressed, already chased, booked, or past a lead.
+  async ensureThread(personId: string, routeHint: string | null) {
+    const person = (await this.peopleByIds([personId])).get(personId);
+    if (!person) return { go: '', reason: 'person not found' };
+    const route = ROUTE_BY_SOURCE[person.latestSource ?? ''] ?? ROUTE_BY_SOURCE[(routeHint ?? '').toUpperCase()];
+    const phone = toE164(person.phones?.primaryPhoneNumber, person.phones?.primaryPhoneCallingCode);
+    const firstName = firstNameOf(person);
+    const fullName = fullNameOf(person);
+    const email = person.emails?.primaryEmail ?? null;
+    const skip = (reason: string) => ({ go: '', reason, route: route ?? '', firstName, fullName, phone: phone ?? '' });
+    if (!route) return skip('not a form route');
+    if (!phone) return skip('no phone');
+    if (person.smsOptOut) return skip('opted out');
+    if (person.notInterested || STAGES_NOT_TO_CHASE.has(person.stage ?? '')) return skip(`stage ${person.stage}`);
+    if (this.bookedSince(person, person.latestFormAt)) return skip('booked');
+    if (email && /@(conversifi\.io|clientcapture\.io)$/i.test(email)) return skip('internal address');
+    const suppressed: { s: boolean }[] = await this.dataSource.query('select os.is_suppressed($1, $2) as s', [email, fullName]);
+    if (suppressed[0]?.s) return skip('test identity');
+    const existing: ThreadRow[] = await this.dataSource.query(
+      `select * from os.sms_threads where person_id = $1 and (status in ('queued','opener_sent','replied','handed_off','opted_out') or created_at > now() - interval '${RECHASE_COOLDOWN_DAYS} days') order by created_at desc limit 1`,
+      [personId],
+    );
+    if (existing.length) return skip(`already chased (${existing[0].status})`);
+    const rows: [ThreadRow[], number] = await this.dataSource.query(
+      `insert into os.sms_threads (person_id, phone, route, first_name, full_name, email, status, form_at, due_at, opener_at, from_number)
+       values ($1, $2, $3, $4, $5, $6, 'opener_sent', $7, now(), now(), $8) returning *`,
+      [personId, phone, route, firstName, fullName, email, person.latestFormAt ?? new Date().toISOString(), this.senderFor(phone)],
+    );
+    const thread = Array.isArray(rows[0]) ? rows[0][0] : (rows as unknown as ThreadRow[])[0];
+    await this.setPersonSms(personId, 'CHASING');
+    const config = SMS_ROUTES[route];
+    return { go: 'yes', reason: '', threadId: thread.id, route, firstName, fullName, phone, opener: config.opener(firstName), typoFix: config.typoFix, ladder1: config.ladder[0](firstName), ladder2: config.ladder[1](firstName), ladder3: config.ladder[2](firstName), bookingLink: config.bookingLink };
+  }
+
+  // Where the thread stands right now, plus the transcript, for the workflows' checks and the Gemini prompt.
+  async state(threadId: string) {
+    const rows: ThreadRow[] = await this.dataSource.query(`select * from os.sms_threads where id = $1`, [threadId]);
+    const thread = rows[0];
+    if (!thread) return { found: '', status: 'missing', replied: '', booked: '', live: '', transcript: '' };
+    const person = (await this.peopleByIds([thread.person_id])).get(thread.person_id);
+    const booked = person ? this.bookedSince(person, thread.form_at) : false;
+    const replied = !!(thread as ThreadRow & { last_inbound_at: string | null }).last_inbound_at;
+    const live = ['opener_sent', 'replied'].includes(thread.status) && !booked && !person?.smsOptOut;
+    return {
+      found: 'yes', status: thread.status, route: thread.route, firstName: thread.first_name ?? 'there', fullName: thread.full_name ?? 'Unknown', phone: thread.phone, personId: thread.person_id,
+      replied: replied ? 'yes' : '', booked: booked ? 'yes' : '', live: live ? 'yes' : '', chase: live && !replied ? 'yes' : '', who: SMS_ROUTES[thread.route].who, systemPrompt: systemPromptFor(thread.route),
+      transcript: await this.transcript(thread.id),
+    };
+  }
+
+  async sendForThread(threadId: string, body: string, kind: string) {
+    const rows: ThreadRow[] = await this.dataSource.query(`select * from os.sms_threads where id = $1`, [threadId]);
+    const thread = rows[0];
+    if (!thread) return { ok: '', reason: 'thread missing' };
+    if (['opted_out'].includes(thread.status)) return { ok: '', reason: thread.status };
+    const ok = await this.send(thread, thread.from_number ?? this.senderFor(thread.phone), body, kind, kind === 'ai');
+    return { ok: ok ? 'yes' : '', reason: ok ? '' : 'twilio refused' };
+  }
+
+  async setStatus(threadId: string, status: string, reason: string) {
+    const allowed = new Set(['handed_off', 'stopped', 'booked']);
+    if (!allowed.has(status)) return { ok: '', reason: 'bad status' };
+    const rows: ThreadRow[] = await this.dataSource.query(`select * from os.sms_threads where id = $1`, [threadId]);
+    const thread = rows[0];
+    if (!thread) return { ok: '', reason: 'thread missing' };
+    await this.dataSource.query(`update os.sms_threads set status = $2, stop_reason = $3, handoff_reason = case when $2 = 'handed_off' then $3 else handoff_reason end, ladder_due_at = null, ai_due_at = null, updated_at = now() where id = $1`, [threadId, status, reason]);
+    await this.setPersonSms(thread.person_id, status === 'handed_off' ? 'HANDED_OFF' : status === 'booked' ? 'BOOKED' : 'STOPPED');
+    return { ok: 'yes', reason: '' };
+  }
+
+  private async forwardToReplyWorkflow(thread: ThreadRow, body: string) {
+    const url = env('OS_SMS_REPLY_WEBHOOK_URL');
+    if (!url) {
+      this.logger.warn('sms: OS_SMS_REPLY_WEBHOOK_URL is not set, reply not forwarded');
+      return;
+    }
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: thread.id, personId: thread.person_id, route: thread.route, phone: thread.phone, firstName: thread.first_name ?? 'there', fullName: thread.full_name ?? 'Unknown', message: body }),
+      });
+      if (!response.ok) this.logger.warn(`sms: reply workflow returned ${response.status}`);
+    } catch (error) {
+      this.logger.warn(`sms: reply workflow call failed: ${(error as Error).message}`);
     }
   }
 

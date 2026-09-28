@@ -7,7 +7,7 @@ const WIDTH = COLS * CELL;
 const HEIGHT = ROWS * CELL;
 const BEST_KEY = 'conversifi-tron-best';
 const BOOSTS_PER_ROUND = 3;
-const BOOST_TICKS = 8;
+const BOOST_TICKS = 4;
 const BOOST_MULTIPLIER = 3;
 
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -218,7 +218,7 @@ export const TronPage = () => {
     reset();
   }, [reset]);
 
-  // A boost triples the bike's speed for eight ticks; three per round for each side.
+  // A boost triples the bike's speed for four ticks; three per round for each side.
   const boost = useCallback((bike: Bike, who: 'player' | 'computer') => {
     if (bike.boostsLeft <= 0 || bike.boostTicks > 0) return;
     bike.boostsLeft -= 1;

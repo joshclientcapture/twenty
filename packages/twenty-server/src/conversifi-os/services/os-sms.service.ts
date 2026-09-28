@@ -166,9 +166,11 @@ export class OsSmsService {
           { messageId, role: 'TO', handle: to.handle, displayName: to.displayName, ...('personId' in to ? { personId: to.personId } : {}) },
         ] },
       );
-      await this.twentyApi.records(
-        `mutation SmsAssociation($data: MessageChannelMessageAssociationCreateInput!) { createMessageChannelMessageAssociation(data: $data) { id } }`,
-        { data: { messageId, messageThreadId, messageChannelId: OsSmsService.SMS_CHANNEL_ID, direction: direction === 'in' ? 'INCOMING' : 'OUTGOING', messageExternalId: sid ?? null, messageThreadExternalId: thread.id } },
+      // The channel association is not writable through the API, so it goes straight into the table.
+      await this.dataSource.query(
+        `insert into workspace_a1aip8pgko71t0v2lrw9rnizs."messageChannelMessageAssociation" (id, "messageChannelId", "messageId", "messageThreadId", direction, "messageExternalId", "messageThreadExternalId")
+         values (gen_random_uuid(), $1, $2, $3, $4::workspace_a1aip8pgko71t0v2lrw9rnizs."messageChannelMessageAssociation_direction_enum", $5, $6)`,
+        [OsSmsService.SMS_CHANNEL_ID, messageId, messageThreadId, direction === 'in' ? 'INCOMING' : 'OUTGOING', sid ?? null, thread.id],
       );
       if (smsMessageId) await this.dataSource.query(`update os.sms_messages set message_id = $2 where id = $1`, [smsMessageId, messageId]);
       else if (sid) await this.dataSource.query(`update os.sms_messages set message_id = $2 where provider_sid = $1`, [sid, messageId]);

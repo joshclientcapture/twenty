@@ -224,11 +224,11 @@ export const WorkflowEditActionEmailBase = ({
     if (!isDefined(workflowVersionId)) return;
     setSendingTest(true);
     try {
-      const result = await osPost<{ to: string; from: string; sample: string; unresolved: string[]; senderNote: string | null }>(
+      const result = await osPost<{ to: string; from: string; sample: string; placeholders: string[]; senderNote: string | null }>(
         'workflow/send-test',
         { workflowVersionId, stepId: action.id, input: formData },
       );
-      const blanks = result.unresolved.length > 0 ? ` Left blank: ${result.unresolved.join(', ')}.` : '';
+      const blanks = result.placeholders.length > 0 ? ` Only a live run fills ${result.placeholders.join(', ')}.` : '';
       enqueueSuccessSnackBar({
         message: `Test sent to ${result.to} from ${result.from}, filled in with ${result.sample}.${blanks}${result.senderNote ? ` ${result.senderNote}` : ''}`,
       });

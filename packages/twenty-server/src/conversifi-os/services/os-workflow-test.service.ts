@@ -48,6 +48,7 @@ export class OsWorkflowTestService {
     const { context, sampleName } = await this.buildContext(steps, args.userEmail);
 
     const unresolved = this.unresolvedVariables(`${rawInput.subject ?? ''} ${rawInput.body ?? ''}`, context);
+    const placeholders = this.fillPlaceholders(unresolved, context);
     const body = isDefined(rawInput.body) ? await resolveEmailBody(rawInput.body, context) : '';
     const files = resolveEmailFiles(rawInput.files, context);
     const { body: _ignoredBody, files: _ignoredFiles, ...rest } = rawInput;
@@ -71,7 +72,7 @@ export class OsWorkflowTestService {
       this.logger.warn(`workflow test send failed: ${output.error ?? output.message}`);
       throw new BadRequestException(output.error ?? output.message ?? 'Could not send the test');
     }
-    return { ok: true, to: args.userEmail, from: sender.handle, sample: sampleName, unresolved, senderNote: sender.note };
+    return { ok: true, to: args.userEmail, from: sender.handle, sample: sampleName, placeholders, senderNote: sender.note };
   }
 
   private async loadSteps(workflowVersionId: string): Promise<WorkflowStep[]> {
@@ -133,6 +134,25 @@ export class OsWorkflowTestService {
       if (value === undefined || value === null || value === '') seen.add(variable);
     }
     return [...seen];
+  }
+
+  // A value only a run can compute (code or HTTP step output) is shown as its own name in
+  // brackets, so the test still reads like the email instead of having holes in it.
+  private fillPlaceholders(unresolved: string[], context: Record<string, unknown>): string[] {
+    const placeholders: string[] = [];
+    for (const variable of unresolved) {
+      const path = variable.slice(2, -2).trim().split('.');
+      const leaf = path[path.length - 1];
+      if (path.length < 2 || !/^[\w-]+$/.test(leaf)) continue;
+      let node = context;
+      for (const key of path.slice(0, -1)) {
+        if (typeof node[key] !== 'object' || node[key] === null) node[key] = {};
+        node = node[key] as Record<string, unknown>;
+      }
+      node[leaf] = `[${leaf}]`;
+      placeholders.push(`[${leaf}]`);
+    }
+    return placeholders;
   }
 
   // The configured sender may be a connected account id or, through a variable, a workspace

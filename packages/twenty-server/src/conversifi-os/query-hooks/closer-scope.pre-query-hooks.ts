@@ -31,7 +31,6 @@ const MORPH_LINKS = ['targetPerson', 'targetCompany', 'targetBooking'];
 export const LINK_OBJECTS: Record<string, string[]> = {
   messageParticipant: ['person'],
   calendarEventParticipant: ['person'],
-  smsMessage: ['person'],
   timelineActivity: MORPH_LINKS,
   noteTarget: MORPH_LINKS,
   taskTarget: MORPH_LINKS,

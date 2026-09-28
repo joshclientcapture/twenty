@@ -124,70 +124,67 @@ export class OsSmsService {
     return { queued, booked, openers, ladder, replies, dryRun: this.isDryRun() };
   }
 
-  private smsObjectReady = false;
+  private static readonly SMS_CHANNEL_ID = '5a5c0000-0000-4000-8000-00000000c0df';
 
-  // The Text message object: one record per SMS in or out, linked to the person. Twenty's timeline logs
-  // each one under the person, which is the communications view Jamal asked for.
-  async ensureSmsObject() {
-    if (this.smsObjectReady) return;
-    const objects = await this.twentyApi.listObjects();
-    const person = objects.find((object) => object.nameSingular === 'person');
-    if (!person) throw new Error('person object not found');
-    let sms = objects.find((object) => object.nameSingular === 'smsMessage');
-    if (!sms) {
-      const created = await this.twentyApi.metadata<{ createOneObject: { id: string; nameSingular: string; fieldsList: { id: string; name: string; type: string }[] } }>(
-        `mutation CreateSmsObject($input: CreateOneObjectInput!) { createOneObject(input: $input) { id nameSingular fieldsList { id name type } } }`,
-        { input: { object: { nameSingular: 'smsMessage', namePlural: 'smsMessages', labelSingular: 'Text message', labelPlural: 'Text messages', icon: 'IconMessage', description: 'SMS sent and received by Melanie, the closers and the leads', isLabelSyncedWithName: false } } },
-      );
-      sms = created.createOneObject;
-      this.logger.log(`created smsMessage object ${sms.id}`);
-    }
-    await this.twentyApi.ensureFields('smsMessage', [
-      { name: 'direction', label: 'Direction', type: 'SELECT', icon: 'IconArrowsExchange', extra: { options: selectOptions([{ value: 'IN', label: 'Received', color: 'gray' }, { value: 'OUT', label: 'Sent', color: 'blue' }]) } },
-      { name: 'sender', label: 'From', type: 'TEXT', icon: 'IconUser' },
-      { name: 'kind', label: 'Kind', type: 'TEXT', icon: 'IconTag' },
-      { name: 'sentAt', label: 'Sent at', type: 'DATE_TIME', icon: 'IconClock' },
-      { name: 'phone', label: 'Phone', type: 'TEXT', icon: 'IconPhone' },
-      { name: 'deliveryStatus', label: 'Delivery', type: 'TEXT', icon: 'IconTruckDelivery' },
-      { name: 'providerSid', label: 'Twilio id', type: 'TEXT', icon: 'IconId' },
-      { name: 'threadId', label: 'Thread', type: 'TEXT', icon: 'IconMessages' },
-      { name: 'person', label: 'Person', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'Text messages', targetFieldIcon: 'IconMessage', type: 'MANY_TO_ONE' } } },
-    ]);
-    this.smsObjectReady = true;
-  }
-
-  private async logMessage(thread: ThreadRow, direction: 'in' | 'out', body: string, kind: string, sid: string | null, status: string | null) {
+  // Every text becomes a message in Twenty's own inbox model: one message thread per SMS conversation
+  // on the "Melanie (SMS)" channel, a message per text, with the person as a participant. That is what
+  // puts the conversation in the contact's Emails tab and on the Timeline, threaded and in order.
+  private async messageThreadFor(thread: ThreadRow): Promise<string | null> {
+    const rows: { message_thread_id: string | null }[] = await this.dataSource.query(`select message_thread_id from os.sms_threads where id = $1`, [thread.id]);
+    if (rows[0]?.message_thread_id) return rows[0].message_thread_id;
     try {
-      await this.ensureSmsObject();
-      const sender = direction === 'in' ? (thread.full_name ?? thread.phone) : kind === 'human' ? 'Closer' : 'Melanie';
-      await this.twentyApi.records(
-        `mutation LogSms($data: SmsMessageCreateInput!) { createSmsMessage(data: $data) { id } }`,
-        { data: { name: body.slice(0, 160), direction: direction === 'in' ? 'IN' : 'OUT', sender, kind, sentAt: new Date().toISOString(), phone: thread.phone, deliveryStatus: status, providerSid: sid, threadId: thread.id, personId: thread.person_id } },
+      const created = await this.twentyApi.records<{ createMessageThread: { id: string } }>(
+        `mutation SmsThread($data: MessageThreadCreateInput!) { createMessageThread(data: $data) { id } }`,
+        { data: { subject: `Text conversation with ${thread.full_name ?? thread.phone}` } },
       );
+      await this.dataSource.query(`update os.sms_threads set message_thread_id = $2 where id = $1`, [thread.id, created.createMessageThread.id]);
+      return created.createMessageThread.id;
     } catch (error) {
-      this.logger.warn(`sms: could not log the text on the person: ${(error as Error).message}`);
+      this.logger.warn(`sms: could not create the message thread: ${(error as Error).message}`);
+      return null;
     }
   }
 
-  // One-off: mirror every stored message that has no Text message record yet.
+  private async logMessage(thread: ThreadRow, direction: 'in' | 'out', body: string, kind: string, sid: string | null, _status: string | null, at?: string, smsMessageId?: string) {
+    try {
+      const messageThreadId = await this.messageThreadFor(thread);
+      if (!messageThreadId) return;
+      const receivedAt = at ?? new Date().toISOString();
+      const melanie = { handle: thread.from_number ?? this.senderFor(thread.phone) ?? 'Melanie', displayName: kind === 'human' ? 'Closer (SMS)' : 'Melanie (SMS)' };
+      const contact = { handle: thread.phone, displayName: thread.full_name ?? thread.phone, personId: thread.person_id };
+      const message = await this.twentyApi.records<{ createMessage: { id: string } }>(
+        `mutation SmsMessage($data: MessageCreateInput!) { createMessage(data: $data) { id } }`,
+        { data: { headerMessageId: sid ?? `sms-${thread.id}-${Date.now()}`, subject: direction === 'in' ? `Text from ${contact.displayName}` : `Text to ${contact.displayName}`, text: body, receivedAt, messageThreadId } },
+      );
+      const messageId = message.createMessage.id;
+      const from = direction === 'in' ? contact : melanie;
+      const to = direction === 'in' ? melanie : contact;
+      await this.twentyApi.records(
+        `mutation SmsParticipants($data: [MessageParticipantCreateInput!]!) { createMessageParticipants(data: $data) { id } }`,
+        { data: [
+          { messageId, role: 'FROM', handle: from.handle, displayName: from.displayName, ...('personId' in from ? { personId: from.personId } : {}) },
+          { messageId, role: 'TO', handle: to.handle, displayName: to.displayName, ...('personId' in to ? { personId: to.personId } : {}) },
+        ] },
+      );
+      await this.twentyApi.records(
+        `mutation SmsAssociation($data: MessageChannelMessageAssociationCreateInput!) { createMessageChannelMessageAssociation(data: $data) { id } }`,
+        { data: { messageId, messageThreadId, messageChannelId: OsSmsService.SMS_CHANNEL_ID, direction: direction === 'in' ? 'INCOMING' : 'OUTGOING', messageExternalId: sid ?? null, messageThreadExternalId: thread.id } },
+      );
+      if (smsMessageId) await this.dataSource.query(`update os.sms_messages set message_id = $2 where id = $1`, [smsMessageId, messageId]);
+      else if (sid) await this.dataSource.query(`update os.sms_messages set message_id = $2 where provider_sid = $1`, [sid, messageId]);
+    } catch (error) {
+      this.logger.warn(`sms: could not log the text in the inbox: ${(error as Error).message}`);
+    }
+  }
+
+  // One-off: put every stored text that has no inbox message yet into the inbox.
   async backfillMessages() {
-    await this.ensureSmsObject();
     const rows: (ThreadRow & { m_id: string; direction: 'in' | 'out'; kind: string | null; body: string; provider_sid: string | null; provider_status: string | null; at: string })[] = await this.dataSource.query(
-      `select t.*, m.id as m_id, m.direction, m.kind, m.body, m.provider_sid, m.provider_status, m.at from os.sms_messages m join os.sms_threads t on t.id = m.thread_id order by m.at`,
+      `select t.*, m.id as m_id, m.direction, m.kind, m.body, m.provider_sid, m.provider_status, m.at from os.sms_messages m join os.sms_threads t on t.id = m.thread_id where m.message_id is null order by m.at`,
     );
-    const existing = await this.twentyApi.records<{ smsMessages: { edges: { node: { threadId: string | null; providerSid: string | null; sentAt: string } }[] } }>(
-      `query { smsMessages(first: 500) { edges { node { threadId providerSid sentAt } } } }`,
-    );
-    const seen = new Set(existing.smsMessages.edges.map(({ node }) => `${node.threadId}|${node.providerSid ?? ''}`));
     let logged = 0;
     for (const row of rows) {
-      const key = `${row.id}|${row.provider_sid ?? ''}`;
-      if (row.provider_sid && seen.has(key)) continue;
-      const sender = row.direction === 'in' ? (row.full_name ?? row.phone) : row.kind === 'human' ? 'Closer' : 'Melanie';
-      await this.twentyApi.records(
-        `mutation LogSms($data: SmsMessageCreateInput!) { createSmsMessage(data: $data) { id } }`,
-        { data: { name: row.body.slice(0, 160), direction: row.direction === 'in' ? 'IN' : 'OUT', sender, kind: row.kind ?? '', sentAt: row.at, phone: row.phone, deliveryStatus: row.provider_status, providerSid: row.provider_sid, threadId: row.id, personId: row.person_id } },
-      );
+      await this.logMessage(row, row.direction, row.body, row.kind ?? 'ai', row.provider_sid, row.provider_status, row.at, row.m_id);
       logged++;
     }
     return { logged, total: rows.length };
@@ -633,13 +630,6 @@ export class OsSmsService {
 
   async recordStatus(sid: string, status: string) {
     await this.dataSource.query(`update os.sms_messages set provider_status = $2 where provider_sid = $1`, [sid, status]);
-    try {
-      const found = await this.twentyApi.records<{ smsMessages: { edges: { node: { id: string } }[] } }>(`query ($sid: String!) { smsMessages(filter: { providerSid: { eq: $sid } }, first: 1) { edges { node { id } } } }`, { sid });
-      const id = found.smsMessages.edges[0]?.node.id;
-      if (id) await this.twentyApi.records(`mutation ($id: UUID!, $data: SmsMessageUpdateInput!) { updateSmsMessage(id: $id, data: $data) { id } }`, { id, data: { deliveryStatus: status } });
-    } catch (error) {
-      this.logger.warn(`sms: could not update delivery status on the record: ${(error as Error).message}`);
-    }
   }
 
   // Twilio signs every webhook: base64(HMAC-SHA1(auth token, url + sorted POST params concatenated)).

@@ -9,7 +9,7 @@ alter table os.closers add column if not exists discord_webhook text;
 create or replace function os.get_closers()
 returns jsonb language sql stable security definer set search_path to 'os', 'public' as $function$
   select coalesce(jsonb_agg(jsonb_build_object(
-    'id', id, 'name', name, 'login_email', login_email, 'fathom_email', fathom_email,
+    'id', id, 'name', name, 'email', login_email, 'fathom_email', fathom_email,
     'calendly_host_email', calendly_host_email, 'commission_rate', commission_rate,
     'commissioned', commissioned, 'tracked', tracked, 'active', active, 'discord_webhook', discord_webhook
   ) order by sort_order, name), '[]'::jsonb) from os.closers;

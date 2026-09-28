@@ -360,7 +360,7 @@ if (TEST) {
   let payload;
   if (TEST === 'reply') payload = target.spec.testPayload();
   else {
-    const person = await gql('/graphql', `mutation ($data: PersonCreateInput!) { createPerson(data: $data) { id } }`, { data: { name: { firstName: 'Dana', lastName: 'Wells' }, emails: { primaryEmail: 'dana.wells@brightledger.co', additionalEmails: [] }, phones: { primaryPhoneNumber: '7700900123', primaryPhoneCallingCode: '+44', primaryPhoneCountryCode: 'GB' }, latestSource: 'DFY', latestFormAt: new Date().toISOString() } });
+    const person = await gql('/graphql', `mutation ($data: PersonCreateInput!) { createPerson(data: $data) { id } }`, { data: { name: { firstName: 'Dana', lastName: 'Wells' }, emails: { primaryEmail: `dana.wells+${Date.now()}@brightledger.co`, additionalEmails: [] }, phones: { primaryPhoneNumber: '7700900123', primaryPhoneCallingCode: '+44', primaryPhoneCountryCode: 'GB' }, latestSource: 'DFY', latestFormAt: new Date().toISOString() } });
     console.log('test person', person.createPerson.id);
     payload = { properties: { after: target.spec.testPayload(person.createPerson.id) } };
   }

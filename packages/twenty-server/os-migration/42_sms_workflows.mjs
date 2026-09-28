@@ -262,19 +262,21 @@ const replyWorkflow = () => {
     name: 'SMS reply: Melanie answers',
     description: 'Ported from n8n "SMS Replier - 15 Min". The Twilio receiver posts each reply here: a short pause, the transcript, the Gemini brief for the route (agency, demo or DFY), the answer by text. When Gemini asks for a human the thread is handed off: task on the person, Discord card, bot stops replying.',
     trigger: trigger.webhook(REPLY_SAMPLE),
+    // Code steps sit before their if/else rather than as its first child: the builder tool wires a code
+    // step hung off an if/else to the wrong edge.
     steps: [
       wait('Think for a moment', QUICK ? { seconds: 5 } : { seconds: 45 }),
       state,
+      prep,
       branch('Bot still on this thread?', [condition(R(state, 'live'), 'TEXT', 'IS', 'yes')], [
-        prep,
         gemini,
         parse,
         sms('Melanie replies', '{{trigger.threadId}}', '{{PARSE.message}}', 'ai'),
+        discordMessage,
         branch('Needs a human?', [condition('{{PARSE.human}}', 'TEXT', 'IS', 'yes')], [
           http('Hand the thread off', `${PUBLIC}/os/sms/mark/${SMS_TOKEN}`, { threadId: '{{trigger.threadId}}', status: 'handed_off', reason: '{{PARSE.reason}}' }, { ok: 'yes', reason: '' }),
           task,
           target,
-          discordMessage,
           ...(DISCORD ? [step('HTTP_REQUEST', 'Post to Discord', { url: DISCORD, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{{DISCORD.body}}' }, { outputSchema: { status: leaf('status', 204) }, expectedOutputSchema: { status: 204 } })] : []),
         ]),
       ]),

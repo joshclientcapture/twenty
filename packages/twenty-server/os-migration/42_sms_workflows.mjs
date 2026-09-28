@@ -64,11 +64,12 @@ const wait = (name, duration) => step('DELAY', name, { delayType: 'DURATION', du
 const code = (name, key, source, input, outputSample) => ({ ...step('CODE', name, {}), _code: { key, source, input, outputSample } });
 const condition = (key, type, operand, value = '') => ({ key, type, operand, value });
 const branch = (name, conditions, then, otherwise = []) => ({ _if: { name, branches: [{ conditions, steps: then }], otherwise } });
-const http = (name, url, body, sample) => step('HTTP_REQUEST', name, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, { outputSchema: { status: leaf('status', 200), result: { icon: 'IconVariable', type: 'object', label: 'result', value: schemaOf(sample), isLeaf: false } }, expectedOutputSchema: { status: 200, result: sample } });
+// A run stores the HTTP response body as the step's result, so fields sit at the top level: {{step.go}}.
+const http = (name, url, body, sample) => step('HTTP_REQUEST', name, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, { outputSchema: schemaOf(sample), expectedOutputSchema: sample });
 const createRecord = (name, objectName, objectRecord) => step('CREATE_RECORD', name, { objectName, objectRecord });
 const sms = (name, threadIdExpression, bodyExpression, kind) => http(name, `${PUBLIC}/os/sms/send/${SMS_TOKEN}`, { threadId: threadIdExpression, body: bodyExpression, kind }, { ok: 'yes', reason: '' });
 const stateCall = (name, threadIdExpression) => http(name, `${PUBLIC}/os/sms/state/${SMS_TOKEN}`, { threadId: threadIdExpression }, { found: 'yes', status: 'opener_sent', route: 'dfy', firstName: 'Sam', fullName: 'Sam Carter', phone: '+447700900000', personId: '', replied: '', booked: '', live: 'yes', chase: 'yes', who: '', transcript: '' });
-const R = (node, field) => `{{${node.id}.result.${field}}}`;
+const R = (node, field) => `{{${node.id}.${field}}}`;
 
 const layout = (list) => {
   const steps = [];
@@ -162,8 +163,8 @@ The message is for SMS responses so use \\\\n\\\\n line breaks to format it for 
 
 const PARSE_CODE = String.raw`
 export const main = async (params) => {
-  const response = params.response || {};
-  const parts = (response.candidates && response.candidates[0] && response.candidates[0].content && response.candidates[0].content.parts) || [];
+  const candidates = Array.isArray(params.candidates) ? params.candidates : [];
+  const parts = (candidates[0] && candidates[0].content && candidates[0].content.parts) || [];
   let text = '';
   for (const part of parts) if (part.text && !part.thought) { text = part.text; break; }
   if (!text && parts.length) text = parts[parts.length - 1].text || '';
@@ -251,8 +252,8 @@ const REPLY_SAMPLE = { threadId: '00000000-0000-0000-0000-000000000000', personI
 const replyWorkflow = () => {
   const state = stateCall('Fetch the conversation', '{{trigger.threadId}}');
   const prep = code('Build the Gemini request', 'PREP', PREP_CODE, { route: R(state, 'route'), fullName: R(state, 'fullName'), who: R(state, 'who'), transcript: R(state, 'transcript') }, { body: {} });
-  const gemini = step('HTTP_REQUEST', 'Ask Gemini', { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body: '{{PREP.body}}' }, { outputSchema: { status: leaf('status', 200), result: { icon: 'IconVariable', type: 'object', label: 'result', value: {}, isLeaf: false } }, expectedOutputSchema: { status: 200, result: {} } });
-  const parse = code('Read the reply', 'PARSE', PARSE_CODE, { response: `{{${gemini.id}.result}}` }, { message: 'Sure, here is how it works.', human: '', reason: '', interest: 'neutral' });
+  const gemini = step('HTTP_REQUEST', 'Ask Gemini', { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body: '{{PREP.body}}' }, { outputSchema: { candidates: leaf('candidates', []) }, expectedOutputSchema: { candidates: [] } });
+  const parse = code('Read the reply', 'PARSE', PARSE_CODE, { candidates: `{{${gemini.id}.candidates}}` }, { message: 'Sure, here is how it works.', human: '', reason: '', interest: 'neutral' });
   const task = createRecord('Task for the closer', 'task', { title: 'SMS handoff: {{trigger.fullName}}', status: 'TODO', bodyV2: { markdown: 'Melanie\'s SMS bot needs a human on the {{trigger.route}} thread with {{trigger.phone}}.\n\n**Why:** {{PARSE.reason}}\n\n---\n\n' + R(state, 'transcript') } });
   const target = createRecord('Link the task to the person', 'taskTarget', { taskId: `{{${task.id}.id}}`, targetPersonId: '{{trigger.personId}}' });
   const discordMessage = code('Discord card', 'DISCORD', DISCORD_CODE, { fullName: '{{trigger.fullName}}', phone: '{{trigger.phone}}', route: '{{trigger.route}}', reason: '{{PARSE.reason}}', transcript: R(state, 'transcript') }, { body: {} });

@@ -80,7 +80,9 @@ export const NavigationDrawerSectionForObjectMetadataItems = ({
         !ORDERED_FIRST_STANDARD_OBJECTS.includes(item.nameSingular) &&
         !ORDERED_LAST_STANDARD_OBJECTS.includes(item.nameSingular) &&
         // Backing store for the Workflows page folder tree; it lives inside that tab.
-        item.nameSingular !== 'workflowFolder',
+        item.nameSingular !== 'workflowFolder' &&
+        // Texts are read on the person's Timeline; the raw log is not a page anyone opens.
+        item.nameSingular !== 'smsMessage',
     )
     .sort((objectMetadataItemA, objectMetadataItemB) => {
       return new Date(objectMetadataItemA.createdAt) <

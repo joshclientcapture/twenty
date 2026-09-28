@@ -107,6 +107,12 @@ const FlappyPage = lazy(() =>
   })),
 );
 
+const TronPage = lazy(() =>
+  import('~/pages/tron/TronPage').then((module) => ({
+    default: module.TronPage,
+  })),
+);
+
 const NotFound = lazy(() =>
   import('~/pages/not-found/NotFound').then((module) => ({
     default: module.NotFound,
@@ -282,6 +288,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <FlappyPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Tron,
+      element: (
+        <LazyRoute>
+          <TronPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

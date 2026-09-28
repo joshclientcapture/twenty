@@ -3,6 +3,7 @@ import { IconBuildingSkyscraper, IconPresentation, IconSquareNumber2, IconTrendi
 
 import { IconBird } from "@/custom-pages/components/IconBird";
 import { IconSnake } from "@/custom-pages/components/IconSnake";
+import { IconTron } from "@/custom-pages/components/IconTron";
 import { IconSales } from "@/custom-pages/os/IconSales";
 
 export type CustomPage = {
@@ -47,6 +48,7 @@ export const CUSTOM_PAGE_SECTIONS: CustomPageSection[] = [
       { label: "Snake", path: AppPath.Snake, Icon: IconSnake as IconComponent },
       { label: "2048", path: AppPath.Game2048, Icon: IconSquareNumber2 as IconComponent },
       { label: "Flappy", path: AppPath.Flappy, Icon: IconBird as IconComponent },
+      { label: "Tron", path: AppPath.Tron, Icon: IconTron as IconComponent },
     ],
   },
 ];

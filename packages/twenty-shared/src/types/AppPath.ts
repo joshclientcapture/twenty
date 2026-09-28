@@ -33,6 +33,7 @@ export enum AppPath {
   Snake = '/snake',
   Game2048 = '/2048',
   Flappy = '/flappy',
+  Tron = '/tron',
   Sales = '/sales',
   Records = '/records',
   Therapon = '/therapon',

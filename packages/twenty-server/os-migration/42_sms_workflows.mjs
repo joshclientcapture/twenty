@@ -229,7 +229,8 @@ export const main = async (params) => ({
 const minutes = (n) => (QUICK ? { seconds: Math.max(5, Math.round(n)) } : { minutes: n });
 const days = (n) => (QUICK ? { seconds: 20 * n } : { days: n });
 
-const chaseWorkflow = (route, event) => {
+// Only people the form just created are chased (Jamal, 28 Sep): someone already in the CRM is not a cold lead.
+const chaseWorkflow = (route) => {
   const offer = ROUTES[route];
   const recent = code('Fresh form?', 'RECENT', RECENT_CODE, { at: T.field('latestFormAt'), hours: 2, source: T.field('latestSource') }, { recent: 'yes', route });
   const thread = http('Open the SMS thread', `${PUBLIC}/os/sms/thread/${SMS_TOKEN}`, { personId: T.id, route }, { go: 'yes', reason: '', threadId: '', route, firstName: 'Sam', fullName: 'Sam Carter', phone: '+447700900000' });
@@ -239,10 +240,10 @@ const chaseWorkflow = (route, event) => {
   const check3 = stateCall('Where does it stand? (3 days)', threadId);
   const noReply = (node) => [condition(R(node, 'chase'), 'TEXT', 'IS', 'yes')];
   return {
-    key: `chase-${route}-${event}`,
-    name: `SMS chase · ${offer.label} · ${event === 'created' ? 'new person' : 'existing person'}`,
-    description: `Ported from GHL "AI SMS - Lead not booked after 15 min" for ${offer.label} form leads (${event === 'created' ? 'people the form just created' : 'people already in the CRM who filled the form again'}). 15 minutes after the form with no booking: Melanie's opener and typo fix, then "all good?" at 30 minutes, the "no better day" text at 1 day and the final text at 3 days. A reply or a booking stops it; replies are answered by "SMS reply · ${offer.label}".`,
-    trigger: event === 'created' ? trigger.created('person') : trigger.updated('person', ['latestFormAt']),
+    key: `chase-${route}`,
+    name: `SMS chase · ${offer.label}`,
+    description: `Ported from GHL "AI SMS - Lead not booked after 15 min" for new ${offer.label} form leads (people the form just created). 15 minutes after the form with no booking: Melanie's opener and typo fix, then "all good?" at 30 minutes, the "no better day" text at 1 day and the final text at 3 days. A reply or a booking stops it; replies are answered by "SMS reply · ${offer.label}".`,
+    trigger: trigger.created('person'),
     steps: [
       recent,
       branch(`${offer.label} form just came in?`, [condition('{{RECENT.recent}}', 'TEXT', 'IS', 'yes'), condition('{{RECENT.route}}', 'TEXT', 'IS', route)], [
@@ -313,7 +314,7 @@ const replyWorkflow = (route) => {
   };
 };
 
-const WORKFLOWS = ['dfy', 'demo', 'agency'].flatMap((route) => [chaseWorkflow(route, 'created'), chaseWorkflow(route, 'updated'), replyWorkflow(route)]);
+const WORKFLOWS = ['dfy', 'demo', 'agency'].flatMap((route) => [chaseWorkflow(route), replyWorkflow(route)]);
 
 // ---------- create ----------
 const existing = (await gql('/graphql', `{ workflows(first: 200) { edges { node { id name statuses versions { edges { node { id status } } } } } } }`)).workflows.edges.map((edge) => edge.node);
@@ -322,6 +323,12 @@ const destroyWorkflow = async (workflow) => {
   await gql('/graphql', `mutation ($id: UUID!) { deleteWorkflow(id: $id) { id } }`, { id: workflow.id });
   await gql('/graphql', `mutation ($id: UUID!) { destroyWorkflow(id: $id) { id } }`, { id: workflow.id });
 };
+
+// Older SMS workflows that are no longer in the set (earlier shapes of the same thing) are removed.
+for (const workflow of existing.filter((candidate) => candidate.name.startsWith('SMS ') && !WORKFLOWS.some((spec) => spec.name === candidate.name))) {
+  await destroyWorkflow(workflow);
+  console.log(`removed: ${workflow.name}`);
+}
 
 const created = [];
 for (const spec of WORKFLOWS) {

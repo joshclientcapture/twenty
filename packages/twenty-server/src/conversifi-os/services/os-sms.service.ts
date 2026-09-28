@@ -455,9 +455,10 @@ export class OsSmsService {
   }
 
   private async forwardToReplyWorkflow(thread: ThreadRow, body: string) {
-    const url = env('OS_SMS_REPLY_WEBHOOK_URL');
+    // One reply workflow per offer, so each brief can be edited on its own; a shared one is the fallback.
+    const url = env(`OS_SMS_REPLY_WEBHOOK_URL_${thread.route.toUpperCase()}`) ?? env('OS_SMS_REPLY_WEBHOOK_URL');
     if (!url) {
-      this.logger.warn('sms: OS_SMS_REPLY_WEBHOOK_URL is not set, reply not forwarded');
+      this.logger.warn(`sms: no reply workflow webhook for route ${thread.route}, reply not forwarded`);
       return;
     }
     try {
@@ -470,6 +471,47 @@ export class OsSmsService {
     } catch (error) {
       this.logger.warn(`sms: reply workflow call failed: ${(error as Error).message}`);
     }
+  }
+
+  // ---- the inbox page: a human takes over -------------------------------------------------------------
+
+  private async threadForUser(threadId: string, scopeEmail: string | null): Promise<ThreadRow | null> {
+    const rows: ThreadRow[] = await this.dataSource.query(
+      `select t.* from os.sms_threads t left join workspace_a1aip8pgko71t0v2lrw9rnizs.person p on p.id = t.person_id
+       where t.id = $1 and ($2::text is null or lower(p."closerEmail") = lower($2))`,
+      [threadId, scopeEmail],
+    );
+    return rows[0] ?? null;
+  }
+
+  // A person answering from the inbox takes the thread over: Melanie stops replying until handed back.
+  async humanReply(threadId: string, body: string, scopeEmail: string | null, who: string) {
+    const thread = await this.threadForUser(threadId, scopeEmail);
+    if (!thread) return { ok: '', reason: 'thread not found' };
+    if (thread.status === 'opted_out') return { ok: '', reason: 'this person opted out' };
+    const ok = await this.send(thread, thread.from_number ?? this.senderFor(thread.phone), body, 'human');
+    if (!ok) return { ok: '', reason: 'twilio refused the send' };
+    if (thread.status !== 'handed_off') {
+      await this.dataSource.query(`update os.sms_threads set status = 'handed_off', handoff_reason = $2, ladder_due_at = null, ai_due_at = null, updated_at = now() where id = $1`, [thread.id, `${who} took over`]);
+      await this.setPersonSms(thread.person_id, 'HANDED_OFF');
+    }
+    return { ok: 'yes', reason: '' };
+  }
+
+  async inboxAction(threadId: string, action: 'bot' | 'stop', scopeEmail: string | null, who: string) {
+    const thread = await this.threadForUser(threadId, scopeEmail);
+    if (!thread) return { ok: '', reason: 'thread not found' };
+    if (action === 'stop') {
+      await this.close(thread, 'stopped', `${who} stopped it`);
+      await this.setPersonSms(thread.person_id, 'STOPPED');
+      return { ok: 'yes', reason: '' };
+    }
+    if (thread.status === 'opted_out') return { ok: '', reason: 'this person opted out' };
+    const last: { direction: string }[] = await this.dataSource.query(`select direction from os.sms_messages where thread_id = $1 order by at desc limit 1`, [thread.id]);
+    const status = last[0]?.direction === 'in' ? 'replied' : 'opener_sent';
+    await this.dataSource.query(`update os.sms_threads set status = $2, handoff_reason = null, stop_reason = null, updated_at = now() where id = $1`, [thread.id, status]);
+    await this.setPersonSms(thread.person_id, status === 'replied' ? 'REPLIED' : 'CHASING');
+    return { ok: 'yes', reason: '' };
   }
 
   // ---- sending ---------------------------------------------------------------------------------

@@ -63,6 +63,8 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'get_setter_profile',
   'get_setter_summary',
   'get_show_up',
+  'get_sms_thread',
+  'get_sms_threads',
   'get_show_up_series',
   'get_therapon_cash',
   'get_therapon_customers',

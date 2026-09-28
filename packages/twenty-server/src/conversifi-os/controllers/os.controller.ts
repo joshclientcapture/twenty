@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 
 import { isOsReadFunction, OS_RPC_CLOSER_FUNCTIONS } from 'src/conversifi-os/constants/os-rpc-allow-list.constant';
 import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
+import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep, OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
@@ -29,6 +30,7 @@ export class OsController {
     private readonly rpc: OsRpcService,
     private readonly sync: OsSyncService,
     private readonly permissions: PermissionsService,
+    private readonly sms: OsSmsService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -44,7 +46,45 @@ export class OsController {
       const allowedAsCloser = OS_RPC_CLOSER_FUNCTIONS.has(functionName) && (await this.isCloser(user.email));
       if (!allowedAsCloser) await this.requireAdmin(workspace.id, userWorkspaceId);
     }
-    return { data: await this.rpc.call(functionName, body ?? {}) };
+    // The SMS inbox is scoped server-side: a member who is not an admin only sees their own leads' threads.
+    const args = { ...(body ?? {}) };
+    if (functionName.startsWith('get_sms_') && !(await this.isAdmin(workspace.id, userWorkspaceId))) args.p_scope_email = user.email ?? '';
+    return { data: await this.rpc.call(functionName, args) };
+  }
+
+  @Post('sms-inbox/reply')
+  async smsReply(
+    @Body() body: { threadId?: string; body?: string },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
+    if (!body?.threadId || !body?.body?.trim()) throw new BadRequestException('threadId and body are required');
+    return this.sms.humanReply(body.threadId, body.body.trim(), scope, user.email ?? 'someone');
+  }
+
+  @Post('sms-inbox/action')
+  async smsAction(
+    @Body() body: { threadId?: string; action?: string },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
+    if (!body?.threadId || (body.action !== 'bot' && body.action !== 'stop')) throw new BadRequestException('threadId and action (bot | stop) are required');
+    return this.sms.inboxAction(body.threadId, body.action, scope, user.email ?? 'someone');
+  }
+
+  // Admins see everything (null scope); closers only their own leads; anyone else is refused.
+  private async inboxScope(workspaceId: string, userWorkspaceId: string, email: string | null | undefined): Promise<string | null> {
+    if (await this.isAdmin(workspaceId, userWorkspaceId)) return null;
+    if (await this.isCloser(email)) return email ?? '';
+    throw new ForbiddenException('The SMS inbox is for admins and closers.');
+  }
+
+  private async isAdmin(workspaceId: string, userWorkspaceId: string) {
+    return this.permissions.userHasWorkspaceSettingPermission({ userWorkspaceId, workspaceId, setting: PermissionFlagType.WORKSPACE });
   }
 
   @Post('sync/:step')

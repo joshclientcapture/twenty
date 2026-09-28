@@ -1,6 +1,30 @@
 // Data layer copied from the OS app's lib/supabase.ts. The functions below are served by
 // twenty-server from the `os` schema of the CRM database (see transport.ts).
-import { osClient } from "@/custom-pages/os/transport";
+import { osClient, osPost } from "@/custom-pages/os/transport";
+
+// ---- SMS inbox (Melanie's chase threads) ----
+export type SmsThread = {
+  id: string; person_id: string; phone: string; route: string; status: string; stop_reason: string | null;
+  name: string; email: string | null; closer: string | null; stage: string | null; person_deleted: boolean;
+  form_at: string | null; opener_at: string | null; last_inbound_at: string | null; last_outbound_at: string | null;
+  handoff_reason: string | null; interest: string | null;
+  messages: number; inbound: number; last_body: string | null; last_direction: string | null; last_at: string | null; needs_attention: boolean;
+};
+export type SmsMessage = { id: string; direction: "in" | "out"; kind: string | null; body: string; by_ai: boolean; status: string | null; at: string };
+export type SmsThreadDetail = Omit<SmsThread, "messages" | "inbound" | "last_body" | "last_direction" | "last_at" | "needs_attention" | "person_deleted"> & { from_number: string | null; messages: SmsMessage[] };
+export async function fetchSmsThreads(): Promise<SmsThread[]> {
+  const { data, error } = await osClient.rpc("get_sms_threads");
+  if (error) throw error;
+  return (data ?? []) as SmsThread[];
+}
+export async function fetchSmsThread(threadId: string): Promise<SmsThreadDetail> {
+  const { data, error } = await osClient.rpc("get_sms_thread", { p_thread_id: threadId });
+  if (error) throw error;
+  if (!data) throw new Error("thread not found");
+  return data as SmsThreadDetail;
+}
+export const smsInboxReply = (threadId: string, body: string) => osPost<{ ok: string; reason: string }>("sms-inbox/reply", { threadId, body });
+export const smsInboxAction = (threadId: string, action: "bot" | "stop") => osPost<{ ok: string; reason: string }>("sms-inbox/action", { threadId, action });
 
 export type DashboardMetrics = {
   generated_at: string;

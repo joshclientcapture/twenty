@@ -1,5 +1,6 @@
-// Melanie's SMS chase as native Twenty workflows, mirroring GHL "AI SMS - Lead not booked after 15 min"
-// and n8n "SMS Replier - 15 Min" node for node:
+// Melanie's SMS chase as native Twenty workflows, one set per offer (DFY, demo, agency) so each one's texts,
+// timings and brief can be edited on its own. Mirrors GHL "AI SMS - Lead not booked after 15 min" and n8n
+// "SMS Replier - 15 Min" node for node:
 //   1. "SMS chase: lead didn't book" (person created / updated with a form time): wait 15 min → open the
 //      thread (server says go or not) → opener → typo fix → +30 min "all good?" → +1 d → +3 d, each step
 //      checked against a reply or a booking first.
@@ -114,14 +115,42 @@ const trigger = {
 };
 const T = { id: '{{trigger.properties.after.id}}', field: (name) => `{{trigger.properties.after.${name}}}` };
 
+// ---------- the three offers ----------
+const ROUTES = {
+  dfy: {
+    label: 'DFY', link: 'https://conversifi.io/calendar', promptName: 'DFY_SYSTEM_PROMPT', who: 'the professional we are trying to book in',
+    opener: "Hey {{FIRST}}, it's Melanie from Conversifi.\n\nYou started booking a call with us about having your LinkedIn outreach run for you, but didn't finsih it.\n\nIs there anything I can clear up for you?",
+    typoFix: 'finish*',
+    ladder3Link: 'https://conversifi.io/calendar',
+  },
+  demo: {
+    label: 'Demo', link: 'https://conversifi.io/demo', promptName: 'DEMO_SYSTEM_PROMPT', who: 'the prospect we are trying to book in',
+    opener: "Hey {{FIRST}}, it's Melanie from Conversifi.\n\nYou started boking a demo of our LinkedIn software but didn't finish it.\n\nIs there anything I can clear up for you?",
+    typoFix: 'booking*',
+    ladder3Link: 'https://conversifi.io/demo',
+  },
+  agency: {
+    label: 'Agency', link: 'https://agencies.conversifi.io/book', promptName: 'AGENCY_SYSTEM_PROMPT', who: 'the agency owner we are trying to book in',
+    opener: "Hey {{FIRST}}, it's Melanie from Conversifi.\n\nYou started boking an agency demo with us but didn't finish it.\n\nIs there anything I can clear up for you?",
+    typoFix: 'booking*',
+    ladder3Link: 'https://ga.clientcapture.io',
+  },
+};
+const ladder1 = 'all good {{FIRST}}?';
+const ladder2 = "Look {{FIRST}}, there's no better day than today.\n\nI know you might be busy, but if you're still serious about getting sales appointments through LinkedIn, let's get this meeting locked in.\n\nAre you free tomorrow or the day after?";
+const ladder3 = (link) => `{{FIRST}}, the world waits for no one.\n\nIf you ever want to take action and finally see some real growth, you can check us out here: ${link}`;
+// The texts live in the HTTP step bodies (editable in the builder); {{FIRST}} becomes the thread's first name.
+const withFirst = (text, threadStep) => text.split('{{FIRST}}').join(R(threadStep, 'firstName'));
+
 // ---------- code steps ----------
 const RECENT_CODE = String.raw`
+const ROUTES = { DFY: 'dfy', DEMO: 'demo', AGENCY: 'agency', AGENCY_FUNNEL: 'agency' };
 export const main = async (params) => {
   const at = params.at ? new Date(params.at).getTime() : NaN;
   const hours = Number(params.hours) || 2;
   const now = Date.now();
   const recent = Number.isFinite(at) && now - at <= hours * 3600000 && at - now <= 3600000;
-  return { recent: recent ? 'yes' : 'no' };
+  return { recent: recent ? 'yes' : 'no', route: ROUTES[String(params.source || '').toUpperCase()] || '' };
 };
 `;
 
@@ -132,15 +161,12 @@ const promptLiteral = (name) => {
   if (!match) throw new Error(`${name} not found in os-sms-prompts.constant.ts`);
   return match[1];
 };
-const PREP_CODE = `const BRIEFS = {
-  agency: { link: 'https://agencies.conversifi.io/book', prompt: \`${promptLiteral('AGENCY_SYSTEM_PROMPT')}\` },
-  demo: { link: 'https://conversifi.io/demo', prompt: \`${promptLiteral('DEMO_SYSTEM_PROMPT')}\` },
-  dfy: { link: 'https://conversifi.io/calendar', prompt: \`${promptLiteral('DFY_SYSTEM_PROMPT')}\` },
-};
+const prepCode = (route) => `// Melanie's brief for the ${ROUTES[route].label} route. Edit the text between the backticks; {{BOOKING_LINK}} is filled in below.
+const BOOKING_LINK = '${ROUTES[route].link}';
+const BRIEF = \`${promptLiteral(ROUTES[route].promptName)}\`;
 
 export const main = async (params) => {
-  const brief = BRIEFS[params.route] || BRIEFS.demo;
-  const systemPrompt = brief.prompt.split('{{BOOKING_LINK}}').join(brief.link);
+  const systemPrompt = BRIEF.split('{{BOOKING_LINK}}').join(BOOKING_LINK);
   const userPrompt = \`PROSPECT NAME: \${params.fullName}
 
 CONVERSATION HISTORY:
@@ -203,40 +229,41 @@ export const main = async (params) => ({
 const minutes = (n) => (QUICK ? { seconds: Math.max(5, Math.round(n)) } : { minutes: n });
 const days = (n) => (QUICK ? { seconds: 20 * n } : { days: n });
 
-const chaseWorkflow = (event) => {
-  const recent = code('Fresh form?', 'RECENT', RECENT_CODE, { at: T.field('latestFormAt'), hours: 2 }, { recent: 'yes' });
-  const thread = http('Open the SMS thread', `${PUBLIC}/os/sms/thread/${SMS_TOKEN}`, { personId: T.id, route: T.field('latestSource') }, { go: 'yes', reason: '', threadId: '', route: 'dfy', firstName: 'Sam', fullName: 'Sam Carter', phone: '+447700900000', opener: '', typoFix: '', ladder1: '', ladder2: '', ladder3: '', bookingLink: '' });
+const chaseWorkflow = (route, event) => {
+  const offer = ROUTES[route];
+  const recent = code('Fresh form?', 'RECENT', RECENT_CODE, { at: T.field('latestFormAt'), hours: 2, source: T.field('latestSource') }, { recent: 'yes', route });
+  const thread = http('Open the SMS thread', `${PUBLIC}/os/sms/thread/${SMS_TOKEN}`, { personId: T.id, route }, { go: 'yes', reason: '', threadId: '', route, firstName: 'Sam', fullName: 'Sam Carter', phone: '+447700900000' });
   const threadId = R(thread, 'threadId');
   const check1 = stateCall('Where does it stand? (30 min)', threadId);
   const check2 = stateCall('Where does it stand? (1 day)', threadId);
   const check3 = stateCall('Where does it stand? (3 days)', threadId);
   const noReply = (node) => [condition(R(node, 'chase'), 'TEXT', 'IS', 'yes')];
   return {
-    key: `chase-${event}`,
-    name: `SMS chase: lead didn't book · on ${event}`,
-    description: 'Ported from GHL "AI SMS - Lead not booked after 15 min" for DFY, demo and agency form leads. 15 minutes after the form with no booking: Melanie\'s opener and typo fix, then "all good?" at 30 minutes, the "no better day" text at 1 day and the final text at 3 days. A reply or a booking stops it; replies are answered by "SMS reply: Melanie answers".',
+    key: `chase-${route}-${event}`,
+    name: `SMS chase · ${offer.label} · ${event === 'created' ? 'new person' : 'existing person'}`,
+    description: `Ported from GHL "AI SMS - Lead not booked after 15 min" for ${offer.label} form leads (${event === 'created' ? 'people the form just created' : 'people already in the CRM who filled the form again'}). 15 minutes after the form with no booking: Melanie's opener and typo fix, then "all good?" at 30 minutes, the "no better day" text at 1 day and the final text at 3 days. A reply or a booking stops it; replies are answered by "SMS reply · ${offer.label}".`,
     trigger: event === 'created' ? trigger.created('person') : trigger.updated('person', ['latestFormAt']),
     steps: [
       recent,
-      branch('Form just came in?', [condition('{{RECENT.recent}}', 'TEXT', 'IS', 'yes')], [
+      branch(`${offer.label} form just came in?`, [condition('{{RECENT.recent}}', 'TEXT', 'IS', 'yes'), condition('{{RECENT.route}}', 'TEXT', 'IS', route)], [
         wait('Wait 15 minutes', minutes(15)),
         thread,
         branch('Still not booked?', [condition(R(thread, 'go'), 'TEXT', 'IS', 'yes')], [
-          sms('Melanie: opener', threadId, R(thread, 'opener'), 'opener'),
+          sms('Melanie: opener', threadId, withFirst(offer.opener, thread), 'opener'),
           wait('Wait 15 seconds', { seconds: 15 }),
-          sms('Melanie: typo fix', threadId, R(thread, 'typoFix'), 'typo'),
+          sms('Melanie: typo fix', threadId, offer.typoFix, 'typo'),
           wait('Wait 30 minutes', minutes(30)),
           check1,
           branch('No reply, no booking?', noReply(check1), [
-            sms('Melanie: all good?', threadId, R(thread, 'ladder1'), 'ladder'),
+            sms('Melanie: all good?', threadId, withFirst(ladder1, thread), 'ladder'),
             wait('Wait 1 day', days(1)),
             check2,
             branch('Still no reply?', noReply(check2), [
-              sms('Melanie: no better day than today', threadId, R(thread, 'ladder2'), 'ladder'),
+              sms('Melanie: no better day than today', threadId, withFirst(ladder2, thread), 'ladder'),
               wait('Wait 3 days', days(3)),
               check3,
               branch('Still nothing?', noReply(check3), [
-                sms('Melanie: the world waits for no one', threadId, R(thread, 'ladder3'), 'ladder'),
+                sms('Melanie: the world waits for no one', threadId, withFirst(ladder3(offer.ladder3Link), thread), 'ladder'),
                 http('Close the thread', `${PUBLIC}/os/sms/mark/${SMS_TOKEN}`, { threadId, status: 'stopped', reason: 'no reply after the ladder' }, { ok: 'yes', reason: '' }),
               ]),
             ]),
@@ -244,23 +271,24 @@ const chaseWorkflow = (event) => {
         ]),
       ]),
     ],
-    testPayload: (personId) => ({ id: personId, latestFormAt: new Date().toISOString(), latestSource: 'DFY' }),
+    testPayload: (personId) => ({ id: personId, latestFormAt: new Date().toISOString(), latestSource: route === 'agency' ? 'AGENCY_FUNNEL' : route.toUpperCase() }),
   };
 };
 
 const REPLY_SAMPLE = { threadId: '00000000-0000-0000-0000-000000000000', personId: '00000000-0000-0000-0000-000000000000', route: 'dfy', phone: '+447700900000', firstName: 'Sam', fullName: 'Sam Carter', message: 'How much does it cost?' };
-const replyWorkflow = () => {
+const replyWorkflow = (route) => {
+  const offer = ROUTES[route];
   const state = stateCall('Fetch the conversation', '{{trigger.threadId}}');
-  const prep = code('Build the Gemini request', 'PREP', PREP_CODE, { route: R(state, 'route'), fullName: R(state, 'fullName'), who: R(state, 'who'), transcript: R(state, 'transcript') }, { body: {} });
+  const prep = code(`Build the Gemini request (${offer.label} brief)`, 'PREP', prepCode(route), { fullName: R(state, 'fullName'), who: offer.who, transcript: R(state, 'transcript') }, { body: {} });
   const gemini = step('HTTP_REQUEST', 'Ask Gemini', { url: `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY }, body: '{{PREP.body}}' }, { outputSchema: { candidates: leaf('candidates', []) }, expectedOutputSchema: { candidates: [] } });
   const parse = code('Read the reply', 'PARSE', PARSE_CODE, { candidates: `{{${gemini.id}.candidates}}` }, { message: 'Sure, here is how it works.', human: '', reason: '', interest: 'neutral' });
   const task = createRecord('Task for the closer', 'task', { title: 'SMS handoff: {{trigger.fullName}}', status: 'TODO', bodyV2: { markdown: 'Melanie\'s SMS bot needs a human on the {{trigger.route}} thread with {{trigger.phone}}.\n\n**Why:** {{PARSE.reason}}\n\n---\n\n' + R(state, 'transcript') } });
   const target = createRecord('Link the task to the person', 'taskTarget', { taskId: `{{${task.id}.id}}`, targetPersonId: '{{trigger.personId}}' });
   const discordMessage = code('Discord card', 'DISCORD', DISCORD_CODE, { fullName: '{{trigger.fullName}}', phone: '{{trigger.phone}}', route: '{{trigger.route}}', reason: '{{PARSE.reason}}', transcript: R(state, 'transcript') }, { body: {} });
   return {
-    key: 'reply',
-    name: 'SMS reply: Melanie answers',
-    description: 'Ported from n8n "SMS Replier - 15 Min". The Twilio receiver posts each reply here: a short pause, the transcript, the Gemini brief for the route (agency, demo or DFY), the answer by text. When Gemini asks for a human the thread is handed off: task on the person, Discord card, bot stops replying.',
+    key: `reply-${route}`,
+    name: `SMS reply · ${offer.label}`,
+    description: `Ported from n8n "SMS Replier - 15 Min" for the ${offer.label} route. The Twilio receiver posts each reply here: a short pause, the transcript, Gemini with the ${offer.label} brief, the answer by text. When Gemini asks for a human the thread is handed off: task on the person, Discord card, bot stops replying.`,
     trigger: trigger.webhook(REPLY_SAMPLE),
     // Code steps sit before their if/else rather than as its first child: the builder tool wires a code
     // step hung off an if/else to the wrong edge.
@@ -285,7 +313,7 @@ const replyWorkflow = () => {
   };
 };
 
-const WORKFLOWS = [chaseWorkflow('created'), chaseWorkflow('updated'), replyWorkflow()];
+const WORKFLOWS = ['dfy', 'demo', 'agency'].flatMap((route) => [chaseWorkflow(route, 'created'), chaseWorkflow(route, 'updated'), replyWorkflow(route)]);
 
 // ---------- create ----------
 const existing = (await gql('/graphql', `{ workflows(first: 200) { edges { node { id name statuses versions { edges { node { id status } } } } } } }`)).workflows.edges.map((edge) => edge.node);
@@ -349,20 +377,21 @@ for (const spec of WORKFLOWS) {
   const validation = await mcp('validate_workflow', { workflowVersionId: versionId });
   const verdict = validation?.result ?? validation;
   console.log(`built: ${spec.name} (${plainSteps.length + codeSteps.length} steps) valid=${verdict?.valid} ${verdict?.valid ? '' : JSON.stringify(verdict).slice(0, 800)}`);
-  if (spec.key === 'reply') console.log(`  reply webhook: ${PUBLIC}/webhooks/workflows/${WORKSPACE_ID}/${workflowId}`);
   created.push({ spec, workflowId, versionId });
 }
-const reply = created.find((entry) => entry.spec.key === 'reply');
-if (reply) console.log(`OS_SMS_REPLY_WEBHOOK_URL=${PUBLIC}/webhooks/workflows/${WORKSPACE_ID}/${reply.workflowId}`);
+for (const entry of created.filter((candidate) => candidate.spec.key.startsWith('reply-'))) {
+  console.log(`OS_SMS_REPLY_WEBHOOK_URL_${entry.spec.key.slice(6).toUpperCase()}=${PUBLIC}/webhooks/workflows/${WORKSPACE_ID}/${entry.workflowId}`);
+}
 
 // ---------- test / activate ----------
 if (TEST) {
-  const target = created.find((entry) => entry.spec.key.startsWith(TEST));
+  const wanted = TEST.includes('-') ? TEST : `${TEST}-dfy`;
+  const target = created.find((entry) => entry.spec.key.startsWith(wanted));
   if (!target) throw new Error(`no workflow matches ${TEST}`);
   let payload;
-  if (TEST === 'reply') payload = target.spec.testPayload();
+  if (wanted.startsWith('reply')) payload = target.spec.testPayload();
   else {
-    const person = await gql('/graphql', `mutation ($data: PersonCreateInput!) { createPerson(data: $data) { id } }`, { data: { name: { firstName: 'Dana', lastName: 'Wells' }, emails: { primaryEmail: `dana.wells+${Date.now()}@brightledger.co`, additionalEmails: [] }, phones: { primaryPhoneNumber: '7700900123', primaryPhoneCallingCode: '+44', primaryPhoneCountryCode: 'GB' }, latestSource: 'DFY', latestFormAt: new Date().toISOString() } });
+    const person = await gql('/graphql', `mutation ($data: PersonCreateInput!) { createPerson(data: $data) { id } }`, { data: { name: { firstName: 'Dana', lastName: 'Wells' }, emails: { primaryEmail: `dana.wells+${Date.now()}@brightledger.co`, additionalEmails: [] }, phones: { primaryPhoneNumber: '7700900123', primaryPhoneCallingCode: '+44', primaryPhoneCountryCode: 'GB' }, latestSource: target.spec.testPayload('x').latestSource, latestFormAt: new Date().toISOString() } });
     console.log('test person', person.createPerson.id);
     payload = { properties: { after: target.spec.testPayload(person.createPerson.id) } };
   }

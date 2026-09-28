@@ -43,6 +43,7 @@ import {
   ReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
+  Controls,
   useReactFlow,
   type Connection,
   type EdgeChange,
@@ -77,6 +78,27 @@ const StyledResetReactflowStyles = styled.div`
   --xy-node-border-radius: none;
 
   /* Below we reset the default styling of Reactflow */
+  .react-flow__controls {
+    box-shadow: none;
+    gap: 2px;
+  }
+  .react-flow__controls-button {
+    background: ${themeCssVariables.background.secondary};
+    border: 1px solid ${themeCssVariables.border.color.medium};
+    border-radius: ${themeCssVariables.border.radius.sm};
+    color: ${themeCssVariables.font.color.secondary};
+    fill: ${themeCssVariables.font.color.secondary};
+    height: 28px;
+    width: 28px;
+  }
+  .react-flow__controls-button:hover {
+    background: ${themeCssVariables.background.tertiary};
+  }
+  .react-flow__controls-button svg {
+    fill: currentColor;
+    max-height: 14px;
+    max-width: 14px;
+  }
   .react-flow__node-input,
   .react-flow__node-default,
   .react-flow__node-output,
@@ -101,9 +123,13 @@ const StyledStatusTagContainer = styled.div`
   top: 0;
 `;
 
+const INITIAL_VIEWPORT_Y = 150;
+// The canvas opens at 1:1 but can be zoomed out to see a whole sequence, or in for detail.
+const INITIAL_ZOOM = 1;
+
 const defaultFitViewOptions = {
-  minZoom: 1,
-  maxZoom: 1,
+  minZoom: 0.25,
+  maxZoom: 2,
 } satisfies FitViewOptions;
 
 const CENTERED_NODE_ORIGIN = [0.5, 0.5] satisfies NodeOrigin;
@@ -300,6 +326,8 @@ export const WorkflowDiagramCanvasBase = ({
   });
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // Opening another workflow keeps the previous scroll offset otherwise, landing the user on empty canvas.
+  const lastViewportPageRef = useRef<string | null>(null);
 
   const setFlowViewport = useCallback(
     ({
@@ -348,13 +376,18 @@ export const WorkflowDiagramCanvasBase = ({
       const centeredXPosition =
         adjustedContainerWidth / 2 - flowBounds.width / 2 - flowBounds.x;
 
+      const viewportPage = window.location.pathname;
+      const isFreshlyOpened = lastViewportPageRef.current !== viewportPage;
+      lastViewportPageRef.current = viewportPage;
+
       reactflow.setViewport(
         {
           ...currentViewport,
           x: centeredXPosition,
-          zoom: defaultFitViewOptions.maxZoom,
+          y: isFreshlyOpened ? INITIAL_VIEWPORT_Y : currentViewport.y,
+          zoom: isFreshlyOpened ? INITIAL_ZOOM : currentViewport.zoom,
         },
-        { duration: hasViewportBeenMoved ? 300 : 0 },
+        { duration: hasViewportBeenMoved && !isFreshlyOpened ? 300 : 0 },
       );
     },
     [reactflow, setWorkflowDiagramWaitingNodesDimensions, store],
@@ -620,7 +653,9 @@ export const WorkflowDiagramCanvasBase = ({
         onInit={handleInit}
         minZoom={defaultFitViewOptions.minZoom}
         maxZoom={defaultFitViewOptions.maxZoom}
-        defaultViewport={{ x: 0, y: 150, zoom: defaultFitViewOptions.maxZoom }}
+        defaultViewport={{ x: 0, y: INITIAL_VIEWPORT_Y, zoom: INITIAL_ZOOM }}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
         nodeOrigin={CENTERED_NODE_ORIGIN}
         nodeTypes={nodeTypes}
         // @ts-expect-error We override Reactflow types for sourceHandle and targetHandle to be required
@@ -671,6 +706,7 @@ export const WorkflowDiagramCanvasBase = ({
         colorMode={colorScheme}
       >
         <Background color={theme.border.color.medium} size={2} />
+        <Controls position="bottom-right" showInteractive={false} fitViewOptions={{ padding: 0.2, minZoom: defaultFitViewOptions.minZoom, maxZoom: INITIAL_ZOOM }} />
 
         {children}
       </ReactFlow>

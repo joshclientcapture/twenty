@@ -27,6 +27,8 @@ const post = async <TResponse,>(path: string, body?: unknown): Promise<TResponse
   return (await response.json()) as TResponse;
 };
 
+export const osPost = post;
+
 export const osRpc = async <TData,>(functionName: string, args?: Record<string, unknown>): Promise<TData> =>
   (await post<{ data: TData }>(`rpc/${functionName}`, args)).data;
 

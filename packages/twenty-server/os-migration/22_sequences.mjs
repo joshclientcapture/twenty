@@ -351,9 +351,16 @@ const NO_SHOW_VARIANTS = [
     .split('We actually help set everything up for you so you do not have to figure it out on your own').join('We run everything for you, so there is nothing for you to learn or manage')
     .split('generate more leads and appointments on autopilot').join('grow your network and book meetings without you lifting a finger') },
 ];
-const NO_SHOW_ROUTE_CODE = String.raw`
+// One code step decides both: was the call recent, and which pitch was it (two code steps in a row cannot be built).
+const NO_SHOW_RECENT_CODE = String.raw`
 const ROUTES = { DEMO: 'software', AGENCY_DEMO: 'software', DISCOVERY: 'dfy' };
-export const main = async (params) => ({ route: ROUTES[String(params.bookingType || '')] || '' });
+export const main = async (params) => {
+  const at = params.at ? new Date(params.at).getTime() : NaN;
+  const hours = Number(params.hours) || 72;
+  const now = Date.now();
+  const recent = Number.isFinite(at) && now - at <= hours * 3600000 && at - now <= 3600000;
+  return { recent: recent ? 'yes' : 'no', route: ROUTES[String(params.bookingType || '')] || '' };
+};
 `;
 const noShowWorkflow = (variant) => {
   const chainFor = (sender) => {
@@ -364,15 +371,15 @@ const noShowWorkflow = (variant) => {
     }));
     return guardedChain('{{trigger.properties.after.personId}}', items, stillProspect);
   };
-  const route = code('Which pitch?', 'NSROUTE', NO_SHOW_ROUTE_CODE, { bookingType: '{{trigger.properties.after.bookingType}}' }, { route: variant.key });
+  const recent = code('Recent no-show, which pitch?', 'RECENT', NO_SHOW_RECENT_CODE, { at: '{{trigger.properties.after.startsAt}}', hours: 72, bookingType: '{{trigger.properties.after.bookingType}}' }, { recent: 'yes', route: variant.key });
   const body = senderByCloser(chainFor);
   return {
     name: `No-show follow-up · ${variant.label}`,
     description: `Ported from GHL "No Show Sequence" + n8n templates, ${variant.label} wording and the ${variant.link} booking link. Starts when a ${variant.types.join(' / ')} booking is marked NO_SHOW by the closer dashboard verdict; 16 emails over ~9 months from the closer's mailbox. Stops as soon as the person trials, pays, books again or says not interested.`,
     trigger: trigger.updated('booking', ['status']),
-    steps: [recentCheck('{{trigger.properties.after.startsAt}}', 72), route, branch(`No-show on a ${variant.label} call?`, [
+    steps: [recent, branch(`No-show on a ${variant.label} call?`, [
       isRecent(),
-      condition('{{NSROUTE.route}}', 'TEXT', 'IS', variant.key),
+      condition('{{RECENT.route}}', 'TEXT', 'IS', variant.key),
       condition('{{trigger.properties.after.status}}', 'SELECT', 'IS', 'NO_SHOW'),
       condition('{{trigger.properties.after.personId}}', 'UUID', 'IS_NOT_EMPTY'),
     ], body)],

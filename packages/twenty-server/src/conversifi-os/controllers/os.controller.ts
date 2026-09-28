@@ -64,6 +64,18 @@ export class OsController {
     return this.sms.humanReply(body.threadId, body.body.trim(), scope, user.email ?? 'someone');
   }
 
+  @Post('sms-inbox/text')
+  async smsText(
+    @Body() body: { personId?: string; body?: string },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
+    if (!body?.personId || !body?.body?.trim()) throw new BadRequestException('personId and body are required');
+    return this.sms.textPerson(body.personId, body.body.trim(), scope, user.email ?? 'someone');
+  }
+
   @Post('sms-inbox/action')
   async smsAction(
     @Body() body: { threadId?: string; action?: string },

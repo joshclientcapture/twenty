@@ -114,6 +114,8 @@ export class OsSmsService {
     if (!this.twentyApi.isConfigured()) return { skipped: 'no OS_TWENTY_API_KEY' };
     if (env('OS_SMS_ENABLED') !== 'true') return { skipped: 'OS_SMS_ENABLED is not true' };
     await this.ensureFields();
+    // Timeline entries for texts are created by Twenty as generic message events; they are moved onto the text type.
+    await this.dataSource.query('select os.relabel_sms_timeline()').catch((error) => this.logger.warn(`sms: relabel failed: ${(error as Error).message}`));
     const booked = await this.noticeBookings();
     // In workflow mode the two native workflows send the texts and talk to Gemini; only the booking watch runs here.
     if (this.workflowMode()) return { booked, mode: 'workflow', dryRun: this.isDryRun() };
@@ -565,6 +567,37 @@ export class OsSmsService {
       await this.setPersonSms(thread.person_id, 'HANDED_OFF');
     }
     return { ok: 'yes', reason: '' };
+  }
+
+  // A person on the team texts a contact from the record, whether or not Melanie ever chased them.
+  async textPerson(personId: string, body: string, scopeEmail: string | null, who: string) {
+    const person = (await this.peopleByIds([personId])).get(personId);
+    if (!person) return { ok: '', reason: 'person not found' };
+    if (scopeEmail) {
+      const owned: { n: string }[] = await this.dataSource.query(`select count(*) as n from workspace_a1aip8pgko71t0v2lrw9rnizs.person where id = $1 and lower("closerEmail") = lower($2)`, [personId, scopeEmail]);
+      if (Number(owned[0]?.n ?? 0) === 0) return { ok: '', reason: 'not your lead' };
+    }
+    if (person.smsOptOut) return { ok: '', reason: 'this person opted out of texts' };
+    const phone = toE164(person.phones?.primaryPhoneNumber, person.phones?.primaryPhoneCallingCode);
+    if (!phone) return { ok: '', reason: 'no phone number on the record' };
+    let rows: ThreadRow[] = await this.dataSource.query(`select * from os.sms_threads where person_id = $1 and status <> 'opted_out' order by created_at desc limit 1`, [personId]);
+    if (rows.length === 0) {
+      const route = ROUTE_BY_SOURCE[person.latestSource ?? ''] ?? 'demo';
+      const inserted: [ThreadRow[], number] = await this.dataSource.query(
+        `insert into os.sms_threads (person_id, phone, route, first_name, full_name, email, status, form_at, opener_at, from_number, handoff_reason)
+         values ($1, $2, $3, $4, $5, $6, 'handed_off', now(), now(), $7, $8) returning *`,
+        [personId, phone, route, firstNameOf(person), fullNameOf(person), person.emails?.primaryEmail ?? null, this.senderFor(phone), `${who} started the conversation`],
+      );
+      rows = Array.isArray(inserted[0]) ? inserted[0] : (inserted as unknown as ThreadRow[]);
+    }
+    const thread = rows[0];
+    const ok = await this.send(thread, thread.from_number ?? this.senderFor(thread.phone), body, 'human');
+    if (!ok) return { ok: '', reason: 'twilio refused the send' };
+    if (thread.status !== 'handed_off') {
+      await this.dataSource.query(`update os.sms_threads set status = 'handed_off', handoff_reason = $2, ladder_due_at = null, ai_due_at = null, updated_at = now() where id = $1`, [thread.id, `${who} took over`]);
+      await this.setPersonSms(thread.person_id, 'HANDED_OFF');
+    }
+    return { ok: 'yes', reason: '', dryRun: this.isDryRun() ? 'yes' : '' };
   }
 
   async inboxAction(threadId: string, action: 'bot' | 'stop', scopeEmail: string | null, who: string) {

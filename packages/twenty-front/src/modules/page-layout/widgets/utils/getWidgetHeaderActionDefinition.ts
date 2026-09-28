@@ -3,7 +3,7 @@ import { WidgetActionCallRecordingSummary } from '@/page-layout/widgets/call-rec
 import { WidgetActionCallRecordingTranscript } from '@/page-layout/widgets/call-recording-transcript/components/WidgetActionCallRecordingTranscript';
 import { WidgetFieldActions } from '@/page-layout/widgets/components/WidgetFieldActions';
 import { WidgetActionCalendarEventCreate } from '@/page-layout/widgets/calendar/components/WidgetActionCalendarEventCreate';
-import { WidgetActionEmailCompose } from '@/page-layout/widgets/emails/components/WidgetActionEmailCompose';
+import { WidgetActionMessages } from '@/page-layout/widgets/emails/components/WidgetActionSmsCompose';
 import { WidgetActionFileAttach } from '@/page-layout/widgets/files/components/WidgetActionFileAttach';
 import { WidgetActionNoteCreate } from '@/page-layout/widgets/notes/components/WidgetActionNoteCreate';
 import { WidgetActionTaskCreate } from '@/page-layout/widgets/tasks/components/WidgetActionTaskCreate';
@@ -32,7 +32,7 @@ const widgetHeaderActionComponentByWidgetType: Partial<
 > = {
   [WidgetType.FIELD]: WidgetFieldActions,
   [WidgetType.CALENDAR]: WidgetActionCalendarEventCreate,
-  [WidgetType.EMAILS]: WidgetActionEmailCompose,
+  [WidgetType.EMAILS]: WidgetActionMessages,
   [WidgetType.TASKS]: WidgetActionTaskCreate,
   [WidgetType.NOTES]: WidgetActionNoteCreate,
   [WidgetType.FILES]: WidgetActionFileAttach,

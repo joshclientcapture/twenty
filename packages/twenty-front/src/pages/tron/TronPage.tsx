@@ -7,7 +7,8 @@ const WIDTH = COLS * CELL;
 const HEIGHT = ROWS * CELL;
 const BEST_KEY = 'conversifi-tron-best';
 const BOOSTS_PER_ROUND = 3;
-const BOOST_TICKS = 6;
+const BOOST_TICKS = 8;
+const BOOST_MULTIPLIER = 3;
 
 type Direction = 'up' | 'down' | 'left' | 'right';
 type Point = { x: number; y: number };
@@ -217,7 +218,7 @@ export const TronPage = () => {
     reset();
   }, [reset]);
 
-  // A boost doubles the bike's speed for a few ticks; three per round for each side.
+  // A boost triples the bike's speed for eight ticks; three per round for each side.
   const boost = useCallback((bike: Bike, who: 'player' | 'computer') => {
     if (bike.boostsLeft <= 0 || bike.boostTicks > 0) return;
     bike.boostsLeft -= 1;
@@ -300,16 +301,16 @@ export const TronPage = () => {
       }
       computer.direction = chooseComputerMove(walls, computer, player, levelRef.current);
       maybeComputerBoost(walls, computer, player);
-      const playerSteps = player.boostTicks > 0 ? 2 : 1;
-      const computerSteps = computer.boostTicks > 0 ? 2 : 1;
+      const playerSteps = player.boostTicks > 0 ? BOOST_MULTIPLIER : 1;
+      const computerSteps = computer.boostTicks > 0 ? BOOST_MULTIPLIER : 1;
       if (player.boostTicks > 0) player.boostTicks--;
       if (computer.boostTicks > 0) computer.boostTicks--;
-      for (let sub = 0; sub < 2; sub++) {
+      for (let sub = 0; sub < BOOST_MULTIPLIER; sub++) {
         const playerMoves = sub < playerSteps;
         const computerMoves = sub < computerSteps;
         if (!playerMoves && !computerMoves) break;
         // On the second sub-step the computer re-reads the board so a boost does not drive it into a wall.
-        if (sub === 1 && computerMoves) computer.direction = chooseComputerMove(walls, computer, player, levelRef.current);
+        if (sub > 0 && computerMoves) computer.direction = chooseComputerMove(walls, computer, player, levelRef.current);
         const playerNext = playerMoves ? { x: player.head.x + DELTA[player.direction].x, y: player.head.y + DELTA[player.direction].y } : player.head;
         const computerNext = computerMoves ? { x: computer.head.x + DELTA[computer.direction].x, y: computer.head.y + DELTA[computer.direction].y } : computer.head;
         const playerCrash = playerMoves && (!inside(playerNext) || walls[key(playerNext)] === 1);

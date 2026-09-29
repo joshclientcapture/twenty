@@ -281,7 +281,7 @@ export class OsBookingsService {
         closerId: row.closer_id ?? '',
         inviteeName: row.invitee_name ?? '',
         inviteeEmail: row.invitee_email ?? '',
-        inviteeFirstName: row.invitee_first_name ?? (row.invitee_name ?? '').split(/s+/)[0] ?? '',
+        inviteeFirstName: row.invitee_first_name ?? (row.invitee_name ?? '').split(/\s+/)[0] ?? '',
         inviteeTimezone: row.invitee_timezone ?? '',
         closerEmail: (row.host_email ?? '').toLowerCase(),
         rescheduleLink: row.reschedule_url ? { primaryLinkUrl: row.reschedule_url, primaryLinkLabel: 'Reschedule', secondaryLinks: [] } : null,

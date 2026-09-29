@@ -193,8 +193,12 @@ export class OsBookingsService {
               c.id as closer_id, c.name as closer_name,
               i.name as invitee_name, i.email as invitee_email, coalesce(i.rescheduled, false) as rescheduled, i.cancel_reason,
               i.first_name as invitee_first_name, i.timezone as invitee_timezone, i.reschedule_url, i.cancel_url, coalesce(i.suppressed, false) as suppressed,
-              (select b2.start_time from os.calendly_invitees n join os.calendly_bookings b2 on b2.uri = n.booking_uri
-               where n.uri = i.new_invitee_uri or n.old_invitee_uri = i.invitee_uri order by b2.start_time desc limit 1) as rescheduled_to,
+              -- Two indexed lookups instead of one OR: the OR forced a 5k x 5k scan (28 s) once the tables grew.
+              (select max(b2.start_time) from (
+                 select n.booking_uri from os.calendly_invitees n where i.new_invitee_uri is not null and n.uri = i.new_invitee_uri
+                 union all
+                 select n.booking_uri from os.calendly_invitees n where n.old_invitee_uri = i.invitee_uri
+               ) r join os.calendly_bookings b2 on b2.uri = r.booking_uri) as rescheduled_to,
               f.recording_url
        from os.calendly_bookings b
        left join closers c on c.host_email = lower(b.host_email)

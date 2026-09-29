@@ -249,7 +249,7 @@ const closerMailboxes = [...new Set(Object.keys(senders))];
 // a login and a connected mailbox; a booking whose host has no login goes out from the fallback mailbox.
 const findCloserMember = (emailExpression) => step('FIND_RECORDS', 'Find the closer', {
   objectName: 'workspaceMember', limit: 1,
-  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId('workspaceMember', 'userEmail'), type: 'TEXT', operand: 'IS', value: emailExpression, displayValue: emailExpression, label: 'User email' }] },
+  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId('workspaceMember', 'userEmail'), type: 'TEXT', operand: 'CONTAINS', value: emailExpression, displayValue: emailExpression, label: 'User email' }] },
 });
 const closerSender = (find) => ({
   label: 'closer',

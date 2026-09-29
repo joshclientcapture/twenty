@@ -71,7 +71,7 @@ const fieldId = (objectName, fieldName) => {
 };
 const findRecord = (name, objectName, fieldName, type, valueExpression) => step('FIND_RECORDS', name, {
   objectName, limit: 1,
-  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId(objectName, fieldName), type, operand: 'IS', value: valueExpression, displayValue: valueExpression, label: fieldName }] },
+  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId(objectName, fieldName), type, operand: type === 'TEXT' ? 'CONTAINS' : 'IS', value: valueExpression, displayValue: valueExpression, label: fieldName }] },
 });
 
 const leaf = (label, value) => ({ icon: 'IconVariable', type: Array.isArray(value) ? 'array' : typeof value === 'boolean' ? 'boolean' : typeof value === 'number' ? 'number' : 'string', label, value, isLeaf: true });

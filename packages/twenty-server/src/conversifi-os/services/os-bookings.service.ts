@@ -187,7 +187,10 @@ export class OsBookingsService {
                 max(uri) as invitee_uri, max(nullif(new_invitee_uri, '')) as new_invitee_uri,
                 bool_or(os.is_suppressed(calendly_invitees.email, calendly_invitees.name)) as suppressed,
                 max(first_name) as first_name, max(timezone) as timezone, max(reschedule_url) as reschedule_url, max(cancel_url) as cancel_url
-         from os.calendly_invitees group by booking_uri
+         from os.calendly_invitees
+         -- Only invitees of bookings inside the window: the whole history is 5k+ rows and growing daily.
+         where booking_uri in (select uri from os.calendly_bookings where start_time >= now() - ($1::int * interval '1 day'))
+         group by booking_uri
        )
        select b.uri, b.name as event_name, b.event_type_uri, b.status, b.start_time, b.end_time, b.booked_at, b.join_url, b.host_email, b.host_name,
               c.id as closer_id, c.name as closer_name,

@@ -663,8 +663,14 @@ export class OsSmsService {
     return true;
   }
 
+  // Twilio's callbacks (queued, sent, delivered) can arrive within the same second and out of
+  // order, so a status only ever moves forward.
   async recordStatus(sid: string, status: string) {
-    await this.dataSource.query(`update os.sms_messages set provider_status = $2 where provider_sid = $1`, [sid, status]);
+    await this.dataSource.query(
+      `update os.sms_messages set provider_status = $2
+        where provider_sid = $1 and os.sms_status_rank($2) >= os.sms_status_rank(coalesce(provider_status, ''))`,
+      [sid, status],
+    );
   }
 
   // Twilio signs every webhook: base64(HMAC-SHA1(auth token, url + sorted POST params concatenated)).

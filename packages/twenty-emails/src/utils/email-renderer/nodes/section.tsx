@@ -13,16 +13,25 @@ export const section = (
   inherited: InheritedTypography = {},
 ): ReactNode => {
   const style = blockStyle(node.attrs?.style);
-  // react-email centres every section; a block styled margin-left 0 / margin-right auto is
-  // asking to hug the left edge, the way a plain 1:1 email does.
+  // react-email centres every section. A block styled margin-left 0 / margin-right auto wants to
+  // hug the left edge like a plain 1:1 email; that is done with a full-width table holding a
+  // capped div, because align="left" on the table itself floats it and the next section slides
+  // up beside it in Gmail.
   const hugsLeft =
     String(style.marginLeft ?? '') === '0' || String(style.marginLeft ?? '') === '0px'
       ? style.marginRight === 'auto'
       : false;
+  const content = mappedNodeContent(node, mergeInheritedTypography(inherited, style));
 
-  return (
-    <Section style={style} align={hugsLeft ? 'left' : undefined}>
-      {mappedNodeContent(node, mergeInheritedTypography(inherited, style))}
-    </Section>
-  );
+  if (hugsLeft) {
+    const { maxWidth, marginLeft: _marginLeft, marginRight: _marginRight, ...tableStyle } = style;
+
+    return (
+      <Section style={tableStyle}>
+        <div style={{ maxWidth, marginLeft: 0, marginRight: 'auto' }}>{content}</div>
+      </Section>
+    );
+  }
+
+  return <Section style={style}>{content}</Section>;
 };

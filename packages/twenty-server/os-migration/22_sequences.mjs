@@ -253,7 +253,8 @@ const findCloserMember = (emailExpression) => step('FIND_RECORDS', 'Find the clo
 });
 const closerSender = (find) => ({
   label: 'closer',
-  name: `{{${find.id}.first.name.firstName}} {{${find.id}.first.name.lastName}}`,
+  // First name only in the sign-off, the way a person signs a 1:1 email.
+  name: `{{${find.id}.first.name.firstName}}`,
   title: 'Conversifi',
   email: `{{${find.id}.first.userEmail}}`,
   connectedAccountId: `{{${find.id}.first.id}}`,

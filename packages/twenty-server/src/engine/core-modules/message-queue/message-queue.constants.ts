@@ -23,4 +23,7 @@ export enum MessageQueue {
   triggerQueue = 'trigger-queue',
   aiQueue = 'ai-queue',
   aiStreamQueue = 'ai-stream-queue',
+  // Conversifi: the OS sync runs for a minute or more; it gets its own lane so the cron queue
+  // (one job at a time) keeps launching workflows and mailbox imports meanwhile.
+  osQueue = 'os-queue',
 }

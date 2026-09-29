@@ -58,6 +58,15 @@ export const MESSAGE_QUEUE_WORKER_CONFIG: Record<
       boundedShutdownDrain: false,
     },
   },
+  [MessageQueue.osQueue]: {
+    priority: 7,
+    workerOptions: {
+      concurrency: 1,
+      lockDuration: 120_000,
+      maxStalledCount: 1,
+      boundedShutdownDrain: true,
+    },
+  },
   [MessageQueue.emailQueue]: {
     priority: 1,
     workerOptions: {

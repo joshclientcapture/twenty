@@ -4,6 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { evalFromContext, isDefined, isValidUuid, resolveInput as resolveWorkflowInput } from 'twenty-shared/utils';
 import { DataSource } from 'typeorm';
 
+import { EmailComposerService } from 'src/engine/core-modules/tool/tools/email-tool/email-composer.service';
 import { SendEmailTool } from 'src/engine/core-modules/tool/tools/email-tool/send-email-tool';
 import { type EmailToolInput } from 'src/engine/core-modules/tool/tools/email-tool/types/email-tool-input.type';
 import { resolveEmailBody } from 'src/modules/workflow/workflow-executor/workflow-actions/mail-sender/utils/resolve-email-body.util';
@@ -26,6 +27,8 @@ export type SendTestArgs = {
   samplePersonId?: string;
   // Admins may aim the test at another inbox (a colleague, a personal address).
   to?: string;
+  // Render only, nothing leaves: used by the audit script to check every email body.
+  dryRun?: boolean;
   allowOtherSender: boolean;
 };
 
@@ -39,6 +42,7 @@ export class OsWorkflowTestService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly sendEmailTool: SendEmailTool,
+    private readonly emailComposer: EmailComposerService,
   ) {}
 
   async sendTest(args: SendTestArgs) {
@@ -59,18 +63,22 @@ export class OsWorkflowTestService {
 
     const sender = await this.pickSender(resolved.connectedAccountId, args);
     const subject = `[Test] ${resolved.subject ?? ''}`.trim();
-    const output = await this.sendEmailTool.execute(
-      {
-        recipients: { to: args.to ?? args.userEmail, cc: '', bcc: '' },
-        subject,
-        body,
-        // Same loose hand-off the workflow email action makes: the tool validates the shape itself.
-        files: files as unknown as EmailToolInput['files'],
-        connectedAccountId: sender.connectedAccountId,
-        ...(sender.own ? {} : { fromHandle: resolved.fromHandle || undefined }),
-      },
-      { workspaceId: args.workspaceId, userWorkspaceId: args.userWorkspaceId },
-    );
+    const toolInput = {
+      recipients: { to: args.to ?? args.userEmail, cc: '', bcc: '' },
+      subject,
+      body,
+      // Same loose hand-off the workflow email action makes: the tool validates the shape itself.
+      files: files as unknown as EmailToolInput['files'],
+      connectedAccountId: sender.connectedAccountId,
+      ...(sender.own ? {} : { fromHandle: resolved.fromHandle || undefined }),
+    };
+    const toolContext = { workspaceId: args.workspaceId, userWorkspaceId: args.userWorkspaceId };
+    if (args.dryRun) {
+      const composed = await this.emailComposer.composeEmail(toolInput, toolContext);
+      if (!composed.success) throw new BadRequestException(composed.output.error ?? composed.output.message ?? 'Could not render the email');
+      return { ok: true, dryRun: true, to: toolInput.recipients.to, from: sender.handle, sample: sampleName, placeholders, senderNote: sender.note, subject, html: composed.data.sanitizedHtmlBody, text: composed.data.plainTextBody };
+    }
+    const output = await this.sendEmailTool.execute(toolInput, toolContext);
     if (!output.success) {
       this.logger.warn(`workflow test send failed: ${output.error ?? output.message}`);
       throw new BadRequestException(output.error ?? output.message ?? 'Could not send the test');

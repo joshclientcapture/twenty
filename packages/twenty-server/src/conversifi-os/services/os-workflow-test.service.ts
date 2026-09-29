@@ -24,6 +24,8 @@ export type SendTestArgs = {
   stepId: string;
   input?: Partial<WorkflowSendEmailActionInput>;
   samplePersonId?: string;
+  // Admins may aim the test at another inbox (a colleague, a personal address).
+  to?: string;
   allowOtherSender: boolean;
 };
 
@@ -59,7 +61,7 @@ export class OsWorkflowTestService {
     const subject = `[Test] ${resolved.subject ?? ''}`.trim();
     const output = await this.sendEmailTool.execute(
       {
-        recipients: { to: args.userEmail, cc: '', bcc: '' },
+        recipients: { to: args.to ?? args.userEmail, cc: '', bcc: '' },
         subject,
         body,
         // Same loose hand-off the workflow email action makes: the tool validates the shape itself.
@@ -73,7 +75,8 @@ export class OsWorkflowTestService {
       this.logger.warn(`workflow test send failed: ${output.error ?? output.message}`);
       throw new BadRequestException(output.error ?? output.message ?? 'Could not send the test');
     }
-    return { ok: true, to: args.userEmail, from: sender.handle, sample: sampleName, placeholders, senderNote: sender.note };
+    const rendered = (output.result as { sanitizedHtmlBody?: string } | undefined)?.sanitizedHtmlBody ?? null;
+    return { ok: true, to: args.to ?? args.userEmail, from: sender.handle, sample: sampleName, placeholders, senderNote: sender.note, subject, html: rendered };
   }
 
   private async loadSteps(workflowVersionId: string): Promise<WorkflowStep[]> {

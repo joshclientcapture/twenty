@@ -94,13 +94,14 @@ export class OsController {
   // Email steps in the workflow builder: render against a sample lead and send to the clicker.
   @Post('workflow/send-test')
   async workflowSendTest(
-    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown>; samplePersonId?: string },
+    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown>; samplePersonId?: string; to?: string },
     @AuthWorkspace() workspace: WorkspaceEntity,
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
   ) {
     if (!body?.workflowVersionId || !body?.stepId) throw new BadRequestException('workflowVersionId and stepId are required');
     if (!user.email) throw new BadRequestException('Your login has no email address to send the test to.');
+    const isAdmin = await this.isAdmin(workspace.id, userWorkspaceId);
     return this.workflowTest.sendTest({
       workspaceId: workspace.id,
       userWorkspaceId,
@@ -109,7 +110,8 @@ export class OsController {
       stepId: body.stepId,
       input: body.input,
       samplePersonId: body.samplePersonId,
-      allowOtherSender: await this.isAdmin(workspace.id, userWorkspaceId),
+      to: isAdmin && body.to?.includes('@') ? body.to.trim() : undefined,
+      allowOtherSender: isAdmin,
     });
   }
 

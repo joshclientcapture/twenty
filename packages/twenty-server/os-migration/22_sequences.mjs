@@ -9,6 +9,8 @@ import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import pg from 'pg';
 
+import { htmlEmailToDocument, serializeEmailDocument } from './lib/email-document.mjs';
+
 const envText = readFileSync(new URL('../.env', import.meta.url), 'utf8');
 const env = Object.fromEntries(envText.split('\n').filter((line) => /^[A-Z_]+=/.test(line)).map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]));
 const API_KEY = env.OS_TWENTY_API_KEY;
@@ -99,7 +101,8 @@ const wait = (name, duration) => step('DELAY', name, { delayType: 'DURATION', du
 const waitUntil = (name, expression) => step('DELAY', name, { delayType: 'SCHEDULED_DATE', scheduledDateTime: expression });
 const email = (name, sender, to, subject, paragraphs, options = {}) => {
   const body = `<div style="font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.7; color: #1a1a1a; max-width: 600px;">\n${paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join('\n')}\n${options.noSignature ? '' : `<p>${options.closing ?? 'Best'},<br>${sender.name}</p>\n<p style="font-size:13px;color:#666;">${sender.title}<br>${sender.email}</p>`}\n</div>`;
-  return step('SEND_EMAIL', name, { connectedAccountId: sender.connectedAccountId, recipients: { to }, subject, body });
+  // Stored as the editor's document so the builder shows the email the way it sends.
+  return step('SEND_EMAIL', name, { connectedAccountId: sender.connectedAccountId, recipients: { to }, subject, body: serializeEmailDocument(htmlEmailToDocument(body)) });
 };
 const updatePerson = (name, idExpression, fields) => step('UPDATE_RECORD', name, { objectName: 'person', objectRecordId: idExpression, objectRecord: fields, fieldsToUpdate: Object.keys(fields) });
 // A code step is inserted after creation (the tool assigns the id); `key` is replaced everywhere.

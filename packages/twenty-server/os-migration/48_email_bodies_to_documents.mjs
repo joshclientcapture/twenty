@@ -101,7 +101,12 @@ for (const version of versions) {
       converted++;
     }
   }
-  if (changed && !DRY) await client.query(`update ${SCHEMA}."workflowVersion" set steps = $2::jsonb, "updatedAt" = now() where id = $1`, [version.id, JSON.stringify(steps)]);
+  if (changed && !DRY) {
+    await client.query(`update ${SCHEMA}."workflowVersion" set steps = $2::jsonb, "updatedAt" = now() where id = $1`, [version.id, JSON.stringify(steps)]);
+    // The engine overlays each version with its twin in core."workflowVersion"; a run built from a
+    // version whose core copy is stale executes the old steps, so both copies are written.
+    await client.query(`update core."workflowVersion" c set steps = v.steps from ${SCHEMA}."workflowVersion" v where v.id = $1 and c.id = v."coreWorkflowVersionId"`, [version.id]);
+  }
 }
 console.log(REVERT ? `reverted ${reverted} email bodies` : `${DRY ? 'would convert' : 'converted'} ${converted} email bodies across ${versions.length} versions`);
 await client.end();

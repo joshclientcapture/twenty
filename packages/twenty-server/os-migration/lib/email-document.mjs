@@ -95,7 +95,8 @@ export const htmlEmailToDocument = (html) => {
   // for the browser's default paragraph gap the raw HTML relied on.
   const sections = [];
   for (const paragraph of paragraphs) {
-    const style = { ...wrapper, ...paragraph.style, paddingTop: '0px', paddingRight: '0px', paddingBottom: '0px', paddingLeft: '0px' };
+    // Left-aligned like the original wrapper div; the email renderer reads these margins as "hug the left edge".
+    const style = { ...wrapper, ...paragraph.style, paddingTop: '0px', paddingRight: '0px', paddingBottom: '0px', paddingLeft: '0px', marginLeft: '0px', marginRight: 'auto' };
     const key = JSON.stringify(style);
     const node = { type: 'paragraph', content: paragraph.content };
     const last = sections[sections.length - 1];

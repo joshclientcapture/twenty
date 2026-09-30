@@ -177,18 +177,20 @@ export class OsDfyBillingService {
     if (!layout[0]) return;
     const tab: { id: string }[] = await this.dataSource.query(`select id from core."pageLayoutTab" where id = $1`, [PERSON_PAGE_INVOICING_TAB]);
     if (tab.length) return;
-    const template: { workspaceId: string }[] = await this.dataSource.query(`select "workspaceId" from core."pageLayoutTab" where id = 'eb76f23e-e2f9-42a5-9ae0-80f3fcc318ff'`);
+    // Same workspace and application as the Messages tab; every layout row needs both plus a universal id.
+    const template: { workspaceId: string; applicationId: string }[] = await this.dataSource.query(`select "workspaceId", "applicationId" from core."pageLayoutTab" where id = 'eb76f23e-e2f9-42a5-9ae0-80f3fcc318ff'`);
     const workspaceId = template[0]?.workspaceId;
-    if (!workspaceId) return;
+    const applicationId = template[0]?.applicationId;
+    if (!workspaceId || !applicationId) return;
     await this.dataSource.query(
-      `insert into core."pageLayoutTab" (id, title, position, "pageLayoutId", "workspaceId") values ($1, 'Invoicing', 65, $2, $3)`,
-      [PERSON_PAGE_INVOICING_TAB, layout[0].id, workspaceId],
+      `insert into core."pageLayoutTab" (id, title, position, "pageLayoutId", "workspaceId", "universalIdentifier", "applicationId") values ($1, 'Invoicing', 65, $2, $3, $4, $5)`,
+      [PERSON_PAGE_INVOICING_TAB, layout[0].id, workspaceId, randomUUID(), applicationId],
     );
     for (const [index, [title, fieldMetadataId]] of [['DFY engagements', engagementsField], ['DFY instalments', instalmentsField]].entries()) {
       await this.dataSource.query(
-        `insert into core."pageLayoutWidget" (id, "pageLayoutTabId", title, type, "objectMetadataId", "gridPosition", configuration, "workspaceId")
-         values ($1, $2, $3, 'FIELD', $4, $5::jsonb, $6::jsonb, $7)`,
-        [randomUUID(), PERSON_PAGE_INVOICING_TAB, title, layout[0].objectMetadataId, JSON.stringify({ row: index, column: 0, rowSpan: 1, columnSpan: 12 }), JSON.stringify({ fieldMetadataId, fieldDisplayMode: 'CARD', configurationType: 'FIELD' }), workspaceId],
+        `insert into core."pageLayoutWidget" (id, "pageLayoutTabId", title, type, "objectMetadataId", "gridPosition", configuration, "workspaceId", "universalIdentifier", "applicationId")
+         values ($1, $2, $3, 'FIELD', $4, $5::jsonb, $6::jsonb, $7, $8, $9)`,
+        [randomUUID(), PERSON_PAGE_INVOICING_TAB, title, layout[0].objectMetadataId, JSON.stringify({ row: index, column: 0, rowSpan: 1, columnSpan: 12 }), JSON.stringify({ fieldMetadataId, fieldDisplayMode: 'CARD', configurationType: 'FIELD' }), workspaceId, randomUUID(), applicationId],
       );
     }
     this.logger.log('invoicing tab added to the person page');

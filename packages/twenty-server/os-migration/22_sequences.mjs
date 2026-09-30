@@ -670,6 +670,112 @@ const discordPing = () => {
   };
 };
 
+
+// ---------- 7. DFY billing: invoice, overdue, receipt, renewal (from the closer's mailbox) ----------
+// Bank details for push payments come from .env at build time (OS_DFY_BANK_DETAILS, lines separated by " / ").
+const BANK_DETAILS = (env.OS_DFY_BANK_DETAILS ?? 'Bank details: ask your closer / Reference: your invoice reference').split(' / ').join('<br>');
+const findRecord = (name, objectName, fieldName, type, valueExpression) => step('FIND_RECORDS', name, {
+  objectName, limit: 1,
+  filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId(objectName, fieldName), type, operand: type === 'TEXT' ? 'CONTAINS' : 'IS', value: valueExpression, displayValue: valueExpression, label: fieldName }] },
+});
+const INVOICE_FORMAT_CODE = String.raw`
+export const main = async (params) => {
+  const usd = Number(params.amountMicros || 0) / 1000000;
+  const amount = '$' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const due = params.dueDate ? new Date(params.dueDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+  return { amount, due, reference: params.reference || '', name: params.name || 'Instalment', debit: params.method === 'DEBIT' ? 'yes' : '' };
+};`;
+const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '' };
+// Instalment flows: the money row is the trigger; the engagement carries the client and the closer.
+const dfyInstalmentChain = (buildSteps) => {
+  const format = code('Format the invoice', 'FMT', INVOICE_FORMAT_CODE, { amountMicros: T.field('amount.amountMicros'), dueDate: T.field('dueDate'), reference: T.field('invoiceReference'), name: T.field('name'), method: T.field('method') }, INVOICE_FORMAT_SAMPLE);
+  const engagement = findRecord('Find the engagement', 'dfyEngagement', 'id', 'UUID', T.field('engagementId'));
+  const person = findRecord('Find the client', 'person', 'id', 'UUID', `{{${engagement.id}.first.personId}}`);
+  const closer = findCloserMember(`{{${engagement.id}.first.closerEmail}}`);
+  const ctx = { amount: '{{FMT.amount}}', due: '{{FMT.due}}', reference: '{{FMT.reference}}', instalment: '{{FMT.name}}', package: `{{${engagement.id}.first.package}}`, client: P(person.id) };
+  // The find goes first: a code step must never be the first child of a branch (builder gotcha).
+  return [engagement, format, person, closer, branch('Closer has a CRM login?', [condition(`{{${closer.id}.first.id}}`, 'TEXT', 'IS_NOT_EMPTY')], buildSteps(closerSender(closer), ctx), buildSteps(FALLBACK, ctx))];
+};
+const dfyInvoiceEmails = (sender, ctx) => [branch('Collected by direct debit?', [condition('{{FMT.debit}}', 'TEXT', 'IS', 'yes')], [
+  email('Debit notice', sender, ctx.client.email, `Your ${ctx.package} payment on ${ctx.due}`, [
+    `Hi ${ctx.client.firstName},`,
+    `A quick heads-up: <strong>${ctx.amount}</strong> for your ${ctx.package} (${ctx.instalment}) will be collected by direct debit from your business account on <strong>${ctx.due}</strong>, under the authorisation you gave when we set up your account.`,
+    `Reference: ${ctx.reference}. It will show on your statement as Airwallex.`,
+    'If anything about the account or the date needs to change, reply to this email before then and we\'ll sort it.',
+  ]),
+], [
+  email('Invoice', sender, ctx.client.email, `Invoice ${ctx.reference} · ${ctx.package}`, [
+    `Hi ${ctx.client.firstName},`,
+    `Here's your invoice for <strong>${ctx.amount}</strong>, the ${ctx.instalment} of your ${ctx.package}. It's due on <strong>${ctx.due}</strong>.`,
+    `Please pay by bank transfer using the reference <strong>${ctx.reference}</strong> so it matches up automatically:`,
+    BANK_DETAILS,
+    'Reply to this email once it\'s sent if you\'d like a confirmation, and thank you.',
+  ]),
+])];
+const DFY_INVOICE = {
+  name: 'DFY billing: invoice sent',
+  description: 'When an instalment turns Invoiced (a week before it is due, or by hand): the client gets the invoice with the bank details and reference, or a debit notice if we collect it. From the closer\'s mailbox.',
+  trigger: trigger.updated('dfyInstalment', ['status']),
+  steps: [branch('Just invoiced?', [condition(T.field('status'), 'SELECT', 'IS', 'INVOICED')], dfyInstalmentChain(dfyInvoiceEmails))],
+  testPayload: (id) => ({ id, status: 'INVOICED', name: 'Instalment 1 of 2', invoiceReference: 'DFY-TEST01', dueDate: '2026-10-17', method: 'PUSH', amount: { amountMicros: 2500000000, currencyCode: 'USD' }, engagementId: id }),
+};
+const DFY_OVERDUE = {
+  name: 'DFY billing: overdue',
+  description: 'An instalment past its due date: a polite chase to the client the day it turns Overdue, and a task for the closer three days later. The daily billing tick pauses delivery at seven days.',
+  trigger: trigger.updated('dfyInstalment', ['status', 'overdueTaskAt']),
+  steps: [branches('What changed?', [
+    { conditions: [condition(T.field('status'), 'SELECT', 'IS', 'OVERDUE'), condition(T.field('overdueTaskAt'), 'DATE_TIME', 'IS_EMPTY')], steps: dfyInstalmentChain((sender, ctx) => [
+      email('Overdue reminder', sender, ctx.client.email, `Payment overdue: ${ctx.reference} · ${ctx.package}`, [
+        `Hi ${ctx.client.firstName},`,
+        `Just a nudge: the <strong>${ctx.amount}</strong> ${ctx.instalment} for your ${ctx.package} was due on ${ctx.due} and hasn't reached us yet.`,
+        `If it's already on its way, ignore this. Otherwise here are the details again, reference <strong>${ctx.reference}</strong>:`,
+        BANK_DETAILS,
+        'If something\'s changed on your side, reply and let me know. We pause delivery after a week overdue, and I\'d rather not.',
+      ]),
+    ]) },
+    { conditions: [condition(T.field('overdueTaskAt'), 'DATE_TIME', 'IS_NOT_EMPTY')], steps: (() => {
+      const engagement = findRecord('Find the engagement', 'dfyEngagement', 'id', 'UUID', T.field('engagementId'));
+      const closer = findCloserMember(`{{${engagement.id}.first.closerEmail}}`);
+      const task = step('CREATE_RECORD', 'Task for the closer', { objectName: 'task', objectRecord: { title: `Chase DFY payment: {{${engagement.id}.first.name}} ({{trigger.properties.after.name}}, {{trigger.properties.after.invoiceReference}})`, status: 'TODO', assigneeId: `{{${closer.id}.first.id}}` } });
+      const target = step('CREATE_RECORD', 'Link the task to the client', { objectName: 'taskTarget', objectRecord: { taskId: `{{${task.id}.id}}`, targetPersonId: `{{${engagement.id}.first.personId}}` } });
+      return [engagement, closer, task, target];
+    })() },
+  ])],
+  testPayload: (id) => ({ id, status: 'OVERDUE', overdueTaskAt: null, name: 'Instalment 2 of 2', invoiceReference: 'DFY-TEST02', dueDate: '2026-10-01', method: 'PUSH', amount: { amountMicros: 2500000000, currencyCode: 'USD' }, engagementId: id }),
+};
+const DFY_RECEIPT = {
+  name: 'DFY billing: payment received',
+  description: 'The instalment is marked Paid (by hand for transfers, by the Airwallex webhook for debits): a short receipt to the client from the closer.',
+  trigger: trigger.updated('dfyInstalment', ['status']),
+  steps: [branch('Paid?', [condition(T.field('status'), 'SELECT', 'IS', 'PAID')], dfyInstalmentChain((sender, ctx) => [
+    email('Receipt', sender, ctx.client.email, `Received, thank you · ${ctx.reference}`, [
+      `Hi ${ctx.client.firstName},`,
+      `Your payment of <strong>${ctx.amount}</strong> for the ${ctx.instalment} of your ${ctx.package} has landed. Reference ${ctx.reference}.`,
+      'Nothing else to do on your side. If you need a formal receipt for your books, reply and I\'ll send one over.',
+    ], { closing: 'Thanks again' }),
+  ]))],
+  testPayload: (id) => ({ id, status: 'PAID', name: 'Instalment 1 of 2', invoiceReference: 'DFY-TEST03', dueDate: '2026-10-01', method: 'PUSH', amount: { amountMicros: 2500000000, currencyCode: 'USD' }, engagementId: id }),
+};
+const DFY_RENEWAL = (() => {
+  const person = findRecord('Find the client', 'person', 'id', 'UUID', T.field('personId'));
+  const closer = findCloserMember(T.field('closerEmail'));
+  const client = P(person.id);
+  const offer = (sender) => [email('Renewal offer', sender, client.email, `Your next 90 days: ${T.field('package')}`, [
+    `Hi ${client.firstName},`,
+    `Your current ${T.field('package')} runs until <strong>${T.field('endDate')}</strong>, so it's a good moment to talk about the next 90 days.`,
+    'Most clients roll straight into the next term so the outreach never stops and the momentum carries over. Same package, same team, and we can adjust the targeting based on what worked this time.',
+    'Reply to this email or grab a slot with me and we\'ll lock it in before the current term ends.',
+  ])];
+  return {
+    name: 'DFY billing: renewal offer',
+    description: 'Thirty days before a live engagement ends the daily tick stamps the offer; this sends it from the closer\'s mailbox. The renewal instalment itself falls due on the last day of the term.',
+    trigger: trigger.updated('dfyEngagement', ['renewalOfferSentAt']),
+    steps: [branch('Offer stamped?', [condition(T.field('renewalOfferSentAt'), 'DATE_TIME', 'IS_NOT_EMPTY')], [person, closer, branch('Closer has a CRM login?', [condition(`{{${closer.id}.first.id}}`, 'TEXT', 'IS_NOT_EMPTY')], offer(closerSender(closer)), offer(FALLBACK))])],
+    testPayload: (id) => ({ id, renewalOfferSentAt: new Date().toISOString(), package: 'Test package', endDate: '2026-12-31', personId: id, closerEmail: 'sales@conversifi.io' }),
+  };
+})();
+const DFY_BILLING = [DFY_INVOICE, DFY_OVERDUE, DFY_RECEIPT, DFY_RENEWAL];
+
 const WORKFLOWS = [
   discordPing(),
   ...APPT_VARIANTS.map(apptWorkflow),
@@ -677,6 +783,7 @@ const WORKFLOWS = [
   ...SIGNUP, ...TRIAL, ...CHURN,
   webinarReminders(), webinarNoShow(), webinarOffer(),
   fiftyOff(), ...DFY_PACKAGES.map(dfyClose),
+  ...DFY_BILLING,
 ];
 
 // ---------- create ----------
@@ -747,7 +854,7 @@ for (const spec of WORKFLOWS) {
     }
   }
   // File the workflow on the Workflows page (folder tree); names decide the folder.
-  const folder = /^Discord:/.test(spec.name) ? 'Actions' : /^(Appointment confirmed|No-show follow-up)/.test(spec.name) ? 'Sequences / Sales calls' : /^(Registration + reminders|No-show recovery|Offer:)/.test(spec.name) ? 'Sequences / Webinar' : /^(Send 50% off|DFY closed:)/.test(spec.name) ? 'Actions' : 'Sequences / Product';
+  const folder = /^DFY billing:/.test(spec.name) ? 'Sequences / DFY billing' : /^Discord:/.test(spec.name) ? 'Actions' : /^(Appointment confirmed|No-show follow-up)/.test(spec.name) ? 'Sequences / Sales calls' : /^(Registration + reminders|No-show recovery|Offer:)/.test(spec.name) ? 'Sequences / Webinar' : /^(Send 50% off|DFY closed:)/.test(spec.name) ? 'Actions' : 'Sequences / Product';
   await gql('/graphql', `mutation ($id: UUID!, $data: WorkflowUpdateInput!) { updateWorkflow(id: $id, data: $data) { id } }`, { id: workflowId, data: { folder } });
   const validation = await mcp('validate_workflow', { workflowVersionId: versionId });
   const verdict = validation?.result ?? validation;

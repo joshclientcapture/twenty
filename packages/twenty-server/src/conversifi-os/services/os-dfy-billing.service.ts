@@ -42,7 +42,7 @@ const KIND_OPTIONS = [option('INSTALMENT', 'Instalment', 'blue'), option('RENEWA
 
 type Money = { amountMicros: number | string | null; currencyCode: string | null } | null;
 type EngagementRecord = {
-  id: string; name: string; package: string | null; plan: DfyPlan | null; status: DfyEngagementStatus | null;
+  id: string; name: string; package: string | null; paymentPlan: DfyPlan | null; status: DfyEngagementStatus | null;
   price: Money; contractDate: string | null; goLiveDate: string | null; endDate: string | null; pausedAt: string | null;
   volumeTarget: number | null; volumeDelivered: number | null; daysPaused: number | null; keepChasingIfChurned: boolean | null;
   closerEmail: string | null; personId: string | null; renewalOfferSentAt: string | null;
@@ -55,10 +55,12 @@ type InstalmentRecord = {
 };
 
 export type CreateEngagementInput = {
-  personId: string; package: string; priceUsd: number; plan: DfyPlan; contractDate?: string; volumeTarget?: number;
+  personId?: string; personEmail?: string; package: string; priceUsd: number; plan: DfyPlan; contractDate?: string; volumeTarget?: number;
   method?: DfyMethod; closerEmail?: string | null; notes?: string | null;
 };
 export type MarkPaidInput = { method?: DfyMethod; reference?: string | null; paidAt?: string; amountUsd?: number; source?: 'transfer' | 'airwallex' | 'manual' };
+
+type PersonSummary = { id: string; name: { firstName: string | null; lastName: string | null } | null; closerEmail: string | null };
 
 const usdToMicros = (usd: number) => Math.round(usd * 1_000_000);
 const microsToUsd = (money: Money) => (money?.amountMicros ? Number(money.amountMicros) / 1_000_000 : 0);
@@ -96,48 +98,48 @@ export class OsDfyBillingService {
 
     const engagement = await this.ensureObject(objects, {
       nameSingular: 'dfyEngagement', namePlural: 'dfyEngagements', labelSingular: 'DFY engagement', labelPlural: 'DFY engagements',
-      icon: 'IconContract', description: 'A DFY package sold to a client: the 90-day term, its volume and its payment plan',
+      icon: 'IconFileText', description: 'A DFY package sold to a client: the 90-day term, its volume and its payment plan',
     });
     await this.twentyApi.ensureFields('dfyEngagement', [
-      { name: 'package', label: 'Package', type: 'TEXT', icon: 'IconPackage' },
-      { name: 'plan', label: 'Payment plan', type: 'SELECT', icon: 'IconCreditCard', extra: { options: PLAN_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
+      { name: 'package', label: 'Package', type: 'TEXT', icon: 'IconTag' },
+      { name: 'paymentPlan', label: 'Payment plan', type: 'SELECT', icon: 'IconCoins', extra: { options: PLAN_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: ENGAGEMENT_STATUS_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
       { name: 'price', label: 'Package price', type: 'CURRENCY', icon: 'IconCurrencyDollar' },
-      { name: 'contractDate', label: 'Signed on', type: 'DATE', icon: 'IconSignature' },
+      { name: 'contractDate', label: 'Signed on', type: 'DATE', icon: 'IconCalendarDue' },
       { name: 'goLiveDate', label: 'Live from', type: 'DATE', icon: 'IconRocket' },
       { name: 'endDate', label: 'Term ends', type: 'DATE', icon: 'IconCalendarDue' },
       { name: 'pausedAt', label: 'Paused on', type: 'DATE', icon: 'IconPlayerPause' },
       { name: 'renewalOfferSentAt', label: 'Renewal offer sent', type: 'DATE_TIME', icon: 'IconRepeat' },
       { name: 'volumeTarget', label: 'Volume promised', type: 'NUMBER', icon: 'IconTargetArrow' },
-      { name: 'volumeDelivered', label: 'Volume delivered', type: 'NUMBER', icon: 'IconChecklist' },
-      { name: 'daysPaused', label: 'Days paused', type: 'NUMBER', icon: 'IconClockPause' },
-      { name: 'keepChasingIfChurned', label: 'Keep chasing if churned', type: 'BOOLEAN', icon: 'IconGavel', extra: { defaultValue: true } },
+      { name: 'volumeDelivered', label: 'Volume delivered', type: 'NUMBER', icon: 'IconProgressCheck' },
+      { name: 'daysPaused', label: 'Days paused', type: 'NUMBER', icon: 'IconPlayerPause' },
+      { name: 'keepChasingIfChurned', label: 'Keep chasing if churned', type: 'BOOLEAN', icon: 'IconAlertTriangle', extra: { defaultValue: true } },
       { name: 'closerEmail', label: 'Closer email', type: 'TEXT', icon: 'IconMail' },
       { name: 'notes', label: 'Notes', type: 'TEXT', icon: 'IconNotes' },
-      { name: 'person', label: 'Client', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'DFY engagements', targetFieldIcon: 'IconContract', type: 'MANY_TO_ONE' } } },
+      { name: 'person', label: 'Client', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'DFY engagements', targetFieldIcon: 'IconFileText', type: 'MANY_TO_ONE' } } },
     ]);
 
     const refreshedObjects = await this.twentyApi.listObjects();
     const engagementObject = refreshedObjects.find((object) => object.nameSingular === 'dfyEngagement') ?? engagement;
     await this.ensureObject(refreshedObjects, {
       nameSingular: 'dfyInstalment', namePlural: 'dfyInstalments', labelSingular: 'DFY instalment', labelPlural: 'DFY instalments',
-      icon: 'IconReceipt', description: 'One payment on a DFY engagement: when it is due, how it is collected and whether it landed',
+      icon: 'IconFileText', description: 'One payment on a DFY engagement: when it is due, how it is collected and whether it landed',
     });
     await this.twentyApi.ensureFields('dfyInstalment', [
-      { name: 'number', label: 'Number', type: 'NUMBER', icon: 'IconHash' },
+      { name: 'number', label: 'Number', type: 'NUMBER', icon: 'IconId' },
       { name: 'kind', label: 'Kind', type: 'SELECT', icon: 'IconTag', extra: { options: KIND_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
       { name: 'amount', label: 'Amount', type: 'CURRENCY', icon: 'IconCurrencyDollar' },
       { name: 'dueDate', label: 'Due', type: 'DATE', icon: 'IconCalendarDue' },
-      { name: 'method', label: 'Collection', type: 'SELECT', icon: 'IconBuildingBank', extra: { options: METHOD_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
+      { name: 'method', label: 'Collection', type: 'SELECT', icon: 'IconCoins', extra: { options: METHOD_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: INSTALMENT_STATUS_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
-      { name: 'invoiceReference', label: 'Invoice reference', type: 'TEXT', icon: 'IconFileInvoice' },
+      { name: 'invoiceReference', label: 'Invoice reference', type: 'TEXT', icon: 'IconFileText' },
       { name: 'providerReference', label: 'Payment reference', type: 'TEXT', icon: 'IconId' },
       { name: 'paidAt', label: 'Paid at', type: 'DATE_TIME', icon: 'IconCheck' },
-      { name: 'paidAmount', label: 'Amount received', type: 'CURRENCY', icon: 'IconCash' },
+      { name: 'paidAmount', label: 'Amount received', type: 'CURRENCY', icon: 'IconCoins' },
       { name: 'overdueTaskAt', label: 'Overdue task raised', type: 'DATE_TIME', icon: 'IconAlertTriangle' },
       { name: 'notes', label: 'Notes', type: 'TEXT', icon: 'IconNotes' },
-      { name: 'engagement', label: 'Engagement', type: 'RELATION', icon: 'IconContract', extra: { relationCreationPayload: { targetObjectMetadataId: engagementObject.id, targetFieldLabel: 'Instalments', targetFieldIcon: 'IconReceipt', type: 'MANY_TO_ONE' } } },
-      { name: 'person', label: 'Client', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'DFY instalments', targetFieldIcon: 'IconReceipt', type: 'MANY_TO_ONE' } } },
+      { name: 'engagement', label: 'Engagement', type: 'RELATION', icon: 'IconFileText', extra: { relationCreationPayload: { targetObjectMetadataId: engagementObject.id, targetFieldLabel: 'Instalments', targetFieldIcon: 'IconFileText', type: 'MANY_TO_ONE' } } },
+      { name: 'person', label: 'Client', type: 'RELATION', icon: 'IconUser', extra: { relationCreationPayload: { targetObjectMetadataId: person.id, targetFieldLabel: 'DFY instalments', targetFieldIcon: 'IconFileText', type: 'MANY_TO_ONE' } } },
     ]);
     await this.twentyApi.ensureSelectOptions('dfyEngagement', 'status', ENGAGEMENT_STATUS_OPTIONS);
     await this.twentyApi.ensureSelectOptions('dfyInstalment', 'status', INSTALMENT_STATUS_OPTIONS);
@@ -196,7 +198,7 @@ export class OsDfyBillingService {
 
   private async engagement(id: string): Promise<EngagementRecord> {
     const data = await this.twentyApi.records<{ dfyEngagement: EngagementRecord | null }>(
-      `query DfyEngagement($id: UUID) { dfyEngagement(filter: { id: { eq: $id } }) { id name package plan status price { amountMicros currencyCode } contractDate goLiveDate endDate pausedAt renewalOfferSentAt volumeTarget volumeDelivered daysPaused keepChasingIfChurned closerEmail personId person { id name { firstName lastName } emails { primaryEmail } closerEmail } } }`,
+      `query DfyEngagement($id: UUID) { dfyEngagement(filter: { id: { eq: $id } }) { id name package paymentPlan status price { amountMicros currencyCode } contractDate goLiveDate endDate pausedAt renewalOfferSentAt volumeTarget volumeDelivered daysPaused keepChasingIfChurned closerEmail personId person { id name { firstName lastName } emails { primaryEmail } closerEmail } } }`,
       { id },
     );
     if (!data.dfyEngagement) throw new BadRequestException('engagement not found');
@@ -224,12 +226,16 @@ export class OsDfyBillingService {
 
   async createEngagement(input: CreateEngagementInput) {
     await this.ensureMetadata();
-    if (!input.personId || !input.package?.trim() || !(input.priceUsd > 0)) throw new BadRequestException('personId, package and price are required');
-    const personData = await this.twentyApi.records<{ person: { id: string; name: { firstName: string | null; lastName: string | null } | null; closerEmail: string | null } | null }>(
-      `query DfyPerson($id: UUID) { person(filter: { id: { eq: $id } }) { id name { firstName lastName } closerEmail } }`,
-      { id: input.personId },
-    );
-    if (!personData.person) throw new BadRequestException('person not found');
+    if (!input.package?.trim() || !(input.priceUsd > 0)) throw new BadRequestException('package and price are required');
+    if (!input.personId && !input.personEmail?.trim()) throw new BadRequestException('personId or personEmail is required');
+    const personData = input.personId
+      ? await this.twentyApi.records<{ person: PersonSummary | null }>(
+          `query DfyPerson($id: UUID) { person(filter: { id: { eq: $id } }) { id name { firstName lastName } closerEmail } }`,
+          { id: input.personId },
+        )
+      : await this.personByEmail(input.personEmail!.trim());
+    if (!personData.person) throw new BadRequestException(input.personId ? 'person not found' : `no person with the email ${input.personEmail}`);
+    input = { ...input, personId: personData.person.id };
     const clientName = `${personData.person.name?.firstName ?? ''} ${personData.person.name?.lastName ?? ''}`.trim() || 'Client';
     const contractDate = input.contractDate ?? today();
     const method: DfyMethod = input.method ?? 'PUSH';
@@ -238,10 +244,10 @@ export class OsDfyBillingService {
       {
         data: {
           name: `${input.package.trim()} · ${clientName}`,
-          package: input.package.trim(), plan: input.plan, status: 'PENDING',
+          package: input.package.trim(), paymentPlan: input.plan, status: 'PENDING',
           price: { amountMicros: usdToMicros(input.priceUsd), currencyCode: 'USD' },
           contractDate, volumeTarget: input.volumeTarget ?? null, volumeDelivered: 0, daysPaused: 0, keepChasingIfChurned: true,
-          closerEmail: input.closerEmail ?? personData.person.closerEmail ?? null, notes: input.notes ?? null, personId: input.personId,
+          closerEmail: input.closerEmail ?? personData.person.closerEmail ?? null, notes: input.notes ?? null, personId: personData.person.id,
         },
       },
     );
@@ -252,10 +258,18 @@ export class OsDfyBillingService {
       ? [{ number: 1, amountUsd: input.priceUsd, dueDate: contractDate }]
       : [{ number: 1, amountUsd: input.priceUsd / 2, dueDate: contractDate }, { number: 2, amountUsd: input.priceUsd / 2, dueDate: addDays(contractDate, SECOND_INSTALMENT_DAYS) }];
     for (const row of rows) {
-      await this.createInstalment({ engagementId, personId: input.personId, number: row.number, total: rows.length, kind: 'INSTALMENT', amountUsd: row.amountUsd, dueDate: row.dueDate, method });
+      await this.createInstalment({ engagementId, personId: personData.person.id, number: row.number, total: rows.length, kind: 'INSTALMENT', amountUsd: row.amountUsd, dueDate: row.dueDate, method });
     }
     await this.log(engagementId, `engagement created: ${input.package} ${input.plan} $${input.priceUsd} for ${clientName}`);
     return { engagementId };
+  }
+
+  private async personByEmail(email: string): Promise<{ person: PersonSummary | null }> {
+    const data = await this.twentyApi.records<{ people: { edges: { node: PersonSummary }[] } }>(
+      `query DfyPersonByEmail($email: String) { people(filter: { emails: { primaryEmail: { ilike: $email } } }, first: 1) { edges { node { id name { firstName lastName } closerEmail } } } }`,
+      { email },
+    );
+    return { person: data.people.edges[0]?.node ?? null };
   }
 
   private async createInstalment(row: { engagementId: string; personId: string; number: number; total: number; kind: DfyInstalmentKind; amountUsd: number; dueDate: string; method: DfyMethod }) {
@@ -294,7 +308,7 @@ export class OsDfyBillingService {
     const existing = await this.instalments(engagementId);
     if (!existing.some((row) => row.kind === 'RENEWAL')) {
       const price = microsToUsd(engagement.price);
-      const renewalAmount = engagement.plan === 'TWO_PAY' ? price / 2 : price;
+      const renewalAmount = engagement.paymentPlan === 'TWO_PAY' ? price / 2 : price;
       const method = existing[0]?.method ?? 'PUSH';
       await this.createInstalment({ engagementId, personId: engagement.personId ?? '', number: existing.length + 1, total: existing.length + 1, kind: 'RENEWAL', amountUsd: renewalAmount, dueDate: endDate, method });
     }
@@ -371,7 +385,7 @@ export class OsDfyBillingService {
     );
     await this.dataSource.query('select os.refresh_sales_ledger()').catch((error) => this.logger.warn(`ledger refresh failed: ${(error as Error).message}`));
 
-    if (row.kind === 'INSTALMENT' && row.number === 1 && engagement.plan === 'TWO_PAY') {
+    if (row.kind === 'INSTALMENT' && row.number === 1 && engagement.paymentPlan === 'TWO_PAY') {
       const second = (await this.instalments(row.engagementId)).find((candidate) => candidate.kind === 'INSTALMENT' && candidate.number === 2 && candidate.status === 'SCHEDULED');
       if (second) await this.updateInstalment(second.id, { dueDate: addDays(paidAt.slice(0, 10), SECOND_INSTALMENT_DAYS) });
     }

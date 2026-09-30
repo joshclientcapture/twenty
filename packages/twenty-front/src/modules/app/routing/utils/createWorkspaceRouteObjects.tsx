@@ -65,6 +65,11 @@ const ClosersPage = lazy(() =>
   })),
 );
 
+const DfyBillingPage = lazy(() =>
+  import('~/pages/dfy-billing/DfyBillingPage').then((module) => ({
+    default: module.DfyBillingPage,
+  })),
+);
 const RevenuePage = lazy(() =>
   import('~/pages/revenue/RevenuePage').then((module) => ({
     default: module.RevenuePage,
@@ -234,6 +239,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <RevenuePage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.DfyBilling,
+      element: (
+        <LazyRoute>
+          <DfyBillingPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

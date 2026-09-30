@@ -990,3 +990,35 @@ export async function removeChurnExclusion(customerId: string): Promise<void> {
   const { error } = await osClient.rpc("remove_churn_exclusion", { p_customer_id: customerId });
   if (error) throw error;
 }
+
+// ---------- DFY billing (engagements + instalments) ----------
+export type DfyInstalmentRow = {
+  id: string; name: string; number: number | null; kind: 'INSTALMENT' | 'RENEWAL'; status: 'SCHEDULED' | 'INVOICED' | 'PENDING' | 'PAID' | 'FAILED' | 'OVERDUE' | 'CANCELLED';
+  method: 'PUSH' | 'DEBIT' | null; due_date: string | null; paid_at: string | null; amount: number; paid_amount: number; reference: string | null;
+  engagement_id: string | null; person_id: string | null;
+};
+export type DfyEngagementRow = {
+  id: string; name: string; package: string | null; plan: 'PIF' | 'TWO_PAY' | null; status: 'PENDING' | 'LIVE' | 'PAUSED' | 'COMPLETE' | 'RENEWED' | 'CHURNED';
+  contract_date: string | null; go_live_date: string | null; end_date: string | null; paused_at: string | null; volume_target: number | null; volume_delivered: number | null;
+  days_paused: number | null; closer_email: string | null; price: number; person_id: string | null; client: string | null; client_email: string | null;
+  paid_total: number; overdue_count: number; next_due: string | null;
+};
+export type DfyBilling = {
+  engagements: DfyEngagementRow[]; instalments: DfyInstalmentRow[]; due_this_week: number; overdue: number; overdue_count: number; renewals_30d: number;
+  collected_this_month: number; forecast: Record<string, number>; live: number; paused: number;
+};
+export async function fetchDfyBilling(): Promise<DfyBilling> {
+  const { data, error } = await osClient.rpc("get_dfy_billing");
+  if (error) throw error;
+  return data as DfyBilling;
+}
+export type DfyClientBilling = { engagements: (Omit<DfyEngagementRow, 'client' | 'client_email' | 'paid_total' | 'overdue_count' | 'next_due'> & { instalments: (Omit<DfyInstalmentRow, 'engagement_id' | 'person_id'> & { provider_reference: string | null })[] })[] };
+export async function fetchDfyClientBilling(personId: string): Promise<DfyClientBilling> {
+  const { data, error } = await osClient.rpc("get_dfy_client_billing", { p_person_id: personId });
+  if (error) throw error;
+  return data as DfyClientBilling;
+}
+export type DfyNewEngagement = { personId?: string; personEmail?: string; package: string; priceUsd: number; plan: 'PIF' | 'TWO_PAY'; contractDate?: string; volumeTarget?: number; method?: 'PUSH' | 'DEBIT'; notes?: string };
+export const dfyCreateEngagement = (input: DfyNewEngagement) => osPost<{ engagementId: string }>('dfy/engagement', input);
+export const dfyEngagementAction = (id: string, action: 'live' | 'pause' | 'resume', body: Record<string, unknown> = {}) => osPost<Record<string, unknown>>(`dfy/engagement/${id}/${action}`, body);
+export const dfyInstalmentAction = (id: string, action: 'paid' | 'invoice' | 'cancel', body: Record<string, unknown> = {}) => osPost<Record<string, unknown>>(`dfy/instalment/${id}/${action}`, body);

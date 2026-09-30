@@ -41,6 +41,7 @@ export enum AppPath {
   Closers = '/closers',
   Closer = '/closers/:closerId',
   Revenue = '/revenue',
+  DfyBilling = '/dfy-billing',
   Webinar = '/webinar',
   Customers = '/customers',
 

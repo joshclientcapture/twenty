@@ -46,7 +46,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
     from workspace_a1aip8pgko71t0v2lrw9rnizs."_dfyInstalment" i where i."deletedAt" is null
   ),
   e as (
-    select e.id, e.name, e.package, e.plan::text plan, e.status::text status, e."contractDate" contract_date, e."goLiveDate" go_live_date, e."endDate" end_date,
+    select e.id, e.name, e.package, e."paymentPlan"::text plan, e.status::text status, e."contractDate" contract_date, e."goLiveDate" go_live_date, e."endDate" end_date,
       e."pausedAt" paused_at, e."volumeTarget" volume_target, e."volumeDelivered" volume_delivered, e."daysPaused" days_paused, e."closerEmail" closer_email,
       round(coalesce(e."priceAmountMicros", 0) / 1000000.0, 2) price, e."personId" person_id,
       p."nameFirstName" || ' ' || p."nameLastName" client, p."emailsPrimaryEmail" client_email,
@@ -76,7 +76,7 @@ create or replace function os.get_dfy_client_billing(p_person_id uuid)
 returns jsonb language sql stable security definer set search_path to 'os', 'public' as $function$
   select jsonb_build_object(
     'engagements', coalesce((select jsonb_agg(jsonb_build_object(
-        'id', e.id, 'name', e.name, 'package', e.package, 'plan', e.plan::text, 'status', e.status::text, 'price', round(coalesce(e."priceAmountMicros", 0) / 1000000.0, 2),
+        'id', e.id, 'name', e.name, 'package', e.package, 'plan', e."paymentPlan"::text, 'status', e.status::text, 'price', round(coalesce(e."priceAmountMicros", 0) / 1000000.0, 2),
         'contract_date', e."contractDate", 'go_live_date', e."goLiveDate", 'end_date', e."endDate", 'paused_at', e."pausedAt", 'days_paused', e."daysPaused",
         'volume_target', e."volumeTarget", 'volume_delivered', e."volumeDelivered", 'closer_email', e."closerEmail",
         'instalments', coalesce((select jsonb_agg(jsonb_build_object(

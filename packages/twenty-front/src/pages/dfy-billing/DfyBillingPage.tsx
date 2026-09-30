@@ -243,15 +243,15 @@ const DfyBillingPageContent = () => {
                 </StyledFieldBlock>
                 <StyledFieldBlock>
                   Package
-                  <StyledInput value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })} placeholder="e.g. 90-day outreach, 60 appointments" />
+                  <StyledInput value={form.package} onChange={(event) => setForm({ ...form, package: event.target.value })} placeholder="e.g. 90-day outreach package" />
                 </StyledFieldBlock>
                 <StyledFieldBlock>
                   Price (USD)
                   <StyledInput type="number" min={1} step={1} value={form.priceUsd || ''} onChange={(event) => setForm({ ...form, priceUsd: Number(event.target.value) })} />
                 </StyledFieldBlock>
                 <StyledFieldBlock>
-                  Volume promised
-                  <StyledInput type="number" min={0} step={1} value={form.volumeTarget ?? ''} onChange={(event) => setForm({ ...form, volumeTarget: event.target.value ? Number(event.target.value) : undefined })} placeholder="e.g. 60" />
+                  Outreach volume (optional)
+                  <StyledInput type="number" min={0} step={1} value={form.volumeTarget ?? ''} onChange={(event) => setForm({ ...form, volumeTarget: event.target.value ? Number(event.target.value) : undefined })} placeholder="units in the package" />
                 </StyledFieldBlock>
                 <OsSelect id="dfy-plan" label="Plan" value={form.plan} options={[{ value: 'TWO_PAY', label: 'Two payments (now + 45 days)' }, { value: 'PIF', label: 'Pay in full' }]} onChange={(plan) => setForm({ ...form, plan })} />
                 <OsSelect id="dfy-method" label="Collection" value={form.method ?? 'PUSH'} options={[{ value: 'PUSH', label: 'Bank transfer (client sends)' }, { value: 'DEBIT', label: 'Direct debit (business account)' }]} onChange={(method) => setForm({ ...form, method })} />

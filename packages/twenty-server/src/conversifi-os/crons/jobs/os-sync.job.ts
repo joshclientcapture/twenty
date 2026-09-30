@@ -4,6 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { OS_SYNC_CRON_SCHEDULES, type OsSyncCronJobData } from 'src/conversifi-os/constants/os-sync-cron.constant';
+import { OsDfyBillingService } from 'src/conversifi-os/services/os-dfy-billing.service';
 import { OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { Process } from 'src/engine/core-modules/message-queue/decorators/process.decorator';
 import { Processor } from 'src/engine/core-modules/message-queue/decorators/processor.decorator';
@@ -17,6 +18,7 @@ export class OsSyncJob {
 
   constructor(
     private readonly osSyncService: OsSyncService,
+    private readonly dfyBilling: OsDfyBillingService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -29,6 +31,11 @@ export class OsSyncJob {
     }
     if (schedule.kind === 'rentals') {
       await this.dataSource.query(`select os.refresh_rental_account_status()`);
+      return;
+    }
+    if (schedule.kind === 'dfy-billing') {
+      const result = await this.dfyBilling.tick();
+      this.logger.log(`dfy billing tick: ${JSON.stringify(result)}`);
       return;
     }
     let results: Awaited<ReturnType<OsSyncService['runSteps']>>;

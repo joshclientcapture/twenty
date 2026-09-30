@@ -1,6 +1,6 @@
 import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep } from 'src/conversifi-os/services/os-sync.service';
 
-export type OsSyncCronKind = 'fast' | 'full' | 'prod' | 'trial-forward' | 'rentals';
+export type OsSyncCronKind = 'fast' | 'full' | 'prod' | 'trial-forward' | 'rentals' | 'dfy-billing';
 
 export type OsSyncCronJobData = { kind: OsSyncCronKind };
 
@@ -11,4 +11,6 @@ export const OS_SYNC_CRON_SCHEDULES: { kind: OsSyncCronKind; pattern: string; st
   { kind: 'prod', pattern: '0 */4 * * *', steps: ['prod'] },
   { kind: 'trial-forward', pattern: '*/15 * * * *', steps: ['trial-forward'] },
   { kind: 'rentals', pattern: '*/30 * * * *', steps: [] },
+  // DFY invoicing, overdue marking, renewal offers: once a day, early UK morning.
+  { kind: 'dfy-billing', pattern: '20 6 * * *', steps: [] },
 ];

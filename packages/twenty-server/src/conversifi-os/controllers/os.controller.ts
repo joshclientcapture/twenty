@@ -10,6 +10,7 @@ import { isOsReadFunction, OS_RPC_CLOSER_FUNCTIONS } from 'src/conversifi-os/con
 import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-test.service';
+import { type CreateEngagementInput, type MarkPaidInput, OsDfyBillingService } from 'src/conversifi-os/services/os-dfy-billing.service';
 import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep, OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
@@ -33,6 +34,7 @@ export class OsController {
     private readonly permissions: PermissionsService,
     private readonly sms: OsSmsService,
     private readonly workflowTest: OsWorkflowTestService,
+    private readonly dfyBilling: OsDfyBillingService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -114,6 +116,64 @@ export class OsController {
       dryRun: body.dryRun === true,
       allowOtherSender: isAdmin,
     });
+  }
+
+  // ---------- DFY billing: engagements and instalments (admins, or the closer on the deal) ----------
+
+  @Post('dfy/setup')
+  async dfySetup(@AuthWorkspace() workspace: WorkspaceEntity, @AuthUserWorkspaceId() userWorkspaceId: string) {
+    await this.requireAdmin(workspace.id, userWorkspaceId);
+    await this.dfyBilling.ensureMetadata();
+    return { ok: true };
+  }
+
+  @Post('dfy/engagement')
+  async dfyCreateEngagement(
+    @Body() body: CreateEngagementInput,
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
+    return this.dfyBilling.createEngagement({ ...body, closerEmail: body.closerEmail ?? user.email ?? null });
+  }
+
+  @Post('dfy/engagement/:id/:action')
+  async dfyEngagementAction(
+    @Param('id') id: string,
+    @Param('action') action: string,
+    @Body() body: { goLiveDate?: string; reason?: string },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
+    if (action === 'live') return this.dfyBilling.setGoLive(id, body?.goLiveDate);
+    if (action === 'pause') return this.dfyBilling.pause(id, body?.reason);
+    if (action === 'resume') return this.dfyBilling.resume(id);
+    throw new BadRequestException(`unknown engagement action ${action}`);
+  }
+
+  @Post('dfy/instalment/:id/:action')
+  async dfyInstalmentAction(
+    @Param('id') id: string,
+    @Param('action') action: string,
+    @Body() body: MarkPaidInput & { reason?: string },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+    @AuthUser() user: { email?: string | null },
+  ) {
+    await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
+    if (action === 'paid') return this.dfyBilling.markPaid(id, body ?? {});
+    if (action === 'invoice') return this.dfyBilling.invoice(id);
+    if (action === 'cancel') return this.dfyBilling.cancelInstalment(id, body?.reason);
+    throw new BadRequestException(`unknown instalment action ${action}`);
+  }
+
+  private async requireAdminOrCloser(workspaceId: string, userWorkspaceId: string, email: string | null | undefined) {
+    if (await this.isAdmin(workspaceId, userWorkspaceId)) return;
+    if (await this.isCloser(email)) return;
+    throw new ForbiddenException('This action needs the workspace admin permission or a closer login.');
   }
 
   private async inboxScope(workspaceId: string, userWorkspaceId: string, email: string | null | undefined): Promise<string | null> {

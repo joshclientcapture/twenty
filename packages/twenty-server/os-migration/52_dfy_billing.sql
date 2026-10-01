@@ -82,7 +82,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
         'instalments', coalesce((select jsonb_agg(jsonb_build_object(
             'id', i.id, 'name', i.name, 'number', i.number, 'kind', i.kind::text, 'status', i.status::text, 'method', i.method::text, 'due_date', i."dueDate",
             'amount', round(coalesce(i."amountAmountMicros", 0) / 1000000.0, 2), 'paid_amount', round(coalesce(i."paidAmountAmountMicros", 0) / 1000000.0, 2),
-            'paid_at', i."paidAt", 'reference', i."invoiceReference", 'provider_reference', i."providerReference"
+            'paid_at', i."paidAt", 'reference', i."invoiceReference", 'provider_reference', i."providerReference", 'payment_instructions', i."paymentInstructions"
           ) order by i.number) from workspace_a1aip8pgko71t0v2lrw9rnizs."_dfyInstalment" i where i."engagementId" = e.id and i."deletedAt" is null), '[]'::jsonb)
       ) order by e."createdAt" desc) from workspace_a1aip8pgko71t0v2lrw9rnizs."_dfyEngagement" e where e."personId" = p_person_id and e."deletedAt" is null), '[]'::jsonb)
   );

@@ -673,7 +673,8 @@ const discordPing = () => {
 
 // ---------- 7. DFY billing: invoice, overdue, receipt, renewal (from the closer's mailbox) ----------
 // Bank details for push payments come from .env at build time (OS_DFY_BANK_DETAILS, lines separated by " / ").
-const BANK_DETAILS = (env.OS_DFY_BANK_DETAILS ?? 'Bank details: ask your closer / Reference: your invoice reference').split(' / ').join('<br>');
+// Newline-separated: the email renderer turns newlines inside a variable into line breaks, and escapes tags.
+const BANK_DETAILS = (env.OS_DFY_BANK_DETAILS ?? 'Bank details: ask your closer / Reference: your invoice reference').split(' / ').join(String.fromCharCode(10));
 const findRecord = (name, objectName, fieldName, type, valueExpression) => step('FIND_RECORDS', name, {
   objectName, limit: 1,
   filter: { recordFilterGroups: [], recordFilters: [{ id: randomUUID(), fieldMetadataId: fieldId(objectName, fieldName), type, operand: type === 'TEXT' ? 'CONTAINS' : 'IS', value: valueExpression, displayValue: valueExpression, label: fieldName }] },
@@ -684,10 +685,10 @@ export const main = async (params) => {
   const amount = '$' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const due = params.dueDate ? new Date(params.dueDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
   // Per-invoice Airwallex account + reference when one was issued, else the static bank details.
-  const instructions = (params.instructions || '').trim() ? String(params.instructions).trim().split(String.fromCharCode(10)).join('<br>') : (params.fallback || '');
+  const instructions = (params.instructions || '').trim() ? String(params.instructions).trim() : (params.fallback || '');
   return { amount, due, reference: params.reference || '', name: params.name || 'Instalment', debit: params.method === 'DEBIT' ? 'yes' : '', instructions };
 };`;
-const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '', instructions: 'Bank: Airwallex<br>Account number: 123456789<br>Payment reference (required): D5NCUC' };
+const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '', instructions: 'Bank: Airwallex / Account number: 123456789 / Payment reference (required): D5NCUC' };
 // Instalment flows: the money row is the trigger; the engagement carries the client and the closer.
 const dfyInstalmentChain = (buildSteps) => {
   const format = code('Format the invoice', 'FMT', INVOICE_FORMAT_CODE, { amountMicros: T.field('amount.amountMicros'), dueDate: T.field('dueDate'), reference: T.field('invoiceReference'), name: T.field('name'), method: T.field('method'), instructions: T.field('paymentInstructions'), fallback: BANK_DETAILS }, INVOICE_FORMAT_SAMPLE);

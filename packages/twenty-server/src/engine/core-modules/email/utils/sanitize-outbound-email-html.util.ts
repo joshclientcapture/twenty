@@ -102,9 +102,24 @@ const inspectHtmlDocumentPreamble = (html: string): HtmlDocumentPreamble => {
   };
 };
 
+// Conversifi: the jsdom window behind the purifier keeps every document it ever parsed, so it is
+// closed and rebuilt every so often instead of living for the process lifetime.
+const RECYCLE_PURIFIER_AFTER_USES = 50;
+let purifierUses = 0;
+let purifierWindow: { close: () => void } | null = null;
+
 const getPurifier = (): Promise<ReturnType<typeof DOMPurify>> => {
+  if (purifierPromise && purifierUses >= RECYCLE_PURIFIER_AFTER_USES) {
+    purifierWindow?.close();
+    purifierWindow = null;
+    purifierPromise = undefined;
+    purifierUses = 0;
+  }
+  purifierUses++;
   purifierPromise ??= import('jsdom').then(({ JSDOM }) => {
-    const purifier = DOMPurify(new JSDOM('').window);
+    const jsdom = new JSDOM('');
+    purifierWindow = jsdom.window;
+    const purifier = DOMPurify(jsdom.window);
 
     purifier.addHook('uponSanitizeAttribute', (node, attribute) => {
       if (

@@ -24,7 +24,12 @@ export const sanitizeFile = ({
       fileString = Buffer.from(file).toString('utf-8');
     }
 
-    return purify.sanitize(fileString);
+    try {
+      return purify.sanitize(fileString);
+    } finally {
+      // Conversifi: a jsdom window is not collected until it is closed.
+      window.close();
+    }
   }
 
   return file;

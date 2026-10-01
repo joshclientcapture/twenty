@@ -18,7 +18,7 @@ const WEBHOOK_VERSION = '2022-11-11';
 const WEBHOOK_EVENTS = [
   'payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.cancelled',
   'payment_attempt.settled', 'payment_attempt.paid', 'payment_attempt.expired', 'payment_attempt.failed_to_process',
-  'payment_dispute.requires_response', 'payment_dispute.accepted', 'payment_dispute.challenged',
+  // Dispute events are not offered under this payload version; disputes arrive by email and in the dashboard.
   'deposit.settled',
 ];
 

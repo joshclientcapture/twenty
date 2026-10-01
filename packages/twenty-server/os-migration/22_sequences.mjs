@@ -684,8 +684,7 @@ export const main = async (params) => {
   const amount = '$' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const due = params.dueDate ? new Date(params.dueDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
   // Per-invoice Airwallex account + reference when one was issued, else the static bank details.
-  const instructions = (params.instructions || '').trim() ? String(params.instructions).trim().split('
-').join('<br>') : (params.fallback || '');
+  const instructions = (params.instructions || '').trim() ? String(params.instructions).trim().split(String.fromCharCode(10)).join('<br>') : (params.fallback || '');
   return { amount, due, reference: params.reference || '', name: params.name || 'Instalment', debit: params.method === 'DEBIT' ? 'yes' : '', instructions };
 };`;
 const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '', instructions: 'Bank: Airwallex<br>Account number: 123456789<br>Payment reference (required): D5NCUC' };

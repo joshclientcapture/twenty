@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from 'crypto';
 
 import { DataSource } from 'typeorm';
 
+import { OsAirwallexService } from 'src/conversifi-os/services/os-airwallex.service';
 import { type MetadataObject, TwentyApiService } from 'src/conversifi-os/services/twenty-api.service';
 
 const env = (name: string) => {
@@ -51,7 +52,7 @@ type EngagementRecord = {
 type InstalmentRecord = {
   id: string; name: string; number: number | null; kind: DfyInstalmentKind | null; amount: Money; dueDate: string | null;
   method: DfyMethod | null; status: DfyInstalmentStatus | null; invoiceReference: string | null; providerReference: string | null;
-  paidAt: string | null; paidAmount: Money; engagementId: string | null; personId: string | null; overdueTaskAt: string | null;
+  paidAt: string | null; paidAmount: Money; engagementId: string | null; personId: string | null; overdueTaskAt: string | null; paymentInstructions: string | null;
 };
 
 export type CreateEngagementInput = {
@@ -86,6 +87,7 @@ export class OsDfyBillingService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly twentyApi: TwentyApiService,
+    private readonly airwallex: OsAirwallexService,
   ) {}
 
   // ---------- metadata ----------
@@ -134,6 +136,7 @@ export class OsDfyBillingService {
       { name: 'status', label: 'Status', type: 'SELECT', icon: 'IconProgressCheck', extra: { options: INSTALMENT_STATUS_OPTIONS.map((entry, position) => ({ ...entry, id: randomUUID(), position })) } },
       { name: 'invoiceReference', label: 'Invoice reference', type: 'TEXT', icon: 'IconFileText' },
       { name: 'providerReference', label: 'Payment reference', type: 'TEXT', icon: 'IconId' },
+      { name: 'paymentInstructions', label: 'Payment instructions', type: 'TEXT', icon: 'IconFileText' },
       { name: 'paidAt', label: 'Paid at', type: 'DATE_TIME', icon: 'IconCheck' },
       { name: 'paidAmount', label: 'Amount received', type: 'CURRENCY', icon: 'IconCoins' },
       { name: 'overdueTaskAt', label: 'Overdue task raised', type: 'DATE_TIME', icon: 'IconAlertTriangle' },
@@ -217,7 +220,7 @@ export class OsDfyBillingService {
 
   private async instalment(id: string): Promise<InstalmentRecord> {
     const data = await this.twentyApi.records<{ dfyInstalment: InstalmentRecord | null }>(
-      `query DfyInstalment($id: UUID) { dfyInstalment(filter: { id: { eq: $id } }) { id name number kind amount { amountMicros currencyCode } dueDate method status invoiceReference providerReference paidAt paidAmount { amountMicros currencyCode } engagementId personId overdueTaskAt } }`,
+      `query DfyInstalment($id: UUID) { dfyInstalment(filter: { id: { eq: $id } }) { id name number kind amount { amountMicros currencyCode } dueDate method status invoiceReference providerReference paidAt paidAmount { amountMicros currencyCode } engagementId personId overdueTaskAt paymentInstructions } }`,
       { id },
     );
     if (!data.dfyInstalment) throw new BadRequestException('instalment not found');
@@ -346,9 +349,33 @@ export class OsDfyBillingService {
     const row = await this.instalment(instalmentId);
     if (row.status === 'PAID' || row.status === 'CANCELLED') throw new BadRequestException(`instalment is ${row.status}`);
     const reference = row.invoiceReference ?? this.reference();
-    await this.updateInstalment(instalmentId, { status: row.status === 'OVERDUE' ? 'OVERDUE' : 'INVOICED', invoiceReference: reference });
-    if (row.engagementId) await this.log(row.engagementId, `${row.name} invoiced (${reference})`);
-    return { reference };
+    const instructions = await this.transferInstructions(row);
+    await this.updateInstalment(instalmentId, {
+      status: row.status === 'OVERDUE' ? 'OVERDUE' : 'INVOICED', invoiceReference: reference,
+      ...(instructions ? { providerReference: instructions.intentId, paymentInstructions: instructions.text } : {}),
+    });
+    if (row.engagementId) await this.log(row.engagementId, `${row.name} invoiced (${reference}${instructions?.reference ? `, transfer ref ${instructions.reference}` : ''})`);
+    return { reference, transferReference: instructions?.reference ?? null };
+  }
+
+  // A push instalment gets its own Airwallex bank-transfer intent: the client pays into the
+  // account it names with its reference, and the webhook marks the row paid when it lands.
+  private async transferInstructions(row: InstalmentRecord) {
+    if (!this.airwallex.isConfigured() || (row.method ?? 'PUSH') !== 'PUSH' || !row.engagementId) return null;
+    if (row.providerReference && row.paymentInstructions) return null;
+    try {
+      const engagement = await this.engagement(row.engagementId);
+      const client = engagement.person;
+      return await this.airwallex.createBankTransfer({
+        instalmentId: row.id, amount: microsToUsd(row.amount), currency: row.amount?.currencyCode ?? 'USD',
+        email: client?.emails?.primaryEmail ?? null, name: `${client?.name?.firstName ?? ''} ${client?.name?.lastName ?? ''}`.trim() || null,
+        description: `${engagement.package ?? engagement.name} · ${row.name}`,
+      });
+    } catch (error) {
+      // The invoice still goes out with the static bank details; the reference is the fallback.
+      this.logger.warn(`airwallex transfer intent failed for ${row.id}: ${(error as Error).message}`);
+      return null;
+    }
   }
 
   async cancelInstalment(instalmentId: string, reason?: string) {
@@ -412,7 +439,7 @@ export class OsDfyBillingService {
     );
     let invoiced = 0; let overdue = 0; let paused = 0; let offers = 0;
     for (const row of due) {
-      if (row.status === 'SCHEDULED' && row.dueDate <= addDays(now, INVOICE_AHEAD_DAYS)) { await this.updateInstalment(row.id, { status: 'INVOICED' }); invoiced++; continue; }
+      if (row.status === 'SCHEDULED' && row.dueDate <= addDays(now, INVOICE_AHEAD_DAYS)) { await this.invoice(row.id).catch((error) => this.logger.warn(`auto-invoice ${row.id} failed: ${(error as Error).message}`)); invoiced++; continue; }
       if ((row.status === 'INVOICED' || row.status === 'PENDING') && row.dueDate < now) { await this.updateInstalment(row.id, { status: 'OVERDUE' }); overdue++; continue; }
       if (row.status === 'OVERDUE' && row.engagementId) {
         const daysLate = daysBetween(row.dueDate, now);

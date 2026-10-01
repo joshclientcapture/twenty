@@ -683,16 +683,19 @@ export const main = async (params) => {
   const usd = Number(params.amountMicros || 0) / 1000000;
   const amount = '$' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const due = params.dueDate ? new Date(params.dueDate + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
-  return { amount, due, reference: params.reference || '', name: params.name || 'Instalment', debit: params.method === 'DEBIT' ? 'yes' : '' };
+  // Per-invoice Airwallex account + reference when one was issued, else the static bank details.
+  const instructions = (params.instructions || '').trim() ? String(params.instructions).trim().split('
+').join('<br>') : (params.fallback || '');
+  return { amount, due, reference: params.reference || '', name: params.name || 'Instalment', debit: params.method === 'DEBIT' ? 'yes' : '', instructions };
 };`;
-const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '' };
+const INVOICE_FORMAT_SAMPLE = { amount: '$2,500.00', due: 'Friday, 17 October 2026', reference: 'DFY-1A2B3C', name: 'Instalment 1 of 2', debit: '', instructions: 'Bank: Airwallex<br>Account number: 123456789<br>Payment reference (required): D5NCUC' };
 // Instalment flows: the money row is the trigger; the engagement carries the client and the closer.
 const dfyInstalmentChain = (buildSteps) => {
-  const format = code('Format the invoice', 'FMT', INVOICE_FORMAT_CODE, { amountMicros: T.field('amount.amountMicros'), dueDate: T.field('dueDate'), reference: T.field('invoiceReference'), name: T.field('name'), method: T.field('method') }, INVOICE_FORMAT_SAMPLE);
+  const format = code('Format the invoice', 'FMT', INVOICE_FORMAT_CODE, { amountMicros: T.field('amount.amountMicros'), dueDate: T.field('dueDate'), reference: T.field('invoiceReference'), name: T.field('name'), method: T.field('method'), instructions: T.field('paymentInstructions'), fallback: BANK_DETAILS }, INVOICE_FORMAT_SAMPLE);
   const engagement = findRecord('Find the engagement', 'dfyEngagement', 'id', 'UUID', T.field('engagementId'));
   const person = findRecord('Find the client', 'person', 'id', 'UUID', `{{${engagement.id}.first.personId}}`);
   const closer = findCloserMember(`{{${engagement.id}.first.closerEmail}}`);
-  const ctx = { amount: '{{FMT.amount}}', due: '{{FMT.due}}', reference: '{{FMT.reference}}', instalment: '{{FMT.name}}', package: `{{${engagement.id}.first.package}}`, client: P(person.id) };
+  const ctx = { amount: '{{FMT.amount}}', due: '{{FMT.due}}', reference: '{{FMT.reference}}', instalment: '{{FMT.name}}', instructions: '{{FMT.instructions}}', package: `{{${engagement.id}.first.package}}`, client: P(person.id) };
   // The find goes first: a code step must never be the first child of a branch (builder gotcha).
   return [engagement, format, person, closer, branch('Closer has a CRM login?', [condition(`{{${closer.id}.first.id}}`, 'TEXT', 'IS_NOT_EMPTY')], buildSteps(closerSender(closer), ctx), buildSteps(FALLBACK, ctx))];
 };
@@ -707,8 +710,8 @@ const dfyInvoiceEmails = (sender, ctx) => [branch('Collected by direct debit?', 
   email('Invoice', sender, ctx.client.email, `Invoice ${ctx.reference} · ${ctx.package}`, [
     `Hi ${ctx.client.firstName},`,
     `Here's your invoice for <strong>${ctx.amount}</strong>, the ${ctx.instalment} of your ${ctx.package}. It's due on <strong>${ctx.due}</strong>.`,
-    `Please pay by bank transfer using the reference <strong>${ctx.reference}</strong> so it matches up automatically:`,
-    BANK_DETAILS,
+    'Please pay by bank transfer using exactly the reference below so it matches up automatically:',
+    ctx.instructions,
     'Reply to this email once it\'s sent if you\'d like a confirmation, and thank you.',
   ]),
 ])];
@@ -728,8 +731,8 @@ const DFY_OVERDUE = {
       email('Overdue reminder', sender, ctx.client.email, `Payment overdue: ${ctx.reference} · ${ctx.package}`, [
         `Hi ${ctx.client.firstName},`,
         `Just a nudge: the <strong>${ctx.amount}</strong> ${ctx.instalment} for your ${ctx.package} was due on ${ctx.due} and hasn't reached us yet.`,
-        `If it's already on its way, ignore this. Otherwise here are the details again, reference <strong>${ctx.reference}</strong>:`,
-        BANK_DETAILS,
+        'If that is already on its way, ignore this. Otherwise here are the details again:',
+        ctx.instructions,
         'If something\'s changed on your side, reply and let me know. We pause delivery after a week overdue, and I\'d rather not.',
       ]),
     ]) },

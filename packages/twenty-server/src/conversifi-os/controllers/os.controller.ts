@@ -11,6 +11,7 @@ import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-test.service';
 import { type CreateEngagementInput, type MarkPaidInput, OsDfyBillingService } from 'src/conversifi-os/services/os-dfy-billing.service';
+import { OsAirwallexService } from 'src/conversifi-os/services/os-airwallex.service';
 import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep, OsSyncService } from 'src/conversifi-os/services/os-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
@@ -35,6 +36,7 @@ export class OsController {
     private readonly sms: OsSmsService,
     private readonly workflowTest: OsWorkflowTestService,
     private readonly dfyBilling: OsDfyBillingService,
+    private readonly airwallex: OsAirwallexService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -124,7 +126,8 @@ export class OsController {
   async dfySetup(@AuthWorkspace() workspace: WorkspaceEntity, @AuthUserWorkspaceId() userWorkspaceId: string) {
     await this.requireAdmin(workspace.id, userWorkspaceId);
     await this.dfyBilling.ensureMetadata();
-    return { ok: true };
+    const webhook = this.airwallex.isConfigured() ? await this.airwallex.ensureWebhook() : null;
+    return { ok: true, airwallexWebhook: webhook };
   }
 
   @Post('dfy/engagement')

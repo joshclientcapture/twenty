@@ -74,7 +74,7 @@ export class OsAirwallexService {
 
   private async login(): Promise<string> {
     if (this.token && this.token.expiresAt > Date.now()) return this.token.value;
-    const response = await fetch(`${API}/api/v1/authentication/login`, {
+    const response = await this.fetchWithRetry(`${API}/api/v1/authentication/login`, {
       method: 'POST',
       headers: { 'x-client-id': env('OS_AIRWALLEX_CLIENT_ID') ?? '', 'x-api-key': env('OS_AIRWALLEX_API_KEY') ?? '', 'Content-Type': 'application/json' },
       body: '{}',
@@ -86,9 +86,22 @@ export class OsAirwallexService {
     return data.token;
   }
 
+  // The VPS drops the odd outbound connection; a request that never reached Airwallex is retried.
+  private async fetchWithRetry(url: string, init: RequestInit, attempts = 3): Promise<Response> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await fetch(url, init);
+      } catch (error) {
+        if (attempt >= attempts) throw error;
+        this.logger.warn(`airwallex ${init.method ?? 'GET'} ${url} attempt ${attempt} failed (${(error as Error).message}); retrying`);
+        await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+      }
+    }
+  }
+
   async api<TData>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<TData> {
     const token = await this.login();
-    const response = await fetch(`${API}${path}`, {
+    const response = await this.fetchWithRetry(`${API}${path}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),

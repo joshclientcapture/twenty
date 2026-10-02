@@ -2,8 +2,14 @@
 // so a new function has to be listed here deliberately before it becomes reachable.
 // Reads are open to every workspace member; everything else needs the workspace admin
 // permission, except call verdict overrides, which a closer may set for their own page.
-export const isOsReadFunction = (functionName: string) => /^(get|list|search|find)_/.test(functionName);
-export const OS_RPC_CLOSER_FUNCTIONS = new Set<string>(['set_closer_call', 'clear_closer_call', 'set_therapon_call', 'clear_therapon_call']);
+export const isOsReadFunction = (functionName: string) =>
+  /^(get|list|search|find)_/.test(functionName);
+export const OS_RPC_CLOSER_FUNCTIONS = new Set<string>([
+  'set_closer_call',
+  'clear_closer_call',
+  'set_therapon_call',
+  'clear_therapon_call',
+]);
 export const OS_RPC_ALLOW_LIST = new Set<string>([
   'add_rental_cycle',
   'clear_closer_call',
@@ -49,6 +55,8 @@ export const OS_RPC_ALLOW_LIST = new Set<string>([
   'get_dfy_revenue',
   'get_dfy_billing',
   'get_dfy_client_billing',
+  'get_call_reviews',
+  'get_call_review',
   'get_disconnected_accounts',
   'get_goal_tracker',
   'get_growth',

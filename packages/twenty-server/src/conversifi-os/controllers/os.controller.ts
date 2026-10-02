@@ -1,4 +1,12 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
 import { InjectDataSource } from '@nestjs/typeorm';
 
@@ -6,13 +14,26 @@ import { PermissionFlagType } from 'twenty-shared/constants';
 import { ApiPath } from 'twenty-shared/types';
 import { DataSource } from 'typeorm';
 
-import { isOsReadFunction, OS_RPC_CLOSER_FUNCTIONS } from 'src/conversifi-os/constants/os-rpc-allow-list.constant';
+import {
+  isOsReadFunction,
+  OS_RPC_CLOSER_FUNCTIONS,
+} from 'src/conversifi-os/constants/os-rpc-allow-list.constant';
 import { OsRpcService } from 'src/conversifi-os/services/os-rpc.service';
 import { OsSmsService } from 'src/conversifi-os/services/os-sms.service';
 import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-test.service';
-import { type CreateEngagementInput, type MarkPaidInput, OsDfyBillingService } from 'src/conversifi-os/services/os-dfy-billing.service';
+import {
+  type CreateEngagementInput,
+  type MarkPaidInput,
+  OsDfyBillingService,
+} from 'src/conversifi-os/services/os-dfy-billing.service';
 import { OsAirwallexService } from 'src/conversifi-os/services/os-airwallex.service';
-import { OS_FAST_STEPS, OS_SYNC_STEPS, type OsSyncStep, OsSyncService } from 'src/conversifi-os/services/os-sync.service';
+import { OsCallReviewService } from 'src/conversifi-os/services/os-call-review.service';
+import {
+  OS_FAST_STEPS,
+  OS_SYNC_STEPS,
+  type OsSyncStep,
+  OsSyncService,
+} from 'src/conversifi-os/services/os-sync.service';
 import { WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
 import { AuthUser } from 'src/engine/decorators/auth/auth-user.decorator';
 import { AuthUserWorkspaceId } from 'src/engine/decorators/auth/auth-user-workspace-id.decorator';
@@ -27,7 +48,12 @@ import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
 // never runs for these calls; the guards alone decide access. Reads are open to members,
 // writes and syncs need the workspace admin permission (checked per call, see requireAccess).
 @Controller(ApiPath.Os)
-@UseGuards(JwtAuthGuard, WorkspaceAuthGuard, UserAuthGuard, CustomPermissionGuard)
+@UseGuards(
+  JwtAuthGuard,
+  WorkspaceAuthGuard,
+  UserAuthGuard,
+  CustomPermissionGuard,
+)
 export class OsController {
   constructor(
     private readonly rpc: OsRpcService,
@@ -37,6 +63,7 @@ export class OsController {
     private readonly workflowTest: OsWorkflowTestService,
     private readonly dfyBilling: OsDfyBillingService,
     private readonly airwallex: OsAirwallexService,
+    private readonly calls: OsCallReviewService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -49,12 +76,20 @@ export class OsController {
     @AuthUser() user: { email?: string | null },
   ) {
     if (!isOsReadFunction(functionName)) {
-      const allowedAsCloser = OS_RPC_CLOSER_FUNCTIONS.has(functionName) && (await this.isCloser(user.email));
-      if (!allowedAsCloser) await this.requireAdmin(workspace.id, userWorkspaceId);
+      const allowedAsCloser =
+        OS_RPC_CLOSER_FUNCTIONS.has(functionName) &&
+        (await this.isCloser(user.email));
+      if (!allowedAsCloser)
+        await this.requireAdmin(workspace.id, userWorkspaceId);
     }
     // The SMS inbox is scoped server-side: a member who is not an admin only sees their own leads' threads.
     const args = { ...(body ?? {}) };
-    if (functionName.startsWith('get_sms_') && !(await this.isAdmin(workspace.id, userWorkspaceId))) args.p_scope_email = user.email ?? '';
+    if (
+      (functionName.startsWith('get_sms_') ||
+        functionName.startsWith('get_call_')) &&
+      !(await this.isAdmin(workspace.id, userWorkspaceId))
+    )
+      args.p_scope_email = user.email ?? '';
     return { data: await this.rpc.call(functionName, args) };
   }
 
@@ -65,9 +100,19 @@ export class OsController {
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
   ) {
-    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
-    if (!body?.threadId || !body?.body?.trim()) throw new BadRequestException('threadId and body are required');
-    return this.sms.humanReply(body.threadId, body.body.trim(), scope, user.email ?? 'someone');
+    const scope = await this.inboxScope(
+      workspace.id,
+      userWorkspaceId,
+      user.email,
+    );
+    if (!body?.threadId || !body?.body?.trim())
+      throw new BadRequestException('threadId and body are required');
+    return this.sms.humanReply(
+      body.threadId,
+      body.body.trim(),
+      scope,
+      user.email ?? 'someone',
+    );
   }
 
   @Post('sms-inbox/text')
@@ -77,9 +122,19 @@ export class OsController {
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
   ) {
-    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
-    if (!body?.personId || !body?.body?.trim()) throw new BadRequestException('personId and body are required');
-    return this.sms.textPerson(body.personId, body.body.trim(), scope, user.email ?? 'someone');
+    const scope = await this.inboxScope(
+      workspace.id,
+      userWorkspaceId,
+      user.email,
+    );
+    if (!body?.personId || !body?.body?.trim())
+      throw new BadRequestException('personId and body are required');
+    return this.sms.textPerson(
+      body.personId,
+      body.body.trim(),
+      scope,
+      user.email ?? 'someone',
+    );
   }
 
   @Post('sms-inbox/action')
@@ -89,22 +144,47 @@ export class OsController {
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
   ) {
-    const scope = await this.inboxScope(workspace.id, userWorkspaceId, user.email);
-    if (!body?.threadId || (body.action !== 'bot' && body.action !== 'stop')) throw new BadRequestException('threadId and action (bot | stop) are required');
-    return this.sms.inboxAction(body.threadId, body.action, scope, user.email ?? 'someone');
+    const scope = await this.inboxScope(
+      workspace.id,
+      userWorkspaceId,
+      user.email,
+    );
+    if (!body?.threadId || (body.action !== 'bot' && body.action !== 'stop'))
+      throw new BadRequestException(
+        'threadId and action (bot | stop) are required',
+      );
+    return this.sms.inboxAction(
+      body.threadId,
+      body.action,
+      scope,
+      user.email ?? 'someone',
+    );
   }
 
   // Admins see everything (null scope); closers only their own leads; anyone else is refused.
   // Email steps in the workflow builder: render against a sample lead and send to the clicker.
   @Post('workflow/send-test')
   async workflowSendTest(
-    @Body() body: { workflowVersionId?: string; stepId?: string; input?: Record<string, unknown>; samplePersonId?: string; to?: string; dryRun?: boolean },
+    @Body() body: {
+      workflowVersionId?: string;
+      stepId?: string;
+      input?: Record<string, unknown>;
+      samplePersonId?: string;
+      to?: string;
+      dryRun?: boolean;
+    },
     @AuthWorkspace() workspace: WorkspaceEntity,
     @AuthUserWorkspaceId() userWorkspaceId: string,
     @AuthUser() user: { email?: string | null },
   ) {
-    if (!body?.workflowVersionId || !body?.stepId) throw new BadRequestException('workflowVersionId and stepId are required');
-    if (!user.email) throw new BadRequestException('Your login has no email address to send the test to.');
+    if (!body?.workflowVersionId || !body?.stepId)
+      throw new BadRequestException(
+        'workflowVersionId and stepId are required',
+      );
+    if (!user.email)
+      throw new BadRequestException(
+        'Your login has no email address to send the test to.',
+      );
     const isAdmin = await this.isAdmin(workspace.id, userWorkspaceId);
     return this.workflowTest.sendTest({
       workspaceId: workspace.id,
@@ -123,10 +203,15 @@ export class OsController {
   // ---------- DFY billing: engagements and instalments (admins, or the closer on the deal) ----------
 
   @Post('dfy/setup')
-  async dfySetup(@AuthWorkspace() workspace: WorkspaceEntity, @AuthUserWorkspaceId() userWorkspaceId: string) {
+  async dfySetup(
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+  ) {
     await this.requireAdmin(workspace.id, userWorkspaceId);
     await this.dfyBilling.ensureMetadata();
-    const webhook = this.airwallex.isConfigured() ? await this.airwallex.ensureWebhook() : null;
+    const webhook = this.airwallex.isConfigured()
+      ? await this.airwallex.ensureWebhook()
+      : null;
     return { ok: true, airwallexWebhook: webhook };
   }
 
@@ -138,7 +223,10 @@ export class OsController {
     @AuthUser() user: { email?: string | null },
   ) {
     await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
-    return this.dfyBilling.createEngagement({ ...body, closerEmail: body.closerEmail ?? user.email ?? null });
+    return this.dfyBilling.createEngagement({
+      ...body,
+      closerEmail: body.closerEmail ?? user.email ?? null,
+    });
   }
 
   @Post('dfy/engagement/:id/:action')
@@ -151,7 +239,8 @@ export class OsController {
     @AuthUser() user: { email?: string | null },
   ) {
     await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
-    if (action === 'live') return this.dfyBilling.setGoLive(id, body?.goLiveDate);
+    if (action === 'live')
+      return this.dfyBilling.setGoLive(id, body?.goLiveDate);
     if (action === 'pause') return this.dfyBilling.pause(id, body?.reason);
     if (action === 'resume') return this.dfyBilling.resume(id);
     throw new BadRequestException(`unknown engagement action ${action}`);
@@ -169,24 +258,76 @@ export class OsController {
     await this.requireAdminOrCloser(workspace.id, userWorkspaceId, user.email);
     if (action === 'paid') return this.dfyBilling.markPaid(id, body ?? {});
     if (action === 'invoice') return this.dfyBilling.invoice(id);
-    if (action === 'cancel') return this.dfyBilling.cancelInstalment(id, body?.reason);
+    if (action === 'cancel')
+      return this.dfyBilling.cancelInstalment(id, body?.reason);
     throw new BadRequestException(`unknown instalment action ${action}`);
   }
 
-  private async requireAdminOrCloser(workspaceId: string, userWorkspaceId: string, email: string | null | undefined) {
-    if (await this.isAdmin(workspaceId, userWorkspaceId)) return;
-    if (await this.isCloser(email)) return;
-    throw new ForbiddenException('This action needs the workspace admin permission or a closer login.');
+  // ---------- Call tracker: Fathom recordings scored and summarised ----------
+
+  @Post('calls/setup')
+  async callsSetup(
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+  ) {
+    await this.requireAdmin(workspace.id, userWorkspaceId);
+    await this.calls.ensureMetadata();
+    const webhook = this.calls.isFathomConfigured()
+      ? await this.calls.ensureFathomWebhook()
+      : null;
+    return { ok: true, fathomWebhook: webhook };
   }
 
-  private async inboxScope(workspaceId: string, userWorkspaceId: string, email: string | null | undefined): Promise<string | null> {
+  @Post('calls/backfill')
+  async callsBackfill(
+    @Body() body: { days?: number; limit?: number },
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+  ) {
+    await this.requireAdmin(workspace.id, userWorkspaceId);
+    return this.calls.backfill(Math.min(Math.max(body?.days ?? 7, 1), 180), {
+      limit: body?.limit,
+    });
+  }
+
+  @Post('calls/rescore/:id')
+  async callsRescore(
+    @Param('id') id: string,
+    @AuthWorkspace() workspace: WorkspaceEntity,
+    @AuthUserWorkspaceId() userWorkspaceId: string,
+  ) {
+    await this.requireAdmin(workspace.id, userWorkspaceId);
+    return this.calls.rescore(id);
+  }
+
+  private async requireAdminOrCloser(
+    workspaceId: string,
+    userWorkspaceId: string,
+    email: string | null | undefined,
+  ) {
+    if (await this.isAdmin(workspaceId, userWorkspaceId)) return;
+    if (await this.isCloser(email)) return;
+    throw new ForbiddenException(
+      'This action needs the workspace admin permission or a closer login.',
+    );
+  }
+
+  private async inboxScope(
+    workspaceId: string,
+    userWorkspaceId: string,
+    email: string | null | undefined,
+  ): Promise<string | null> {
     if (await this.isAdmin(workspaceId, userWorkspaceId)) return null;
     if (await this.isCloser(email)) return email ?? '';
     throw new ForbiddenException('The SMS inbox is for admins and closers.');
   }
 
   private async isAdmin(workspaceId: string, userWorkspaceId: string) {
-    return this.permissions.userHasWorkspaceSettingPermission({ userWorkspaceId, workspaceId, setting: PermissionFlagType.WORKSPACE });
+    return this.permissions.userHasWorkspaceSettingPermission({
+      userWorkspaceId,
+      workspaceId,
+      setting: PermissionFlagType.WORKSPACE,
+    });
   }
 
   @Post('sync/:step')
@@ -196,15 +337,25 @@ export class OsController {
     @AuthUserWorkspaceId() userWorkspaceId: string,
   ) {
     await this.requireAdmin(workspace.id, userWorkspaceId);
-    if (step === 'all') return { results: await this.sync.runSteps(OS_SYNC_STEPS) };
-    if (step === 'fast') return { results: await this.sync.runSteps(OS_FAST_STEPS, 3) };
-    if (!OS_SYNC_STEPS.includes(step as OsSyncStep)) throw new BadRequestException(`unknown sync step ${step}`);
+    if (step === 'all')
+      return { results: await this.sync.runSteps(OS_SYNC_STEPS) };
+    if (step === 'fast')
+      return { results: await this.sync.runSteps(OS_FAST_STEPS, 3) };
+    if (!OS_SYNC_STEPS.includes(step as OsSyncStep))
+      throw new BadRequestException(`unknown sync step ${step}`);
     return { results: [await this.sync.runStep(step as OsSyncStep)] };
   }
 
   private async requireAdmin(workspaceId: string, userWorkspaceId: string) {
-    const allowed = await this.permissions.userHasWorkspaceSettingPermission({ userWorkspaceId, workspaceId, setting: PermissionFlagType.WORKSPACE });
-    if (!allowed) throw new ForbiddenException('This action needs the workspace admin permission.');
+    const allowed = await this.permissions.userHasWorkspaceSettingPermission({
+      userWorkspaceId,
+      workspaceId,
+      setting: PermissionFlagType.WORKSPACE,
+    });
+    if (!allowed)
+      throw new ForbiddenException(
+        'This action needs the workspace admin permission.',
+      );
   }
 
   private async isCloser(email: string | null | undefined) {

@@ -11,6 +11,8 @@ import { OsWorkflowTestService } from 'src/conversifi-os/services/os-workflow-te
 import { OsDfyBillingService } from 'src/conversifi-os/services/os-dfy-billing.service';
 import { OsAirwallexService } from 'src/conversifi-os/services/os-airwallex.service';
 import { OsAirwallexWebhookController } from 'src/conversifi-os/controllers/os-airwallex-webhook.controller';
+import { OsCallReviewService } from 'src/conversifi-os/services/os-call-review.service';
+import { OsFathomWebhookController } from 'src/conversifi-os/controllers/os-fathom-webhook.controller';
 import { ToolModule } from 'src/engine/core-modules/tool/tool.module';
 import { OsSmsCronJob } from 'src/conversifi-os/crons/jobs/os-sms.cron.job';
 import { OsSmsBackfillCommand } from 'src/conversifi-os/commands/os-sms-backfill.command';
@@ -33,7 +35,10 @@ import { ApiKeyModule } from 'src/engine/core-modules/api-key/api-key.module';
 import { TokenModule } from 'src/engine/core-modules/auth/token/token.module';
 import { PermissionsModule } from 'src/engine/metadata-modules/permissions/permissions.module';
 import { CLOSER_SCOPE_HOOKS } from 'src/conversifi-os/query-hooks/closer-scope.pre-query-hooks';
-import { PERSON_SUPPRESSION_HOOKS, PersonSuppressionService } from 'src/conversifi-os/query-hooks/person-suppression.post-query-hooks';
+import {
+  PERSON_SUPPRESSION_HOOKS,
+  PersonSuppressionService,
+} from 'src/conversifi-os/query-hooks/person-suppression.post-query-hooks';
 import { CloserScopeModule } from 'src/conversifi-os/query-hooks/closer-scope.module';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 
@@ -41,9 +46,57 @@ import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/
 // of the core database. Kept outside `engine/` so upstream merges never touch it.
 @Module({
   // JwtAuthGuard resolves AccessTokenService and WorkspaceCacheStorageService from here.
-  imports: [TokenModule, WorkspaceCacheStorageModule, ApiKeyModule, PermissionsModule, CloserScopeModule, ToolModule],
-  controllers: [OsController, OsIntakeController, OsCalendlyWebhookController, OsWhopWebhookController, OsSmsWebhookController, OsHooksController, OsAirwallexWebhookController],
-  providers: [OsRpcService, OsSyncService, OsUpsertService, OsWhopService, OsSmsService, OsWorkflowTestService, OsDfyBillingService, OsAirwallexService, OsSmsCronJob, OsSmsBackfillCommand, OsBookingsService, TwentyApiService, OsContactsImportService, OsLifecycleService, OsIntakeService, OsSyncCronJob, OsSyncJob, OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, ...CLOSER_SCOPE_HOOKS, PersonSuppressionService, ...PERSON_SUPPRESSION_HOOKS],
-  exports: [OsSyncCronCommand, OsSyncCommand, OsApiKeyCommand, OsImportContactsCommand, OsSmsBackfillCommand],
+  imports: [
+    TokenModule,
+    WorkspaceCacheStorageModule,
+    ApiKeyModule,
+    PermissionsModule,
+    CloserScopeModule,
+    ToolModule,
+  ],
+  controllers: [
+    OsController,
+    OsIntakeController,
+    OsCalendlyWebhookController,
+    OsWhopWebhookController,
+    OsSmsWebhookController,
+    OsHooksController,
+    OsAirwallexWebhookController,
+    OsFathomWebhookController,
+  ],
+  providers: [
+    OsRpcService,
+    OsSyncService,
+    OsUpsertService,
+    OsWhopService,
+    OsSmsService,
+    OsWorkflowTestService,
+    OsDfyBillingService,
+    OsAirwallexService,
+    OsCallReviewService,
+    OsSmsCronJob,
+    OsSmsBackfillCommand,
+    OsBookingsService,
+    TwentyApiService,
+    OsContactsImportService,
+    OsLifecycleService,
+    OsIntakeService,
+    OsSyncCronJob,
+    OsSyncJob,
+    OsSyncCronCommand,
+    OsSyncCommand,
+    OsApiKeyCommand,
+    OsImportContactsCommand,
+    ...CLOSER_SCOPE_HOOKS,
+    PersonSuppressionService,
+    ...PERSON_SUPPRESSION_HOOKS,
+  ],
+  exports: [
+    OsSyncCronCommand,
+    OsSyncCommand,
+    OsApiKeyCommand,
+    OsImportContactsCommand,
+    OsSmsBackfillCommand,
+  ],
 })
 export class ConversifiOsModule {}

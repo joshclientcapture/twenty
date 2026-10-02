@@ -646,8 +646,6 @@ export class OsCallReviewService {
     };
     const id = existing ? existing.id : await this.create(base);
     if (existing) await this.update(id, base);
-    if (booking && recordingUrl)
-      await this.attachRecordingToBooking(booking.id, recordingUrl);
 
     // Summary note first (cheap, always useful), the review second (only for closers who are coached).
     let summary: string | null = null;
@@ -838,6 +836,7 @@ export class OsCallReviewService {
 
   // The Calendly booking this recording belongs to: same closer, start within half an hour. It gives
   // the person, the invitee's real email (Fathom only knows the calendar one) and the call type.
+  // The booking's own Recording link is owned by the bookings mirror and left alone.
   private async matchBooking(
     closer: CloserRow,
     startIso: string,
@@ -888,31 +887,6 @@ export class OsCallReviewService {
         ),
     );
     return candidates[0] ?? null;
-  }
-
-  private async attachRecordingToBooking(
-    bookingId: string,
-    recordingUrl: string,
-  ) {
-    try {
-      await this.twentyApi.records(
-        `mutation BookingRecording($id: UUID!, $data: BookingUpdateInput!) { updateBooking(id: $id, data: $data) { id } }`,
-        {
-          id: bookingId,
-          data: {
-            recording: {
-              primaryLinkUrl: recordingUrl,
-              primaryLinkLabel: 'Fathom',
-              secondaryLinks: [],
-            },
-          },
-        },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `booking ${bookingId}: could not attach the recording: ${(error as Error).message}`,
-      );
-    }
   }
 
   private async markBooking(bookingId: string, data: Record<string, unknown>) {

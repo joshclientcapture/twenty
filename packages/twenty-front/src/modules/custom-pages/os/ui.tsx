@@ -19,7 +19,7 @@ export const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
 export const PRESS_SCALE = '0.96';
 
 // Drill-down routes that exist in the CRM. Anything else stays a plain (unlinked) tile.
-const PORTED_PREFIXES = ['/records', '/sales', '/therapon'];
+const PORTED_PREFIXES = ['/records', '/sales', '/therapon', '/calls', '/showup'];
 export const internalHref = (to?: string) =>
   to && PORTED_PREFIXES.some((p) => to === p || to.startsWith(p + '?') || to.startsWith(p + '/')) ? to : undefined;
 

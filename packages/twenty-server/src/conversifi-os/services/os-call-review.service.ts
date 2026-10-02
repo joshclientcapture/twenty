@@ -598,9 +598,16 @@ export class OsCallReviewService {
     );
     const prospectEmail =
       (prospect?.email ?? booking?.inviteeEmail ?? null)?.toLowerCase() ?? null;
+    const cleanName = (value: string | null | undefined) => {
+      const cleaned = (value ?? '')
+        .replace(/(undefined|null)/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return cleaned || null;
+    };
     const prospectName =
-      prospect?.name ??
-      booking?.inviteeName ??
+      cleanName(prospect?.name) ??
+      cleanName(booking?.inviteeName) ??
       (title.includes(':') ? title.split(':')[0].trim() : null);
     const callType: CallType = booking?.bookingType
       ? DFY_BOOKING_TYPES.has(booking.bookingType)

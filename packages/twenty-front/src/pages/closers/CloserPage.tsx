@@ -40,6 +40,7 @@ import {
   StyledGrid2,
   StyledGrid4,
   StyledGrid6,
+  StyledGrid7,
   StyledHeaderActions,
   StyledLabel,
   StyledMuted,
@@ -456,7 +457,9 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
   const ownCloser = closers ? findOwnCloser(closers, currentUser?.email) : null;
   // Closers see their own page only; other members see nothing until they are made a closer.
   const restricted =
-    !isAdmin && closers !== null && (ownCloser === null || ownCloser.id !== closerId);
+    !isAdmin &&
+    closers !== null &&
+    (ownCloser === null || ownCloser.id !== closerId);
 
   useEffect(() => {
     fetchClosers()
@@ -611,7 +614,8 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
     );
   }
   // A member who is no closer at all gets the plain lock; a closer gets a link to their own page.
-  if (closer && restricted && !ownCloser) return <OsRestricted title={closer.name} />;
+  if (closer && restricted && !ownCloser)
+    return <OsRestricted title={closer.name} />;
   if (closer && restricted && ownCloser) {
     return (
       <StyledPage>
@@ -673,6 +677,10 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
     ? Math.round(comm.commission_rate * 100)
     : Math.round((closer?.commissionRate ?? 0.1) * 100);
 
+  const callScores = (daily?.log ?? [])
+    .map((row) => row.score)
+    .filter((score): score is number => typeof score === 'number');
+
   const kpis: Kpi[] = [
     {
       label: 'Appointments held',
@@ -711,6 +719,26 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
       delta: `${cvD?.sat_trials ?? 0} of ${cvD?.sat ?? 0} sat`,
       valueTone: (cvD?.rate ?? 0) >= 30 ? 'positive' : 'caution',
       to: `${recordsBase}trials${qp}`,
+    },
+    {
+      label: 'Average call score',
+      value: callScores.length
+        ? (
+            callScores.reduce((sum, score) => sum + score, 0) /
+            callScores.length
+          ).toFixed(1)
+        : '—',
+      delta: callScores.length
+        ? `${callScores.length} call${callScores.length === 1 ? '' : 's'} reviewed`
+        : 'no reviews yet',
+      valueTone: callScores.length
+        ? callScores.reduce((sum, score) => sum + score, 0) /
+            callScores.length >=
+          7
+          ? 'positive'
+          : 'caution'
+        : undefined,
+      to: `/calls?closer=${encodeURIComponent(closer?.name ?? '')}`,
     },
   ];
 
@@ -836,10 +864,10 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
               ))}
             </StyledRow>
 
-            <StyledGrid6>
+            <StyledGrid7>
               {loaded
                 ? kpis.map((k) => <KpiTile key={k.label} kpi={k} />)
-                : Array.from({ length: 6 }).map((_, i) => (
+                : Array.from({ length: 7 }).map((_, i) => (
                     <StyledCard
                       key={i}
                       style={{ minHeight: 92, justifyContent: 'space-between' }}
@@ -849,7 +877,7 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                       <Skeleton width={40} height={10} />
                     </StyledCard>
                   ))}
-            </StyledGrid6>
+            </StyledGrid7>
 
             {/* Appointment breakdown: a reschedule is one appointment (counted at its new time), not two. */}
             <StyledCard>
@@ -1138,12 +1166,21 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                                   >
                                     ▶ Watch
                                   </StyledExtLink>
-                                  {r.review_id && typeof r.score === 'number' ? (
+                                  {r.review_id &&
+                                  typeof r.score === 'number' ? (
                                     <StyledChip
                                       data-button
-                                      data-tone={r.score >= 7.5 ? 'positive' : r.score >= 5 ? 'caution' : 'negative'}
+                                      data-tone={
+                                        r.score >= 7.5
+                                          ? 'positive'
+                                          : r.score >= 5
+                                            ? 'caution'
+                                            : 'negative'
+                                      }
                                       title="Open the call review"
-                                      onClick={() => navigate(`/calls?review=${r.review_id}`)}
+                                      onClick={() =>
+                                        navigate(`/calls?review=${r.review_id}`)
+                                      }
                                     >
                                       {r.score.toFixed(1)}
                                     </StyledChip>

@@ -1,4 +1,5 @@
 import {
+  Logger,
   BadRequestException,
   Body,
   Controller,
@@ -55,6 +56,7 @@ import { WorkspaceAuthGuard } from 'src/engine/guards/workspace-auth.guard';
   CustomPermissionGuard,
 )
 export class OsController {
+  private readonly logger = new Logger(OsController.name);
   constructor(
     private readonly rpc: OsRpcService,
     private readonly sync: OsSyncService,
@@ -285,9 +287,14 @@ export class OsController {
     @AuthUserWorkspaceId() userWorkspaceId: string,
   ) {
     await this.requireAdmin(workspace.id, userWorkspaceId);
-    return this.calls.backfill(Math.min(Math.max(body?.days ?? 7, 1), 180), {
-      limit: body?.limit,
-    });
+    const days = Math.min(Math.max(body?.days ?? 7, 1), 180);
+    // Each review takes minutes; the pull runs in the background and the page refreshes as rows land.
+    this.calls.backfill(days, { limit: body?.limit }).then(
+      (result) => this.logger.log(`calls backfill: ${JSON.stringify(result)}`),
+      (error) =>
+        this.logger.error(`calls backfill failed: ${(error as Error).message}`),
+    );
+    return { started: true, days };
   }
 
   @Post('calls/rescore/:id')

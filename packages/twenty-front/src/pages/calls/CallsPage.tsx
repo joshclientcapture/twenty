@@ -485,7 +485,9 @@ export const CallsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>(30);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
-  const [closerFilter, setCloserFilter] = useState<string>('ALL');
+  const [closerFilter, setCloserFilter] = useState<string>(
+    searchParams.get('closer') ?? 'ALL',
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 

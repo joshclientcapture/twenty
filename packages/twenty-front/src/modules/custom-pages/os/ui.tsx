@@ -223,6 +223,18 @@ export const StyledGrid5 = styled.div`
   }
 `;
 
+export const StyledGrid7 = styled.div`
+  display: grid;
+  gap: ${t.spacing[3]};
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  @media (max-width: 900px) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+`;
+
 export const StyledGrid6 = styled.div`
   display: grid;
   gap: ${t.spacing[3]};

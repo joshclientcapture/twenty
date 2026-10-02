@@ -826,7 +826,7 @@ export class OsCallReviewService {
       };
     }>(
       `query CallBooking($host: String, $from: DateTime, $to: DateTime) {
-         bookings(filter: { closerEmail: { ilike: $host }, startsAt: { gte: $from, lte: $to } }, first: 10) {
+         bookings(filter: { and: [{ closerEmail: { ilike: $host } }, { startsAt: { gte: $from } }, { startsAt: { lte: $to } }] }, first: 10) {
            edges { node { id bookingType inviteeEmail inviteeName personId startsAt status } }
          }
        }`,

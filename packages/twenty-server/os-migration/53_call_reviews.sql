@@ -22,7 +22,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
     'person_name', nullif(trim(coalesce(p."nameFirstName", '') || ' ' || coalesce(p."nameLastName", '')), '')
   ) order by r."startedAt" desc nulls last), '[]'::jsonb)
   from (
-    select * from workspace_a1aip8pgko71t0v2lrw9rnizs."callReview" r
+    select * from workspace_a1aip8pgko71t0v2lrw9rnizs."_callReview" r
     where r."deletedAt" is null
       and (p_days is null or r."startedAt" >= now() - make_interval(days => p_days))
       and os.call_review_in_scope(r."closerEmail", r."personId", p_scope_email)
@@ -43,7 +43,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
     'person_id', r."personId", 'person_stage', p.stage,
     'person_name', nullif(trim(coalesce(p."nameFirstName", '') || ' ' || coalesce(p."nameLastName", '')), '')
   ) end
-  from workspace_a1aip8pgko71t0v2lrw9rnizs."callReview" r
+  from workspace_a1aip8pgko71t0v2lrw9rnizs."_callReview" r
   left join workspace_a1aip8pgko71t0v2lrw9rnizs.person p on p.id = r."personId"
   where r.id = p_id and r."deletedAt" is null and os.call_review_in_scope(r."closerEmail", r."personId", p_scope_email);
 $function$;

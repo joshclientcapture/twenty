@@ -11,7 +11,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
     from keep k
     left join lateral (
       select r.id, r."overallScore", r.status
-      from workspace_a1aip8pgko71t0v2lrw9rnizs."callReview" r
+      from workspace_a1aip8pgko71t0v2lrw9rnizs."_callReview" r
       join os.fathom_calls f on f.recording_id::text = r."fathomRecordingId"
       where k.recording is not null and f.fathom_url = k.recording and r."deletedAt" is null
       order by r."createdAt" desc limit 1

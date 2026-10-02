@@ -28,7 +28,6 @@ const GEMINI_MODEL_DEFAULT = 'gemini-3-flash-preview';
 const SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
 const BOOKING_MATCH_MINUTES = 30;
 const DFY_BOOKING_TYPES = new Set(['DISCOVERY']);
-const PERSON_PAGE_CALLS_TAB = '5a5c0000-0000-4000-8000-00000000d0f3';
 const MIN_TRANSCRIPT_CHARS = 200;
 
 type FathomInvitee = {
@@ -338,7 +337,6 @@ export class OsCallReviewService {
       CALL_OUTCOME_OPTIONS,
     );
     await this.ensureBookingFields();
-    await this.ensureCallsTab();
     this.metadataReady = true;
   }
 
@@ -410,60 +408,6 @@ export class OsCallReviewService {
       where f.name in ('callScore', 'callOutcome', 'callReview')
         and not exists (select 1 from core."viewField" x where x."viewId" = rec."viewId" and x."fieldMetadataId" = f.id)
     `);
-  }
-
-  private async ensureCallsTab() {
-    const objects = await this.twentyApi.listObjects();
-    const personObject = objects.find(
-      (object) => object.nameSingular === 'person',
-    );
-    const field = personObject?.fieldsList.find(
-      (candidate) => candidate.name === 'callReviews',
-    );
-    if (!field) return;
-    const existing: { id: string }[] = await this.dataSource.query(
-      `select id from core."pageLayoutTab" where id = $1`,
-      [PERSON_PAGE_CALLS_TAB],
-    );
-    if (existing.length) return;
-    const template: {
-      workspaceId: string;
-      applicationId: string;
-      pageLayoutId: string;
-    }[] = await this.dataSource.query(
-      `select "workspaceId", "applicationId", "pageLayoutId" from core."pageLayoutTab" where id = 'eb76f23e-e2f9-42a5-9ae0-80f3fcc318ff'`,
-    );
-    if (!template[0]) return;
-    const { workspaceId, applicationId, pageLayoutId } = template[0];
-    await this.dataSource.query(
-      `insert into core."pageLayoutTab" (id, title, position, "pageLayoutId", "workspaceId", "universalIdentifier", "applicationId") values ($1, 'Calls', 62, $2, $3, $4, $5)`,
-      [
-        PERSON_PAGE_CALLS_TAB,
-        pageLayoutId,
-        workspaceId,
-        randomUUID(),
-        applicationId,
-      ],
-    );
-    await this.dataSource.query(
-      `insert into core."pageLayoutWidget" (id, "pageLayoutTabId", title, type, "objectMetadataId", "gridPosition", configuration, "workspaceId", "universalIdentifier", "applicationId")
-       values ($1, $2, 'Call reviews', 'FIELD', $3, $4::jsonb, $5::jsonb, $6, $7, $8)`,
-      [
-        randomUUID(),
-        PERSON_PAGE_CALLS_TAB,
-        personObject?.id,
-        JSON.stringify({ row: 0, column: 0, rowSpan: 1, columnSpan: 12 }),
-        JSON.stringify({
-          fieldMetadataId: field.id,
-          fieldDisplayMode: 'CARD',
-          configurationType: 'FIELD',
-        }),
-        workspaceId,
-        randomUUID(),
-        applicationId,
-      ],
-    );
-    this.logger.log('calls tab added to the person page');
   }
 
   // ---------- Fathom webhook ----------
@@ -602,7 +546,11 @@ export class OsCallReviewService {
     if (!recordingId)
       return { id: null, status: 'SKIPPED', reason: 'no recording id' };
     const existing = await this.findByRecordingId(recordingId);
-    if (existing && !options.force)
+    if (
+      existing &&
+      !options.force &&
+      !['PENDING', 'FAILED'].includes(existing.status ?? '')
+    )
       return { id: existing.id, status: 'SKIPPED', reason: 'already reviewed' };
 
     const recordedBy = (meeting.recorded_by?.email ?? '').toLowerCase();
@@ -999,11 +947,11 @@ export class OsCallReviewService {
 
   private async findByRecordingId(
     recordingId: string,
-  ): Promise<{ id: string } | null> {
+  ): Promise<{ id: string; status: string | null } | null> {
     const data = await this.twentyApi.records<{
-      callReviews: { edges: { node: { id: string } }[] };
+      callReviews: { edges: { node: { id: string; status: string | null } }[] };
     }>(
-      `query CallReviewByRecording($recordingId: String) { callReviews(filter: { fathomRecordingId: { eq: $recordingId } }, first: 1) { edges { node { id } } } }`,
+      `query CallReviewByRecording($recordingId: String) { callReviews(filter: { fathomRecordingId: { eq: $recordingId } }, first: 1) { edges { node { id status } } } }`,
       { recordingId },
     );
     return data.callReviews.edges[0]?.node ?? null;

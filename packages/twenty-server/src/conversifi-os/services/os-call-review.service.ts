@@ -337,8 +337,79 @@ export class OsCallReviewService {
       'outcome',
       CALL_OUTCOME_OPTIONS,
     );
+    await this.ensureBookingFields();
     await this.ensureCallsTab();
     this.metadataReady = true;
+  }
+
+  // Score and outcome live on the booking too, next to the recording, which is where the team looks.
+  private async ensureBookingFields() {
+    const objects = await this.twentyApi.listObjects();
+    const callReviewObject = objects.find(
+      (object) => object.nameSingular === 'callReview',
+    );
+    if (
+      !callReviewObject ||
+      !objects.some((object) => object.nameSingular === 'booking')
+    )
+      return;
+    await this.twentyApi.ensureFields('booking', [
+      {
+        name: 'callScore',
+        label: 'Call score',
+        type: 'NUMBER',
+        icon: 'IconTargetArrow',
+      },
+      {
+        name: 'callOutcome',
+        label: 'Call outcome',
+        type: 'SELECT',
+        icon: 'IconTargetArrow',
+        extra: {
+          options: CALL_OUTCOME_OPTIONS.map((entry, position) => ({
+            ...entry,
+            id: randomUUID(),
+            position,
+          })),
+        },
+      },
+      {
+        name: 'callReview',
+        label: 'Call review',
+        type: 'RELATION',
+        icon: 'IconPhone',
+        extra: {
+          relationCreationPayload: {
+            targetObjectMetadataId: callReviewObject.id,
+            targetFieldLabel: 'Bookings',
+            targetFieldIcon: 'IconCalendarEvent',
+            type: 'MANY_TO_ONE',
+          },
+        },
+      },
+    ]);
+    await this.twentyApi.ensureSelectOptions(
+      'booking',
+      'callOutcome',
+      CALL_OUTCOME_OPTIONS,
+    );
+    // Columns right after Recording in every booking view that shows Recording.
+    await this.dataSource.query(`
+      insert into core."viewField" (id, "universalIdentifier", "fieldMetadataId", "isVisible", size, position, "viewId", "workspaceId", "applicationId")
+      select gen_random_uuid(), gen_random_uuid(), f.id, true, 120,
+             rec.position + (case f.name when 'callScore' then 0.1 when 'callOutcome' then 0.2 else 0.3 end),
+             rec."viewId", rec."workspaceId", rec."applicationId"
+      from core."fieldMetadata" f
+      join core."objectMetadata" o on o.id = f."objectMetadataId" and o."nameSingular" = 'booking'
+      join (
+        select vf.* from core."viewField" vf
+        join core."fieldMetadata" rf on rf.id = vf."fieldMetadataId" and rf.name = 'recording'
+        join core."objectMetadata" ro on ro.id = rf."objectMetadataId" and ro."nameSingular" = 'booking'
+        where vf."deletedAt" is null
+      ) rec on true
+      where f.name in ('callScore', 'callOutcome', 'callReview')
+        and not exists (select 1 from core."viewField" x where x."viewId" = rec."viewId" and x."fieldMetadataId" = f.id)
+    `);
   }
 
   private async ensureCallsTab() {
@@ -651,6 +722,7 @@ export class OsCallReviewService {
       );
     }
 
+    if (booking) await this.markBooking(booking.id, { callReviewId: id });
     if (!closer.score_calls || transcript.length < MIN_TRANSCRIPT_CHARS) {
       await this.update(id, { status: summary ? 'SUMMARISED' : 'SKIPPED' });
       return {
@@ -689,6 +761,12 @@ export class OsCallReviewService {
         deductions: parsed.deductions ?? null,
         confidence: parsed.confidence ?? null,
       });
+      if (booking)
+        await this.markBooking(booking.id, {
+          callScore: overallScore,
+          callOutcome: outcome,
+          callReviewId: id,
+        });
       return { id, status: 'SCORED' };
     } catch (error) {
       this.logger.error(
@@ -878,6 +956,19 @@ export class OsCallReviewService {
     } catch (error) {
       this.logger.warn(
         `booking ${bookingId}: could not attach the recording: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private async markBooking(bookingId: string, data: Record<string, unknown>) {
+    try {
+      await this.twentyApi.records(
+        `mutation BookingReview($id: UUID!, $data: BookingUpdateInput!) { updateBooking(id: $id, data: $data) { id } }`,
+        { id: bookingId, data },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `booking ${bookingId}: could not write the review: ${(error as Error).message}`,
       );
     }
   }
@@ -1149,5 +1240,4 @@ export class OsCallReviewService {
     };
     return this.gemini(body);
   }
-
 }

@@ -52,11 +52,19 @@ const metadataBlock = (input: CallReviewInput, roleLabel: 'REP' | 'CLOSER') =>
     .filter((line): line is string => line !== null)
     .join('\n');
 
+// Scoping clarifications the reviewer got wrong without them (one report called DFY something
+// "we are moving away from"). Appended after the prompt, before the transcript.
+const SOFTWARE_PROMPT_NOTES = `
+
+CLARIFICATION FROM THE HEAD OF SALES:
+- The Conversifi done-for-you managed service (Launch / Scale / Dominate) is a live offer, sold on its own closing call. It is not being discontinued and is never something a rep should be told to avoid. Do not describe it as "moving away", "no longer offered" or "unauthorised".
+- If a software demo prospect clearly fits the managed service (a company with budget that wants outreach run for them), a rep who raises it and books them a DFY call has done the right thing. Credit it. Only mark it down if it was used as an excuse to skip the live trial signup for a prospect who was not a fit.`;
+
 export const CALL_REVIEW_PROMPTS: Record<
   CallType,
   (input: CallReviewInput) => string
 > = {
-  SOFTWARE: (input) => `${SOFTWARE_PROMPT_TEXT}${MACHINE_SUMMARY_REQUEST}
+  SOFTWARE: (input) => `${SOFTWARE_PROMPT_TEXT}${SOFTWARE_PROMPT_NOTES}${MACHINE_SUMMARY_REQUEST}
 
 ---
 

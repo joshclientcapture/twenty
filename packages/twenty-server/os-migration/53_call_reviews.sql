@@ -16,7 +16,7 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', r.id, 'name', r.name, 'call_date', r."callDate", 'started_at', r."startedAt", 'duration_minutes', r."durationMinutes",
     'closer_email', r."closerEmail", 'closer_name', r."closerName", 'prospect_name', r."prospectName", 'prospect_email', r."prospectEmail",
-    'call_type', r."callType", 'outcome', r.outcome, 'outcome_label', r."outcomeLabel", 'status', r.status,
+    'call_type', r."callType", 'outcome', r.outcome, 'status', r.status,
     'overall_score', r."overallScore", 'verdict', r.verdict, 'recording_url', r."recordingPrimaryLinkUrl",
     'person_id', r."personId", 'person_stage', p.stage,
     'person_name', nullif(trim(coalesce(p."nameFirstName", '') || ' ' || coalesce(p."nameLastName", '')), '')
@@ -36,8 +36,9 @@ returns jsonb language sql stable security definer set search_path to 'os', 'pub
   select case when r.id is null then null else jsonb_build_object(
     'id', r.id, 'name', r.name, 'call_date', r."callDate", 'started_at', r."startedAt", 'duration_minutes', r."durationMinutes",
     'closer_email', r."closerEmail", 'closer_name', r."closerName", 'prospect_name', r."prospectName", 'prospect_email', r."prospectEmail",
-    'call_type', r."callType", 'outcome', r.outcome, 'outcome_label', r."outcomeLabel", 'status', r.status,
+    'call_type', r."callType", 'outcome', r.outcome, 'status', r.status,
     'overall_score', r."overallScore", 'verdict', r.verdict, 'summary', r.summary, 'scores', r.scores, 'key_moments', r."keyMoments",
+    'report', r.report, 'deductions', r.deductions, 'confidence', r.confidence,
     'transcript', r.transcript, 'recording_url', r."recordingPrimaryLinkUrl", 'fathom_recording_id', r."fathomRecordingId",
     'person_id', r."personId", 'person_stage', p.stage,
     'person_name', nullif(trim(coalesce(p."nameFirstName", '') || ' ' || coalesce(p."nameLastName", '')), '')

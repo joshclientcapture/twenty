@@ -1022,3 +1022,33 @@ export type DfyNewEngagement = { personId?: string; personEmail?: string; packag
 export const dfyCreateEngagement = (input: DfyNewEngagement) => osPost<{ engagementId: string }>('dfy/engagement', input);
 export const dfyEngagementAction = (id: string, action: 'live' | 'pause' | 'resume', body: Record<string, unknown> = {}) => osPost<Record<string, unknown>>(`dfy/engagement/${id}/${action}`, body);
 export const dfyInstalmentAction = (id: string, action: 'paid' | 'invoice' | 'cancel', body: Record<string, unknown> = {}) => osPost<Record<string, unknown>>(`dfy/instalment/${id}/${action}`, body);
+
+// ---- Call tracker (Fathom recordings reviewed by Gemini against the software / DFY call standard) ----
+export type CallOutcome = "PAID_ON_CALL" | "PAYMENT_LINK_SENT" | "TRIAL_ON_CALL" | "TRIAL_LINK_SENT" | "FOLLOW_UP_BOOKED" | "NO_NEXT_STEP" | "NO_SHOW" | "UNSCORED";
+export type CallReviewStatus = "PENDING" | "SCORED" | "SUMMARISED" | "FAILED" | "SKIPPED";
+export type CallType = "SOFTWARE" | "DFY";
+export type CallReviewRow = {
+  id: string; name: string; call_date: string | null; started_at: string | null; duration_minutes: number | null;
+  closer_email: string | null; closer_name: string | null; prospect_name: string | null; prospect_email: string | null;
+  call_type: CallType | null; outcome: CallOutcome | null; status: CallReviewStatus | null;
+  overall_score: number | null; verdict: string | null; recording_url: string | null;
+  person_id: string | null; person_stage: string | null; person_name: string | null;
+};
+export type CallSection = { name?: string | null; score?: number | null; verdict?: string | null };
+export type CallDeduction = { breach?: string | null; points?: number | null };
+export type CallReviewDetail = CallReviewRow & {
+  report: string | null; summary: string | null; scores: CallSection[] | null; key_moments: string[] | null;
+  deductions: CallDeduction[] | null; confidence: string | null; transcript: string | null; fathom_recording_id: string | null;
+};
+export async function fetchCallReviews(days: number): Promise<CallReviewRow[]> {
+  const { data, error } = await osClient.rpc("get_call_reviews", { p_days: days });
+  if (error) throw error;
+  return (data ?? []) as CallReviewRow[];
+}
+export async function fetchCallReview(id: string): Promise<CallReviewDetail | null> {
+  const { data, error } = await osClient.rpc("get_call_review", { p_id: id });
+  if (error) throw error;
+  return (data ?? null) as CallReviewDetail | null;
+}
+export const callsBackfill = (days: number) => osPost<{ scanned: number; results: Record<string, number> }>("calls/backfill", { days });
+export const callsRescore = (id: string) => osPost<{ id: string | null; status: string; reason?: string }>(`calls/rescore/${id}`, {});

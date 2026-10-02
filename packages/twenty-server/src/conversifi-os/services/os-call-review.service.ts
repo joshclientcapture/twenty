@@ -7,10 +7,11 @@ import { DataSource } from 'typeorm';
 
 import {
   CALL_OUTCOME_OPTIONS,
-  CALL_SCORING_PROMPTS,
+  CALL_REVIEW_PROMPTS,
   CALL_SUMMARY_PROMPT,
   CALL_SUMMARY_SYSTEM_PROMPT,
   type CallType,
+  SUMMARY_DELIMITER,
 } from 'src/conversifi-os/constants/os-call-review-prompts.constant';
 import {
   type MetadataObject,
@@ -28,6 +29,7 @@ const SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
 const BOOKING_MATCH_MINUTES = 30;
 const DFY_BOOKING_TYPES = new Set(['DISCOVERY']);
 const PERSON_PAGE_CALLS_TAB = '5a5c0000-0000-4000-8000-00000000d0f3';
+const MIN_TRANSCRIPT_CHARS = 200;
 
 type FathomInvitee = {
   email?: string | null;
@@ -78,14 +80,25 @@ type CloserRow = {
   discord_webhook: string | null;
   score_calls: boolean;
 };
-type Analysis = {
-  prospect_name?: string;
-  call_outcome?: string;
-  overall_score?: number;
-  verdict?: string;
-  scores?: unknown[];
-  key_moments?: unknown[];
+type MatchedBooking = {
+  id: string;
+  bookingType: string | null;
+  inviteeEmail: string | null;
+  inviteeName: string | null;
+  personId: string | null;
 };
+type ReviewSummary = {
+  overall_score?: number | null;
+  outcome?: string | null;
+  headline?: string | null;
+  sections?:
+    | { name?: string; score?: number | null; verdict?: string | null }[]
+    | null;
+  deductions?: { breach?: string; points?: number }[] | null;
+  three_things?: string[] | null;
+  confidence?: string | null;
+};
+type Review = { report: string; summary: ReviewSummary };
 
 const option = (value: string, label: string, color: string) => ({
   value,
@@ -96,13 +109,6 @@ const CALL_TYPE_OPTIONS = [
   option('SOFTWARE', 'Software / agency', 'blue'),
   option('DFY', 'DFY', 'purple'),
 ];
-type MatchedBooking = {
-  id: string;
-  bookingType: string | null;
-  inviteeEmail: string | null;
-  inviteeName: string | null;
-  personId: string | null;
-};
 const STATUS_OPTIONS = [
   option('PENDING', 'Pending', 'gray'),
   option('SCORED', 'Scored', 'green'),
@@ -110,10 +116,13 @@ const STATUS_OPTIONS = [
   option('FAILED', 'Failed', 'red'),
   option('SKIPPED', 'Skipped', 'gray'),
 ];
+const OUTCOME_VALUES = new Set(
+  CALL_OUTCOME_OPTIONS.map((entry) => entry.value),
+);
 
-// Fathom call recordings into the CRM: every sales call gets a review record on the person (score,
-// outcome, verdict, per-category coaching, key moments), a summary note on the timeline and a card
-// in the closer's Discord. Replaces the n8n "Sales Call Analysis" + "Fathom → GHL Contact Notes" flows.
+// Fathom call recordings into the CRM: every sales call gets a review record on the person (the Head
+// of Sales report, score, outcome, scorecard), a meeting summary note on the timeline and a card in
+// the closer's Discord. Replaces the n8n "Sales Call Analysis" + "Fathom → GHL Contact Notes" flows.
 @Injectable()
 export class OsCallReviewService {
   private readonly logger = new Logger(OsCallReviewService.name);
@@ -161,7 +170,7 @@ export class OsCallReviewService {
               labelPlural: 'Call reviews',
               icon: 'IconPhone',
               description:
-                'A recorded sales call: Fathom recording, AI score and coaching, summary',
+                'A recorded sales call: Fathom recording, Head of Sales review, score and summary',
               isLabelSyncedWithName: false,
             },
           },
@@ -229,21 +238,13 @@ export class OsCallReviewService {
         },
       },
       {
-        name: 'outcomeLabel',
-        label: 'Outcome (as scored)',
-        type: 'TEXT',
-        icon: 'IconTargetArrow',
-      },
-      {
         name: 'outcome',
         label: 'Outcome',
         type: 'SELECT',
         icon: 'IconTargetArrow',
         extra: {
           options: CALL_OUTCOME_OPTIONS.map((entry, position) => ({
-            value: entry.value,
-            label: entry.label,
-            color: entry.color,
+            ...entry,
             id: randomUUID(),
             position,
           })),
@@ -268,19 +269,42 @@ export class OsCallReviewService {
         type: 'NUMBER',
         icon: 'IconTargetArrow',
       },
-      { name: 'verdict', label: 'Verdict', type: 'TEXT', icon: 'IconNotes' },
-      { name: 'summary', label: 'Summary', type: 'TEXT', icon: 'IconFileText' },
+      { name: 'verdict', label: 'Headline', type: 'TEXT', icon: 'IconNotes' },
+      {
+        name: 'report',
+        label: 'Review report',
+        type: 'TEXT',
+        icon: 'IconFileText',
+      },
+      {
+        name: 'summary',
+        label: 'Meeting summary',
+        type: 'TEXT',
+        icon: 'IconFileText',
+      },
       {
         name: 'scores',
-        label: 'Category scores',
+        label: 'Scorecard',
         type: 'RAW_JSON',
         icon: 'IconFileText',
       },
       {
         name: 'keyMoments',
-        label: 'Key moments',
+        label: 'Three things to change',
         type: 'RAW_JSON',
         icon: 'IconFileText',
+      },
+      {
+        name: 'deductions',
+        label: 'Automatic deductions',
+        type: 'RAW_JSON',
+        icon: 'IconFileText',
+      },
+      {
+        name: 'confidence',
+        label: 'Review confidence',
+        type: 'TEXT',
+        icon: 'IconNotes',
       },
       {
         name: 'transcript',
@@ -312,11 +336,7 @@ export class OsCallReviewService {
     await this.twentyApi.ensureSelectOptions(
       'callReview',
       'outcome',
-      CALL_OUTCOME_OPTIONS.map((entry) => ({
-        value: entry.value,
-        label: entry.label,
-        color: entry.color,
-      })),
+      CALL_OUTCOME_OPTIONS,
     );
     await this.ensureCallsTab();
     this.metadataReady = true;
@@ -604,7 +624,7 @@ export class OsCallReviewService {
     if (booking && recordingUrl)
       await this.attachRecordingToBooking(booking.id, recordingUrl);
 
-    // Summary note first (cheap, always useful), scoring second (only for closers whose calls are coached).
+    // Summary note first (cheap, always useful), the review second (only for closers who are coached).
     let summary: string | null = null;
     try {
       summary = await this.summarise(
@@ -632,7 +652,7 @@ export class OsCallReviewService {
       );
     }
 
-    if (!closer.score_calls || transcript.length < 200) {
+    if (!closer.score_calls || transcript.length < MIN_TRANSCRIPT_CHARS) {
       await this.update(id, { status: summary ? 'SUMMARISED' : 'SKIPPED' });
       return {
         id,
@@ -643,44 +663,45 @@ export class OsCallReviewService {
       };
     }
     try {
-      const analysis = await this.score(transcript, callType);
+      const companyName = personId ? await this.companyNameOf(personId) : null;
+      const { report, summary: parsed } = await this.review(callType, {
+        closerName: closer.name,
+        prospectName,
+        prospectCompany: companyName,
+        callDate: startedAt.slice(0, 10),
+        transcript,
+      });
       const outcome =
-        CALL_OUTCOME_OPTIONS.find(
-          (entry) =>
-            entry.match &&
-            entry.match.toLowerCase() ===
-              String(analysis.call_outcome ?? '').toLowerCase(),
-        )?.value ?? 'UNSCORED';
+        parsed.outcome && OUTCOME_VALUES.has(parsed.outcome)
+          ? parsed.outcome
+          : 'UNSCORED';
+      const overallScore =
+        typeof parsed.overall_score === 'number'
+          ? Math.round(parsed.overall_score * 10) / 10
+          : null;
       await this.update(id, {
         status: 'SCORED',
         outcome,
-        outcomeLabel: analysis.call_outcome ?? null,
-        overallScore:
-          typeof analysis.overall_score === 'number'
-            ? analysis.overall_score
-            : null,
-        verdict: analysis.verdict ?? null,
-        scores: analysis.scores ?? null,
-        keyMoments: analysis.key_moments ?? null,
-        prospectName:
-          prospectName ??
-          (analysis.prospect_name && analysis.prospect_name !== 'Unknown'
-            ? analysis.prospect_name
-            : null),
+        overallScore,
+        report,
+        verdict: parsed.headline ?? null,
+        scores: parsed.sections ?? null,
+        keyMoments: parsed.three_things ?? null,
+        deductions: parsed.deductions ?? null,
+        confidence: parsed.confidence ?? null,
       });
       await this.discord(closer, {
         id,
-        title,
-        prospectName: prospectName ?? analysis.prospect_name ?? 'Unknown',
-        score: analysis.overall_score ?? null,
-        outcome: analysis.call_outcome ?? 'Unscored',
-        verdict: analysis.verdict ?? '',
+        prospectName: prospectName ?? 'Unknown',
+        score: overallScore,
+        outcome,
+        headline: parsed.headline ?? '',
         recordingUrl,
       });
       return { id, status: 'SCORED' };
     } catch (error) {
       this.logger.error(
-        `call ${recordingId}: scoring failed: ${(error as Error).message}`,
+        `call ${recordingId}: review failed: ${(error as Error).message}`,
       );
       await this.update(id, { status: 'FAILED' });
       return { id, status: 'FAILED', reason: (error as Error).message };
@@ -727,6 +748,17 @@ export class OsCallReviewService {
       };
       for (const meeting of data.items ?? []) {
         scanned++;
+        const recordingId =
+          meeting.recording_id !== null && meeting.recording_id !== undefined
+            ? String(meeting.recording_id)
+            : null;
+        if (recordingId)
+          await this.recordEvent(
+            `backfill:${recordingId}`,
+            'backfill',
+            recordingId,
+            meeting,
+          );
         const result = await this.ingest(meeting);
         results[result.status] = (results[result.status] ?? 0) + 1;
         if (options.limit && scanned >= options.limit)
@@ -761,13 +793,14 @@ export class OsCallReviewService {
 
   // ---------- helpers ----------
 
+  // Timestamped so the review can point the closer at the moment in the recording.
   private transcriptText(transcript: FathomMeeting['transcript']): string {
     if (!transcript) return '';
     if (typeof transcript === 'string') return transcript;
     return transcript
       .map(
         (item) =>
-          `${item.speaker?.display_name ?? 'Unknown'}: ${item.text ?? ''}`,
+          `${item.timestamp ? `[${item.timestamp}] ` : ''}${item.speaker?.display_name ?? 'Unknown'}: ${item.text ?? ''}`,
       )
       .join('\n');
   }
@@ -868,6 +901,20 @@ export class OsCallReviewService {
     return data.people.edges[0]?.node.id ?? null;
   }
 
+  private async companyNameOf(personId: string): Promise<string | null> {
+    try {
+      const data = await this.twentyApi.records<{
+        person: { company: { name: string | null } | null } | null;
+      }>(
+        `query CallPersonCompany($id: UUID) { person(filter: { id: { eq: $id } }) { company { name } } }`,
+        { id: personId },
+      );
+      return data.person?.company?.name ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async findByRecordingId(
     recordingId: string,
   ): Promise<{ id: string } | null> {
@@ -949,12 +996,13 @@ export class OsCallReviewService {
             content?: { parts?: { text?: string; thought?: boolean }[] };
           }[];
         };
-        const parts = data.candidates?.[0]?.content?.parts ?? [];
-        const text = (
-          parts.find((part) => part.text && !part.thought)?.text ??
-          parts[parts.length - 1]?.text ??
-          ''
-        ).trim();
+        const parts = (data.candidates?.[0]?.content?.parts ?? []).filter(
+          (part) => part.text && !part.thought,
+        );
+        const text = parts
+          .map((part) => part.text)
+          .join('')
+          .trim();
         if (text) return text;
         lastError = 'empty response';
       } else {
@@ -966,54 +1014,76 @@ export class OsCallReviewService {
     throw new Error(`gemini ${lastError}`);
   }
 
-  private parseJson(text: string): Analysis | null {
-    const stripped = text
-      .replace(/^```json\n?/, '')
-      .replace(/^```\n?/, '')
-      .replace(/\n?```$/, '')
-      .trim();
-    const repair = (value: string) =>
-      value
-        .replace(/(["\d\]}]|true|false|null)\s*\n(\s*)(")/g, '$1,\n$2$3')
-        .replace(/(["\]}])\s*\n(\s*)(["[{])/g, '$1,\n$2$3');
-    for (const candidate of [
-      stripped,
-      repair(stripped),
-      stripped.match(/\{[\s\S]*\}/)?.[0] ?? '',
-      repair(stripped.match(/\{[\s\S]*\}/)?.[0] ?? ''),
-    ]) {
-      if (!candidate) continue;
-      try {
-        const parsed = JSON.parse(candidate) as Analysis | Analysis[];
-        return Array.isArray(parsed) ? (parsed[0] ?? null) : parsed;
-      } catch {
-        // next candidate
+  // The report is what the closer reads; the summary line after the delimiter is what the CRM files it by.
+  // When the model forgets the line, the score and headline are read from the report instead.
+  private parseReview(text: string): Review {
+    const at = text.lastIndexOf(SUMMARY_DELIMITER);
+    const report = (at >= 0 ? text.slice(0, at) : text).trim();
+    let summary: ReviewSummary = {};
+    if (at >= 0) {
+      const tail = text
+        .slice(at + SUMMARY_DELIMITER.length)
+        .replace(/```(?:json)?/g, '')
+        .trim();
+      const candidate = tail.match(/\{[\s\S]*\}/)?.[0];
+      if (candidate) {
+        try {
+          summary = JSON.parse(candidate) as ReviewSummary;
+        } catch {
+          summary = {};
+        }
       }
     }
-    return null;
+    if (typeof summary.overall_score !== 'number') {
+      const match = report.match(
+        /Overall:?\**\s*([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/i,
+      );
+      if (match) summary.overall_score = Number(match[1]);
+    }
+    if (!summary.headline) {
+      const block =
+        report.split(/^## +The headline\s*$/im)[1]?.split(/^## /m)[0] ?? '';
+      const quote = block
+        .split('\n')
+        .filter((line) => line.trim().startsWith('>'))
+        .map((line) => line.replace(/^>\s?/, '').trim())
+        .join(' ')
+        .trim();
+      if (quote) summary.headline = quote;
+    }
+    return { report, summary };
   }
 
-  private async score(
-    transcript: string,
+  private async review(
     callType: CallType,
-  ): Promise<Analysis> {
+    input: {
+      closerName: string;
+      prospectName: string | null;
+      prospectCompany: string | null;
+      callDate: string;
+      transcript: string;
+    },
+  ): Promise<Review> {
     const body = {
-      contents: [
-        { parts: [{ text: CALL_SCORING_PROMPTS[callType](transcript) }] },
-      ],
+      contents: [{ parts: [{ text: CALL_REVIEW_PROMPTS[callType](input) }] }],
       generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 1,
-        maxOutputTokens: 8000,
+        temperature: 0.7,
+        maxOutputTokens: 24000,
         topP: 0.95,
-        thinkingConfig: { thinkingLevel: 'low' },
+        thinkingConfig: { thinkingLevel: 'medium' },
       },
     };
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const parsed = this.parseJson(await this.gemini(body));
-      if (parsed && Array.isArray(parsed.scores)) return parsed;
+    let last: Review | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      last = this.parseReview(await this.gemini(body));
+      if (
+        last.report.length > 1500 &&
+        typeof last.summary.overall_score === 'number'
+      )
+        return last;
     }
-    throw new Error('could not parse the scoring JSON after 3 attempts');
+    if (last && last.report.length > 1500) return last;
+    throw new Error('the review came back empty or truncated twice');
   }
 
   private async summarise(
@@ -1083,7 +1153,7 @@ export class OsCallReviewService {
         temperature: 1,
         maxOutputTokens: 8192,
         topP: 0.95,
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingLevel: 'low' },
       },
     };
     return this.gemini(body);
@@ -1093,11 +1163,10 @@ export class OsCallReviewService {
     closer: CloserRow,
     card: {
       id: string;
-      title: string;
       prospectName: string;
       score: number | null;
       outcome: string;
-      verdict: string;
+      headline: string;
       recordingUrl: string | null;
     },
   ) {
@@ -1107,6 +1176,9 @@ export class OsCallReviewService {
       env('OS_WHOP_DISCORD_WEBHOOK');
     if (!hook) return;
     const frontUrl = env('FRONT_BASE_URL') ?? env('SERVER_URL') ?? '';
+    const outcomeLabel =
+      CALL_OUTCOME_OPTIONS.find((entry) => entry.value === card.outcome)
+        ?.label ?? card.outcome;
     const color =
       card.score === null
         ? 0x95a5a6
@@ -1120,11 +1192,11 @@ export class OsCallReviewService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: 'Call tracker',
+          username: 'Call review',
           embeds: [
             {
-              title: `📞 ${card.prospectName} · ${card.score !== null ? `${card.score.toFixed(1)}/10` : 'not scored'}`,
-              description: `**Closer:** ${closer.name}\n**Outcome:** ${card.outcome}\n\n${card.verdict.slice(0, 900)}\n\n${card.recordingUrl ? `[Recording](${card.recordingUrl}) · ` : ''}[Review in CRM](${frontUrl}/object/callReview/${card.id})`,
+              title: `${card.prospectName} · ${card.score !== null ? `${card.score.toFixed(1)}/10` : 'not scored'}`,
+              description: `**Closer:** ${closer.name}\n**Outcome:** ${outcomeLabel}\n\n${card.headline.slice(0, 1200)}\n\n${card.recordingUrl ? `[Recording](${card.recordingUrl}) · ` : ''}[Full review](${frontUrl}/calls?review=${card.id})`,
               color,
             },
           ],
@@ -1132,7 +1204,7 @@ export class OsCallReviewService {
       });
     } catch (error) {
       this.logger.warn(
-        `call tracker discord failed: ${(error as Error).message}`,
+        `call review discord failed: ${(error as Error).message}`,
       );
     }
   }

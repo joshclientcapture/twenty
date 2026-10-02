@@ -70,6 +70,11 @@ const DfyBillingPage = lazy(() =>
     default: module.DfyBillingPage,
   })),
 );
+const CallsPage = lazy(() =>
+  import('~/pages/calls/CallsPage').then((module) => ({
+    default: module.CallsPage,
+  })),
+);
 const RevenuePage = lazy(() =>
   import('~/pages/revenue/RevenuePage').then((module) => ({
     default: module.RevenuePage,
@@ -248,6 +253,15 @@ export const createWorkspaceRouteObjects = ({
       element: (
         <LazyRoute>
           <DfyBillingPage />
+        </LazyRoute>
+      ),
+      handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },
+    },
+    {
+      path: AppPath.Calls,
+      element: (
+        <LazyRoute>
+          <CallsPage />
         </LazyRoute>
       ),
       handle: { workspaceSurfaces: MAIN_AND_SIDE_PANEL },

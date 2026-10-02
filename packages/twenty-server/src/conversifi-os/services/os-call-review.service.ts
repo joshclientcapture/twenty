@@ -121,8 +121,7 @@ const OUTCOME_VALUES = new Set(
 );
 
 // Fathom call recordings into the CRM: every sales call gets a review record on the person (the Head
-// of Sales report, score, outcome, scorecard), a meeting summary note on the timeline and a card in
-// the closer's Discord. Replaces the n8n "Sales Call Analysis" + "Fathom → GHL Contact Notes" flows.
+// of Sales report, score, outcome, scorecard) and a meeting summary note on the timeline. Replaces the n8n "Sales Call Analysis" + "Fathom → GHL Contact Notes" flows.
 @Injectable()
 export class OsCallReviewService {
   private readonly logger = new Logger(OsCallReviewService.name);
@@ -690,14 +689,6 @@ export class OsCallReviewService {
         deductions: parsed.deductions ?? null,
         confidence: parsed.confidence ?? null,
       });
-      await this.discord(closer, {
-        id,
-        prospectName: prospectName ?? 'Unknown',
-        score: overallScore,
-        outcome,
-        headline: parsed.headline ?? '',
-        recordingUrl,
-      });
       return { id, status: 'SCORED' };
     } catch (error) {
       this.logger.error(
@@ -1159,53 +1150,4 @@ export class OsCallReviewService {
     return this.gemini(body);
   }
 
-  private async discord(
-    closer: CloserRow,
-    card: {
-      id: string;
-      prospectName: string;
-      score: number | null;
-      outcome: string;
-      headline: string;
-      recordingUrl: string | null;
-    },
-  ) {
-    const hook =
-      closer.discord_webhook ??
-      env('OS_CALLS_DISCORD_WEBHOOK') ??
-      env('OS_WHOP_DISCORD_WEBHOOK');
-    if (!hook) return;
-    const frontUrl = env('FRONT_BASE_URL') ?? env('SERVER_URL') ?? '';
-    const outcomeLabel =
-      CALL_OUTCOME_OPTIONS.find((entry) => entry.value === card.outcome)
-        ?.label ?? card.outcome;
-    const color =
-      card.score === null
-        ? 0x95a5a6
-        : card.score >= 7.5
-          ? 0x2ecc71
-          : card.score >= 5
-            ? 0xf1c40f
-            : 0xe74c3c;
-    try {
-      await fetch(hook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'Call review',
-          embeds: [
-            {
-              title: `${card.prospectName} · ${card.score !== null ? `${card.score.toFixed(1)}/10` : 'not scored'}`,
-              description: `**Closer:** ${closer.name}\n**Outcome:** ${outcomeLabel}\n\n${card.headline.slice(0, 1200)}\n\n${card.recordingUrl ? `[Recording](${card.recordingUrl}) · ` : ''}[Full review](${frontUrl}/calls?review=${card.id})`,
-              color,
-            },
-          ],
-        }),
-      });
-    } catch (error) {
-      this.logger.warn(
-        `call review discord failed: ${(error as Error).message}`,
-      );
-    }
-  }
 }

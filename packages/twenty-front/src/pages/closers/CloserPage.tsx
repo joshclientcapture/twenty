@@ -134,6 +134,12 @@ const STATUS_OPTS = [
 const firstName = (name: string) => name.split(' ')[0] ?? name;
 
 /* ---------------- page-specific styled ---------------- */
+const StyledRecordingCell = styled.span`
+  align-items: center;
+  display: inline-flex;
+  gap: ${t.spacing[2]};
+`;
+
 const StyledSegments = styled.div`
   background: ${t.background.tertiary};
   border-radius: ${t.border.radius.pill};
@@ -1124,13 +1130,27 @@ export const CloserPage = ({ closerId: closerIdProp }: CloserPageProps) => {
                             </td>
                             <td>
                               {r.recording ? (
-                                <StyledExtLink
-                                  href={r.recording}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  ▶ Watch
-                                </StyledExtLink>
+                                <StyledRecordingCell>
+                                  <StyledExtLink
+                                    href={r.recording}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    ▶ Watch
+                                  </StyledExtLink>
+                                  {r.review_id && typeof r.score === 'number' ? (
+                                    <StyledChip
+                                      data-button
+                                      data-tone={r.score >= 7.5 ? 'positive' : r.score >= 5 ? 'caution' : 'negative'}
+                                      title="Open the call review"
+                                      onClick={() => navigate(`/calls?review=${r.review_id}`)}
+                                    >
+                                      {r.score.toFixed(1)}
+                                    </StyledChip>
+                                  ) : r.review_status === 'PENDING' ? (
+                                    <StyledMuted>reviewing…</StyledMuted>
+                                  ) : null}
+                                </StyledRecordingCell>
                               ) : (
                                 <StyledMuted>—</StyledMuted>
                               )}

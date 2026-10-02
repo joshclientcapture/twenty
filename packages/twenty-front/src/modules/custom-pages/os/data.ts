@@ -339,7 +339,7 @@ export async function fetchCustomerCounts(month: string | null, from: string | n
 // `maybe` = a likely-but-unconfirmed trial (Stripe name matches the booking name, started near the
 // call, but a different email). Needs a human to approve — see the "maybe match" chip.
 export type MaybeMatch = { email: string; name: string | null; mins: number | null };
-export type DailyLogRow = { key: string; time: string; name: string | null; email: string | null; status: string; trialed: boolean; recording: string | null; overridden?: boolean; stripe_email?: string | null; note?: string | null; maybe?: MaybeMatch | null };
+export type DailyLogRow = { key: string; time: string; name: string | null; email: string | null; status: string; trialed: boolean; recording: string | null; score?: number | null; review_id?: string | null; review_status?: string | null; overridden?: boolean; stripe_email?: string | null; note?: string | null; maybe?: MaybeMatch | null };
 export type DailyDay = { date: string; booked: number; showed: number; no_show: number; trials: number };
 export type TheraponDaily = {
   from: string; to: string;
